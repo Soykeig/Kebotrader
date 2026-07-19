@@ -128,12 +128,12 @@ export interface Trade {
   result_type: ResultType | null;
   pips: number | null;
   session: TradingSession | null;
-  tradingview_link: string | null;
   notes: string | null;
   emotion: EmotionType | null;
   mistake: MistakeType | null;
   risk_amount: number | null;
   tradingview_links: string[];
+  evidence_images: string[];
   created_at: string;
   updated_at: string;
 }
@@ -173,6 +173,21 @@ export const PHASE_LABELS: Record<AccountPhase, string> = {
   no_aplica: "No aplica",
 };
 
+/**
+ * Define el "camino" que recorre la cuenta hasta estar fondeada. Esto
+ * determina automáticamente la fase inicial y qué opciones de avance se
+ * muestran cuando se alcanza el objetivo de una fase (por ejemplo, una
+ * cuenta "una_fase" nunca debería ofrecer pasar a Fase 2).
+ */
+export type AccountChallengeType = "capital_propio" | "instantanea" | "una_fase" | "dos_fases";
+
+export const CHALLENGE_TYPE_LABELS: Record<AccountChallengeType, string> = {
+  capital_propio: "Capital propio",
+  instantanea: "Cuenta instantánea",
+  una_fase: "Challenge de 1 fase",
+  dos_fases: "Challenge de 2 fases",
+};
+
 export interface Account {
   id: string;
   user_id: string;
@@ -187,8 +202,34 @@ export interface Account {
   max_daily_loss: number | null;
   max_total_loss: number | null;
   is_archived: boolean;
+  /** Camino de fondeo de la cuenta (capital propio / instantánea / 1 o
+   * 2 fases). Nula en cuentas viejas creadas antes de este campo. */
+  challenge_type: AccountChallengeType | null;
+  /** Objetivo de ganancia (%) para superar la fase ACTUAL. Se carga a
+   * mano porque varía según la prop firm — null significa "sin objetivo
+   * definido" (no se muestra barra de progreso ni se detecta avance). */
+  phase_target_percent: number | null;
+  /** Desde cuándo se cuenta el P&L de la fase actual. Se resetea cada
+   * vez que la cuenta avanza de fase, para que el progreso de la fase
+   * nueva arranque en cero y no arrastre ganancias de la fase anterior. */
+  phase_started_at: string;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Un registro histórico de que esta cuenta superó una fase — se guarda
+ * cuando el usuario confirma el avance (a Fase 2 o a Financiada), para
+ * poder ver después cuándo pasó cada fase y con cuánta ganancia.
+ */
+export interface PhaseHistoryEntry {
+  id: string;
+  account_id: string;
+  user_id: string;
+  phase: AccountPhase;
+  target_percent: number | null;
+  pnl_alcanzado: number;
+  completado_en: string;
 }
 
 export interface Withdrawal {
@@ -246,5 +287,23 @@ export interface ChecklistLog {
   item_id: string;
   log_date: string;
   completed: boolean;
+  created_at: string;
+}
+
+/**
+ * Un cierre parcial de un trade: representa haber cerrado solo una
+ * porción de la posición total (ej. cerrar el 40% en el primer target y
+ * dejar correr el resto). Un trade puede tener varios de estos antes de
+ * quedar completamente cerrado.
+ */
+export interface TradeExit {
+  id: string;
+  trade_id: string;
+  user_id: string;
+  quantity: number;
+  exit_price: number;
+  pnl: number;
+  exit_time: string;
+  notes: string | null;
   created_at: string;
 }

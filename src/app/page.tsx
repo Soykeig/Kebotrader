@@ -21,7 +21,10 @@ import {
   type AchievementCategory,
   type Profile,
   type ChecklistItem,
-  ACHIEVEMENT_CATEGORY_LABELS,
+  type TradeExit,
+  type PhaseHistoryEntry,
+  type AccountChallengeType,
+  CHALLENGE_TYPE_LABELS,
   PHASE_LABELS,
   RESULT_LABELS,
   SESSION_LABELS,
@@ -64,6 +67,23 @@ function formatDate(iso: string): string {
   });
 }
 
+/**
+ * BUGFIX: formatDate() interpreta el string con new Date(iso). Cuando el
+ * valor es solo una fecha ("2026-07-05", sin hora), JS lo interpreta
+ * como medianoche UTC, y al mostrarlo en un huso horario negativo (ej.
+ * Brasil, GMT-3) el día se corre hacia atrás un día ("04 jul" en vez de
+ * "05 jul"). Esta función arma la fecha con los componentes locales
+ * directamente, evitando esa conversión UTC.
+ */
+function formatDateOnly(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString("es-ES", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 function todayKey(): string {
   const hoy = new Date();
   return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(
@@ -71,7 +91,25 @@ function todayKey(): string {
   ).padStart(2, "0")}`;
 }
 
-/** Calcula el R-múltiplo: cuántas veces el riesgo se ganó o perdió. */
+/**
+ * BUGFIX: antes se usaba `trade.entry_time.slice(0, 10)` en varios
+ * lugares para agrupar operaciones por día de calendario. El problema es
+ * que entry_time se guarda como ISO en UTC (vía toISOString()), así que
+ * cortar directamente el string te da el día en UTC, no el día local en
+ * que el usuario realmente cargó la operación. Para alguien en un huso
+ * horario negativo (ej. Brasil GMT-3), una operación cargada a las 22:00
+ * podía terminar apareciendo en el calendario un día después del que
+ * realmente eligió. Esta función siempre calcula la clave a partir de
+ * los componentes de fecha LOCALES del Date, igual que hace el resto del
+ * calendario (celdas, "hoy", etc.), para que todo quede consistente.
+ */
+function fechaKeyLocal(iso: string): string {
+  const fecha = new Date(iso);
+  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(
+    fecha.getDate()
+  ).padStart(2, "0")}`;
+}
+
 /**
  * Ejecuta una operación de Supabase con un reintento automático si falla
  * la primera vez (por ejemplo, un corte de internet momentáneo). Espera
@@ -91,6 +129,7 @@ async function conReintento<T>(
   return { ...segundoIntento, reintentado: true };
 }
 
+/** Calcula el R-múltiplo: cuántas veces el riesgo se ganó o perdió. */
 function calcularRMultiple(pnl: number | null, riskAmount: number | null): number | null {
   if (pnl === null || riskAmount === null || riskAmount <= 0) return null;
   return pnl / riskAmount;
@@ -447,6 +486,7 @@ type Vista =
   | "roi"
   | "retiros"
   | "logros"
+  | "importar"
   | "perfil";
 type CuentaSeleccion = string | "todas";
 
@@ -476,10 +516,14 @@ const NAV_GRUPOS: NavGrupo[] = [
     items: [
       { id: "estrategias", etiqueta: "Estrategias", icono: "🎯" },
       { id: "configuracion", etiqueta: "Cuentas", icono: "👤" },
-      { id: "roi", etiqueta: "ROI de Cuentas", icono: "💲" },
+      { id: "roi", etiqueta: "Rentabilidad", icono: "💲" },
       { id: "retiros", etiqueta: "Retiros", icono: "🕓" },
       { id: "logros", etiqueta: "Logros", icono: "🏆" },
     ],
+  },
+  {
+    titulo: "Datos",
+    items: [{ id: "importar", etiqueta: "Importar", icono: "📥" }],
   },
   {
     titulo: "Cuenta",
@@ -489,10 +533,6 @@ const NAV_GRUPOS: NavGrupo[] = [
 
 const NAV_ITEMS: NavItem[] = NAV_GRUPOS.flatMap((g) => g.items);
 
-const MAPA_NUMERO_ITEM = new Map(NAV_ITEMS.map((item, i) => [item.id, String(i + 1).padStart(2, "0")]));
-function numeroDeItem(id: Vista): string {
-  return MAPA_NUMERO_ITEM.get(id) ?? "";
-}
 
 /** Deriva un nombre legible a partir del correo (ej. "juan.perez@x.com" → "Juan.perez") */
 function nombreDesdeEmail(email: string | undefined): string {
@@ -537,32 +577,29 @@ function SelectorCuentaSidebar({
       : 0;
 
   return (
-    <div className="relative border-b border-kb-border-soft px-3 py-3">
-      <button
-        onClick={() => setAbierto((v) => !v)}
-        className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left hover:bg-kb-surface transition-colors"
-      >
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-kb-gain" />
-            <p className="truncate text-sm font-semibold text-kb-text">
-              {cargando ? "Cargando…" : cuentaActivaId === "todas" ? "Todas las cuentas" : cuentaActiva?.name ?? "Sin cuenta"}
-            </p>
-          </div>
-          <p className="mt-0.5 text-[11px] text-kb-text-muted">
-            {cuentas.length} cuenta{cuentas.length === 1 ? "" : "s"} activa{cuentas.length === 1 ? "" : "s"}
-          </p>
-        </div>
-        <span className={`shrink-0 text-kb-text-muted transition-transform ${abierto ? "rotate-180" : ""}`}>
-          ⌄
-        </span>
-      </button>
-
-      <div className="mt-2 px-2">
-        <p className="text-[10px] uppercase tracking-wide text-kb-text-muted">Equity {cuentaActivaId === "todas" ? "total" : ""}</p>
-        <p className={`font-mono text-lg font-semibold ${equityMostrado >= 0 ? "text-kb-text" : "text-kb-loss"}`}>
+    <div className="relative border-b border-kb-border-soft p-3">
+      <div className="overflow-hidden rounded-xl border border-kb-border-soft bg-gradient-to-br from-kb-gain/10 via-kb-surface to-kb-surface p-3">
+        <p className="text-[11px] font-medium text-kb-text-secondary">
+          {cuentaActivaId === "todas" ? "Equity combinado" : "Equity de la cuenta"}
+        </p>
+        <p className={`mt-0.5 font-mono text-xl font-bold leading-tight ${equityMostrado >= 0 ? "text-kb-text" : "text-kb-loss"}`}>
           {formatCurrency(equityMostrado)}
         </p>
+
+        <button
+          onClick={() => setAbierto((v) => !v)}
+          className="mt-2.5 flex w-full items-center justify-between rounded-lg border border-kb-border-soft bg-kb-bg/60 px-2.5 py-1.5 text-left transition-colors hover:border-kb-gain/40"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-kb-gain" />
+            <span className="truncate text-xs font-medium text-kb-text">
+              {cargando ? "Cargando…" : cuentaActivaId === "todas" ? "Todas las cuentas" : cuentaActiva?.name ?? "Sin cuenta"}
+            </span>
+          </span>
+          <span className={`shrink-0 text-[10px] text-kb-text-muted transition-transform ${abierto ? "rotate-180" : ""}`}>
+            ⌄
+          </span>
+        </button>
       </div>
 
       {abierto && (
@@ -573,7 +610,7 @@ function SelectorCuentaSidebar({
               setAbierto(false);
             }}
             className={`block w-full px-3 py-2.5 text-left text-xs font-medium transition-colors ${
-              cuentaActivaId === "todas" ? "bg-kb-accent/10 text-kb-accent" : "text-kb-text hover:bg-kb-bg"
+              cuentaActivaId === "todas" ? "bg-kb-gain/10 text-kb-gain" : "text-kb-text hover:bg-kb-bg"
             }`}
           >
             📊 Todas las cuentas
@@ -588,7 +625,7 @@ function SelectorCuentaSidebar({
                   setAbierto(false);
                 }}
                 className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-xs font-medium transition-colors ${
-                  c.id === cuentaActivaId ? "bg-kb-accent/10 text-kb-accent" : "text-kb-text hover:bg-kb-bg"
+                  c.id === cuentaActivaId ? "bg-kb-gain/10 text-kb-gain" : "text-kb-text hover:bg-kb-bg"
                 }`}
               >
                 <span className="flex items-center gap-1.5 truncate">
@@ -611,7 +648,7 @@ function SelectorCuentaSidebar({
               onNuevaCuenta();
               setAbierto(false);
             }}
-            className="block w-full border-t border-kb-border-soft px-3 py-2.5 text-left text-xs font-medium text-kb-accent hover:bg-kb-bg transition-colors"
+            className="block w-full border-t border-kb-border-soft px-3 py-2.5 text-left text-xs font-medium text-kb-gain hover:bg-kb-bg transition-colors"
           >
             + Nueva cuenta
           </button>
@@ -636,6 +673,27 @@ function Dashboard({ session }: { session: Session }) {
   const [mostrarArchivadas, setMostrarArchivadas] = useState(false);
   const [diaParaRegistrar, setDiaParaRegistrar] = useState<string>(() => todayKey());
 
+  // Sub-vista de "día del calendario": reemplaza las ventanas flotantes
+  // que antes se abrían al hacer clic en un día. Ahora, en vez de un
+  // modal, se muestra una vista de página completa dentro del mismo
+  // panel de contenido (sin superponerse, con un botón "← Volver").
+  const [vistaDia, setVistaDia] = useState<
+    | { tipo: "elegir"; dia: string; trades: Trade[] }
+    | { tipo: "detalle"; trade: Trade }
+    | { tipo: "nuevo"; dia: string }
+    | null
+  >(null);
+
+  function manejarAbrirDia(dia: string, tradesDelDia: Trade[]) {
+    if (tradesDelDia.length === 0) {
+      setVistaDia({ tipo: "nuevo", dia });
+    } else if (tradesDelDia.length === 1) {
+      setVistaDia({ tipo: "detalle", trade: tradesDelDia[0] });
+    } else {
+      setVistaDia({ tipo: "elegir", dia, trades: tradesDelDia });
+    }
+  }
+
   const [trades, setTrades] = useState<Trade[]>([]);
   const [estrategias, setEstrategias] = useState<Strategy[]>([]);
   const [cargandoTrades, setCargandoTrades] = useState(true);
@@ -651,6 +709,8 @@ function Dashboard({ session }: { session: Session }) {
   const [checklistCompletados, setChecklistCompletados] = useState<Set<string>>(new Set());
   const [cargandoChecklist, setCargandoChecklist] = useState(true);
 
+  const [historialFases, setHistorialFases] = useState<PhaseHistoryEntry[]>([]);
+
   async function cargarCuentas() {
     setCargandoCuentas(true);
     const { data } = await supabase
@@ -662,6 +722,55 @@ function Dashboard({ session }: { session: Session }) {
     const lista = (data as Account[]) ?? [];
     setCuentas(lista);
     setCargandoCuentas(false);
+  }
+
+  async function cargarHistorialFases() {
+    const { data } = await supabase
+      .from("phase_history")
+      .select("*")
+      .order("completado_en", { ascending: false });
+    setHistorialFases((data as PhaseHistoryEntry[]) ?? []);
+  }
+
+  /**
+   * Avanza una cuenta de una fase a otra (ej. Fase 1 → Fase 2, o Fase 1 /
+   * Fase 2 → Financiada) sin crear una cuenta nueva: se guarda un
+   * registro en el historial con el P&L que se logró en la fase que
+   * termina, y la cuenta se actualiza para arrancar la fase nueva desde
+   * cero (el progreso de la fase siguiente no arrastra ganancias de la
+   * anterior).
+   */
+  async function avanzarFase(
+    accountId: string,
+    nuevaFase: AccountPhase,
+    pnlAlcanzado: number,
+    targetPercent: number | null
+  ) {
+    const cuenta = cuentas.find((c) => c.id === accountId);
+    if (!cuenta) return;
+
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) return;
+
+    await supabase.from("phase_history").insert({
+      account_id: accountId,
+      user_id: userId,
+      phase: cuenta.phase,
+      target_percent: targetPercent,
+      pnl_alcanzado: pnlAlcanzado,
+    });
+
+    await supabase
+      .from("accounts")
+      .update({
+        phase: nuevaFase,
+        phase_started_at: new Date().toISOString(),
+        phase_target_percent: null,
+      })
+      .eq("id", accountId);
+
+    await Promise.all([cargarCuentas(), cargarHistorialFases()]);
   }
 
   async function cargarEstrategiasDashboard() {
@@ -725,18 +834,23 @@ function Dashboard({ session }: { session: Session }) {
 
   async function alternarItemChecklist(itemId: string) {
     const yaCompletado = checklistCompletados.has(itemId);
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) return;
 
     if (yaCompletado) {
-      await supabase.from("checklist_logs").delete().eq("item_id", itemId).eq("log_date", todayKey());
+      await supabase
+        .from("checklist_logs")
+        .delete()
+        .eq("item_id", itemId)
+        .eq("log_date", todayKey())
+        .eq("user_id", userId);
       setChecklistCompletados((prev) => {
         const nuevo = new Set(prev);
         nuevo.delete(itemId);
         return nuevo;
       });
     } else {
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData.user?.id;
-      if (!userId) return;
       await supabase
         .from("checklist_logs")
         .upsert(
@@ -769,7 +883,23 @@ function Dashboard({ session }: { session: Session }) {
     cargarRetiros();
     cargarLogros();
     cargarChecklist();
+    cargarHistorialFases();
   }, []);
+
+  /**
+   * BUGFIX: al eliminar (o archivar) una cuenta desde Configuración, la
+   * base de datos borra en cascada sus trades, retiros y desvincula sus
+   * logros correctamente — pero el estado en memoria de React (trades,
+   * retiros, logros) no se refrescaba solo, porque ConfiguracionView
+   * únicamente llamaba a cargarCuentas(). Esto hacía que, aunque los
+   * datos ya no existieran en Supabase, siguieran viéndose en pantalla
+   * (dashboard, calendario, reportes, etc.) hasta recargar la página a
+   * mano. Esta función recarga todo lo que puede haberse visto afectado
+   * por un cambio en las cuentas.
+   */
+  async function recargarTrasCambioDeCuentas() {
+    await Promise.all([cargarCuentas(), cargarTrades(), cargarRetiros(), cargarLogros()]);
+  }
 
   const cuentaActiva =
     cuentaActivaId === "todas" ? null : cuentas.find((c) => c.id === cuentaActivaId) ?? null;
@@ -798,22 +928,36 @@ function Dashboard({ session }: { session: Session }) {
     }
   }, [hayCuentaReal, vista]);
 
+  /**
+   * BUGFIX: filtro de seguridad. Si por algún motivo quedan trades o
+   * retiros "huérfanos" en la base de datos (apuntando a una cuenta que
+   * ya se eliminó — por ejemplo si el borrado en cascada fallara por un
+   * problema de permisos/RLS y no se detectara), esto evita que sigan
+   * apareciendo en la vista "Todas las cuentas". Solo se cuentan
+   * operaciones y retiros de cuentas que siguen existiendo hoy.
+   */
+  const idsCuentasActivas = useMemo(() => new Set(cuentas.map((c) => c.id)), [cuentas]);
+
   const tradesDeLaCuenta = useMemo(() => {
-    if (cuentaActivaId === "todas") return trades;
+    if (cuentaActivaId === "todas") {
+      return trades.filter((t) => t.account_id !== null && idsCuentasActivas.has(t.account_id));
+    }
     return trades.filter((t) => t.account_id === cuentaActivaId);
-  }, [trades, cuentaActivaId]);
+  }, [trades, cuentaActivaId, idsCuentasActivas]);
 
   const retirosDeLaCuenta = useMemo(() => {
-    if (cuentaActivaId === "todas") return retiros;
+    if (cuentaActivaId === "todas") {
+      return retiros.filter((r) => idsCuentasActivas.has(r.account_id));
+    }
     return retiros.filter((r) => r.account_id === cuentaActivaId);
-  }, [retiros, cuentaActivaId]);
+  }, [retiros, cuentaActivaId, idsCuentasActivas]);
 
   const totalRetirado = useMemo(
     () => retirosDeLaCuenta.reduce((acc, r) => acc + r.amount, 0),
     [retirosDeLaCuenta]
   );
 
-  // Total retirado por cuenta (para ROI de Cuentas y los chips)
+  // Total retirado por cuenta (para Rentabilidad y los chips)
   const retiradoPorCuenta = useMemo(() => {
     const mapa = new Map<string, number>();
     retiros.forEach((r) => {
@@ -846,7 +990,9 @@ function Dashboard({ session }: { session: Session }) {
 
     const gananciaTotal = ganadores.reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0);
     const perdidaTotal = Math.abs(perdedores.reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0));
-    const profitFactor = perdidaTotal > 0 ? gananciaTotal / perdidaTotal : null;
+    // NOTA: se removió el cálculo de "profit factor" (gananciaTotal /
+    // perdidaTotal) a pedido — ya no se muestra en ningún panel de la UI.
+    // "perdidaTotal" se conserva porque se usa abajo para "avgPerdida".
 
     const hoy = todayKey();
     const pnlHoy = cerrados
@@ -884,7 +1030,6 @@ function Dashboard({ session }: { session: Session }) {
     return {
       totalPnL,
       totalTrades: tradesDeLaCuenta.length,
-      profitFactor,
       winRate,
       pnlHoy,
       racha,
@@ -931,33 +1076,37 @@ function Dashboard({ session }: { session: Session }) {
             onNuevaCuenta={() => setMostrarModalCuenta(true)}
           />
 
-          <nav className="flex-1 space-y-5 px-3 py-4">
+          <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
             {navGruposFiltrados.map((grupo) => (
-              <div key={grupo.titulo}>
-                <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-wider text-kb-text-muted">
+              <div key={grupo.titulo} className="rounded-xl border border-kb-border-soft bg-kb-bg/40 p-2">
+                <p className="mb-1.5 flex items-center gap-1.5 px-2 text-[10px] font-semibold uppercase tracking-wider text-kb-text-muted">
+                  <span className="h-1 w-1 rounded-full bg-kb-gain/70" />
                   {grupo.titulo}
                 </p>
-                <div className="space-y-1">
-                  {grupo.items.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => irA(item.id)}
-                      className={`relative flex w-full items-center justify-between gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                        vista === item.id
-                          ? "bg-kb-accent/10 text-kb-accent"
-                          : "text-kb-text-secondary hover:bg-kb-surface hover:text-kb-text"
-                      }`}
-                    >
-                      {vista === item.id && (
-                        <span className="absolute -left-3 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-kb-accent" />
-                      )}
-                      <span className="flex items-center gap-2.5">
-                        <span>{item.icono}</span>
-                        {item.etiqueta}
-                      </span>
-                      <span className="text-[10px] text-kb-text-muted">{numeroDeItem(item.id)}</span>
-                    </button>
-                  ))}
+                <div className="space-y-0.5">
+                  {grupo.items.map((item) => {
+                    const activo = vista === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => irA(item.id)}
+                        className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm font-medium transition-colors ${
+                          activo
+                            ? "bg-kb-gain/10 text-kb-text"
+                            : "text-kb-text-secondary hover:bg-kb-surface hover:text-kb-text"
+                        }`}
+                      >
+                        <span
+                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm transition-colors ${
+                            activo ? "bg-kb-gain text-kb-bg" : "bg-kb-surface text-kb-text-secondary"
+                          }`}
+                        >
+                          {item.icono}
+                        </span>
+                        <span className={activo ? "text-kb-gain" : ""}>{item.etiqueta}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ))}
@@ -965,7 +1114,7 @@ function Dashboard({ session }: { session: Session }) {
 
           <div className="border-t border-kb-border-soft px-3 py-4">
             <div className="mb-3 flex items-center gap-2.5 px-1">
-              <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-kb-accent/15 text-xs font-bold uppercase text-kb-accent">
+              <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-kb-gain/15 text-xs font-bold uppercase text-kb-gain">
                 {(session.user.email ?? "?").slice(0, 1)}
                 <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-kb-surface bg-kb-gain" />
               </div>
@@ -1095,6 +1244,26 @@ function Dashboard({ session }: { session: Session }) {
           {/* ---------- Contenido de la vista activa ---------- */}
           <div className="flex-1 px-4 py-6 lg:px-10 lg:py-8">
             <div className="mx-auto max-w-[1280px]">
+            {vistaDia ? (
+              <VistaDiaCalendario
+                vistaDia={vistaDia}
+                estrategias={estrategias}
+                accountId={cuentaActivaId === "todas" ? null : cuentaActivaId}
+                tieneCuentas={cuentas.length > 0}
+                onVolver={() => setVistaDia(null)}
+                onElegirTrade={(t) => setVistaDia({ tipo: "detalle", trade: t })}
+                onAgregarOtra={(dia) => setVistaDia({ tipo: "nuevo", dia })}
+                onTradeCreado={() => {
+                  setVistaDia(null);
+                  cargarTrades();
+                }}
+                onTradeActualizado={() => {
+                  setVistaDia(null);
+                  cargarTrades();
+                }}
+              />
+            ) : (
+              <>
             {vista === "inicio" && (
               <InicioView
                 cuenta={cuentaActiva}
@@ -1112,8 +1281,6 @@ function Dashboard({ session }: { session: Session }) {
                 onIrACalendario={() => irA("calendario")}
                 onIrARetiros={() => irA("retiros")}
                 onIrARoi={() => irA("roi")}
-                estrategias={estrategias}
-                onTradeActualizado={cargarTrades}
                 accountId={cuentaActivaId === "todas" ? null : cuentaActivaId}
                 tieneCuentas={cuentas.length > 0}
                 checklistItems={checklistItems}
@@ -1122,6 +1289,8 @@ function Dashboard({ session }: { session: Session }) {
                 onToggleChecklist={alternarItemChecklist}
                 onAgregarChecklistItem={agregarItemChecklist}
                 onEliminarChecklistItem={eliminarItemChecklist}
+                onAbrirDia={manejarAbrirDia}
+                onAvanzarFase={avanzarFase}
               />
             )}
 
@@ -1138,16 +1307,13 @@ function Dashboard({ session }: { session: Session }) {
             {vista === "calendario" && (
               <CalendarioRendimiento
                 trades={tradesDeLaCuenta}
-                estrategias={estrategias}
-                accountId={cuentaActivaId === "todas" ? null : cuentaActivaId}
-                tieneCuentas={cuentas.length > 0}
                 diaSeleccionado={diaParaRegistrar}
                 onSeleccionarDia={setDiaParaRegistrar}
-                onTradeActualizado={cargarTrades}
+                onAbrirDia={manejarAbrirDia}
               />
             )}
 
-            {vista === "reportes" && <ReportesView trades={tradesDeLaCuenta} />}
+            {vista === "reportes" && <ReportesView trades={tradesDeLaCuenta} estrategias={estrategias} />}
 
             {vista === "estrategias" && (
               <EstrategiasView trades={tradesDeLaCuenta} estrategias={estrategias} onCambio={cargarEstrategiasDashboard} />
@@ -1177,14 +1343,28 @@ function Dashboard({ session }: { session: Session }) {
               />
             )}
 
+            {vista === "importar" && (
+              <ImportarView
+                cuentas={cuentas}
+                estrategias={estrategias}
+                onImportado={cargarTrades}
+              />
+            )}
+
             {vista === "perfil" && <PerfilView session={session} />}
 
             {vista === "configuracion" && (
               <ConfiguracionView
                 cuentas={cuentas}
-                onCambio={cargarCuentas}
+                trades={trades}
+                pnlPorCuenta={pnlPorCuenta}
+                retiradoPorCuenta={retiradoPorCuenta}
+                historialFases={historialFases}
+                onCambio={recargarTrasCambioDeCuentas}
                 onVerArchivadas={() => setMostrarArchivadas(true)}
               />
+            )}
+              </>
             )}
             </div>
           </div>
@@ -1223,7 +1403,6 @@ function Dashboard({ session }: { session: Session }) {
 interface Metricas {
   totalPnL: number;
   totalTrades: number;
-  profitFactor: number | null;
   winRate: number;
   pnlHoy: number;
   racha: number;
@@ -1252,8 +1431,6 @@ function InicioView({
   onIrACalendario,
   onIrARetiros,
   onIrARoi,
-  estrategias,
-  onTradeActualizado,
   accountId,
   tieneCuentas,
   checklistItems,
@@ -1262,6 +1439,8 @@ function InicioView({
   onToggleChecklist,
   onAgregarChecklistItem,
   onEliminarChecklistItem,
+  onAbrirDia,
+  onAvanzarFase,
 }: {
   cuenta: Account | null;
   trades: Trade[];
@@ -1278,8 +1457,6 @@ function InicioView({
   onIrACalendario: () => void;
   onIrARetiros: () => void;
   onIrARoi: () => void;
-  estrategias: Strategy[];
-  onTradeActualizado: () => void;
   accountId: string | null;
   tieneCuentas: boolean;
   checklistItems: ChecklistItem[];
@@ -1288,10 +1465,41 @@ function InicioView({
   onToggleChecklist: (itemId: string) => void;
   onAgregarChecklistItem: (texto: string) => void;
   onEliminarChecklistItem: (itemId: string) => void;
+  onAbrirDia: (clave: string, tradesDelDia: Trade[]) => void;
+  onAvanzarFase: (
+    accountId: string,
+    nuevaFase: AccountPhase,
+    pnlAlcanzado: number,
+    targetPercent: number | null
+  ) => void;
 }) {
   const balanceActual = cuenta ? cuenta.starting_balance + metricas.totalPnL - totalRetirado : 0;
   const progreso =
     cuenta && cuenta.starting_balance > 0 ? (metricas.totalPnL / cuenta.starting_balance) * 100 : 0;
+
+  // ---- Progreso hacia el objetivo de la fase actual ----
+  // Se cuenta el P&L SOLO desde que arrancó la fase actual (no desde
+  // que se creó la cuenta), para que al avanzar de Fase 1 a Fase 2 el
+  // contador empiece de cero y no arrastre ganancias de la fase anterior.
+  const pnlDesdeInicioFase = useMemo(() => {
+    if (!cuenta) return 0;
+    const inicioFase = new Date(cuenta.phase_started_at).getTime();
+    return trades
+      .filter(
+        (t) => t.status === "closed" && t.realized_pnl !== null && new Date(t.entry_time).getTime() >= inicioFase
+      )
+      .reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0);
+  }, [cuenta, trades]);
+
+  const objetivoFaseMonto =
+    cuenta && cuenta.phase_target_percent !== null
+      ? (cuenta.starting_balance * cuenta.phase_target_percent) / 100
+      : null;
+  const progresoFasePorcentaje =
+    objetivoFaseMonto && objetivoFaseMonto > 0
+      ? Math.min((pnlDesdeInicioFase / objetivoFaseMonto) * 100, 100)
+      : 0;
+  const objetivoFaseAlcanzado = objetivoFaseMonto !== null && pnlDesdeInicioFase >= objetivoFaseMonto;
 
   // Alerta de riesgo: solo tiene sentido asustar de verdad en cuentas reales.
   // En demo no hay plata en juego, así que no mostramos el banner de alarma.
@@ -1379,6 +1587,11 @@ function InicioView({
                     {PHASE_LABELS[cuenta.phase]}
                   </span>
                 )}
+                {cuenta.challenge_type && cuenta.challenge_type !== "capital_propio" && (
+                  <span className="rounded-full border border-kb-border-soft px-2 py-0.5 text-[11px] font-medium text-kb-text-secondary">
+                    {CHALLENGE_TYPE_LABELS[cuenta.challenge_type]}
+                  </span>
+                )}
               </div>
               <div className="text-right">
                 <p className="text-[11px] leading-none text-kb-text-secondary">Balance actual</p>
@@ -1413,6 +1626,75 @@ function InicioView({
                     perdidaActual={perdidaTotalActual}
                     limite={cuenta.max_total_loss}
                   />
+                )}
+              </div>
+            )}
+
+            {objetivoFaseMonto !== null && (cuenta.phase === "fase_1" || cuenta.phase === "fase_2") && (
+              <div className="mt-3 rounded-lg border border-kb-border-soft bg-kb-bg p-3">
+                <div className="mb-1.5 flex items-center justify-between text-xs">
+                  <span className="text-kb-text-secondary">
+                    Objetivo de {PHASE_LABELS[cuenta.phase]}: {cuenta.phase_target_percent}%{" "}
+                    ({formatCurrency(objetivoFaseMonto)})
+                  </span>
+                  <span className={objetivoFaseAlcanzado ? "font-semibold text-kb-gain" : "text-kb-text-secondary"}>
+                    {progresoFasePorcentaje.toFixed(0)}%
+                  </span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-kb-border">
+                  <div
+                    className={`h-full rounded-full transition-all ${objetivoFaseAlcanzado ? "bg-kb-gain" : "bg-kb-accent"}`}
+                    style={{ width: `${progresoFasePorcentaje}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-right text-[11px] text-kb-text-muted">
+                  Llevás {formatCurrency(pnlDesdeInicioFase)} desde que empezó esta fase
+                </p>
+
+                {objetivoFaseAlcanzado && (
+                  <div className="mt-3 rounded-lg border border-kb-gain/30 bg-kb-gain/10 p-3">
+                    <p className="text-sm font-semibold text-kb-gain">
+                      🎉 ¡Alcanzaste el objetivo de {PHASE_LABELS[cuenta.phase]}!
+                    </p>
+                    <p className="mt-0.5 text-xs text-kb-text-secondary">
+                      Esta misma cuenta avanza sola — no hace falta crear una nueva.
+                    </p>
+                    <div className="mt-2.5 flex flex-wrap gap-2">
+                      {/* En Fase 1: si el challenge es de 2 fases (o es una cuenta
+                          vieja sin tipo definido), se pasa a Fase 2. Si es de 1
+                          fase, se salta directo a Financiada. */}
+                      {cuenta.phase === "fase_1" &&
+                        (cuenta.challenge_type === "una_fase" ? (
+                          <button
+                            onClick={() =>
+                              onAvanzarFase(cuenta.id, "financiada", pnlDesdeInicioFase, cuenta.phase_target_percent)
+                            }
+                            className="rounded-lg bg-kb-gain px-3 py-1.5 text-xs font-semibold text-kb-bg hover:brightness-110 transition"
+                          >
+                            Marcar como Financiada
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() =>
+                              onAvanzarFase(cuenta.id, "fase_2", pnlDesdeInicioFase, cuenta.phase_target_percent)
+                            }
+                            className="rounded-lg bg-kb-accent px-3 py-1.5 text-xs font-semibold text-kb-bg hover:brightness-110 transition"
+                          >
+                            Pasar a Fase 2
+                          </button>
+                        ))}
+                      {cuenta.phase === "fase_2" && (
+                        <button
+                          onClick={() =>
+                            onAvanzarFase(cuenta.id, "financiada", pnlDesdeInicioFase, cuenta.phase_target_percent)
+                          }
+                          className="rounded-lg bg-kb-gain px-3 py-1.5 text-xs font-semibold text-kb-bg hover:brightness-110 transition"
+                        >
+                          Marcar como Financiada
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             )}
@@ -1519,13 +1801,12 @@ function InicioView({
       <section className="grid gap-4 lg:grid-cols-2">
         <MiniCalendario
           trades={trades}
-          estrategias={estrategias}
-          accountId={accountId}
-          tieneCuentas={tieneCuentas}
           diaSeleccionado={diaParaRegistrar}
           onSeleccionarDia={onSeleccionarDiaParaRegistrar}
           onVerCompleto={onIrACalendario}
-          onTradeActualizado={onTradeActualizado}
+          onAbrirDia={onAbrirDia}
+          accountId={accountId}
+          tieneCuentas={tieneCuentas}
         />
 
         <section className="rounded-xl border border-kb-border bg-kb-surface">
@@ -1604,10 +1885,7 @@ function InicioView({
                     <div>
                       <p className="text-sm font-medium leading-tight">{cuentaDelRetiro?.name ?? "Cuenta eliminada"}</p>
                       <p className="text-[11px] text-kb-text-secondary">
-                        {new Date(r.withdrawal_date + "T00:00:00").toLocaleDateString("es-ES", {
-                          day: "2-digit",
-                          month: "short",
-                        })}
+                        {formatDateOnly(r.withdrawal_date)}
                       </p>
                     </div>
                     <span className="font-mono text-sm font-semibold text-kb-gain">
@@ -1629,22 +1907,170 @@ function InicioView({
 // vista Calendario completa
 // =====================================================================
 
+// =====================================================================
+// VISTA DE PÁGINA COMPLETA para un día del calendario — reemplaza las
+// ventanas flotantes que antes se abrían al hacer clic en un día. Tiene
+// 3 variantes según lo que había ese día: elegir entre varias
+// operaciones, ver el detalle completo de una sola, o registrar una
+// nueva si el día estaba vacío.
+// =====================================================================
+
+type EstadoVistaDia =
+  | { tipo: "elegir"; dia: string; trades: Trade[] }
+  | { tipo: "detalle"; trade: Trade }
+  | { tipo: "nuevo"; dia: string };
+
+function VistaDiaCalendario({
+  vistaDia,
+  estrategias,
+  accountId,
+  tieneCuentas,
+  onVolver,
+  onElegirTrade,
+  onAgregarOtra,
+  onTradeCreado,
+  onTradeActualizado,
+}: {
+  vistaDia: EstadoVistaDia;
+  estrategias: Strategy[];
+  accountId: string | null;
+  tieneCuentas: boolean;
+  onVolver: () => void;
+  onElegirTrade: (trade: Trade) => void;
+  onAgregarOtra: (dia: string) => void;
+  onTradeCreado: () => void;
+  onTradeActualizado: () => void;
+}) {
+  if (vistaDia.tipo === "detalle") {
+    const diaDeEsteTrade = fechaKeyLocal(vistaDia.trade.entry_time);
+    return (
+      <div className="max-w-lg space-y-3">
+        <ModalDetalleTrade
+          trade={vistaDia.trade}
+          estrategias={estrategias}
+          variante="pagina"
+          onClose={onVolver}
+          onActualizado={onTradeActualizado}
+          onEliminado={onTradeActualizado}
+        />
+        <button
+          onClick={() => onAgregarOtra(diaDeEsteTrade)}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-kb-accent/40 px-4 py-3 text-sm font-medium text-kb-accent hover:bg-kb-accent/10 transition-colors"
+        >
+          + Agregar otra operación este día
+        </button>
+      </div>
+    );
+  }
+
+  if (vistaDia.tipo === "nuevo") {
+    const fechaLegible = new Date(vistaDia.dia + "T00:00:00").toLocaleDateString("es-ES", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    return (
+      <div className="max-w-2xl space-y-4">
+        <button
+          onClick={onVolver}
+          className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+        >
+          ← Volver al calendario
+        </button>
+        <div>
+          <h1 className="font-display text-xl font-bold text-kb-text">Registrar operación</h1>
+          <p className="text-sm text-kb-text-secondary">{fechaLegible}</p>
+        </div>
+        <FormularioTrade
+          accountId={accountId}
+          tieneCuentas={tieneCuentas}
+          diaParaRegistrar={vistaDia.dia}
+          estrategiasDisponibles={estrategias}
+          onTradeCreado={onTradeCreado}
+        />
+      </div>
+    );
+  }
+
+  // vistaDia.tipo === "elegir"
+  const fechaLegible = new Date(vistaDia.dia + "T00:00:00").toLocaleDateString("es-ES", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  return (
+    <div className="max-w-2xl space-y-4">
+      <button
+        onClick={onVolver}
+        className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+      >
+        ← Volver al calendario
+      </button>
+      <div>
+        <h1 className="font-display text-xl font-bold text-kb-text">Operaciones de este día</h1>
+        <p className="text-sm text-kb-text-secondary">
+          {fechaLegible} · {vistaDia.trades.length} operación{vistaDia.trades.length === 1 ? "" : "es"}{" "}
+          registrada{vistaDia.trades.length === 1 ? "" : "s"} — elegí cuál querés ver
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {vistaDia.trades.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => onElegirTrade(t)}
+            className="flex w-full items-center justify-between rounded-xl border border-kb-border bg-kb-surface px-4 py-3.5 text-left hover:border-kb-accent transition-colors"
+          >
+            <span className="flex items-center gap-3">
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                  t.side === "long" ? "bg-kb-gain/10 text-kb-gain" : "bg-kb-loss/10 text-kb-loss"
+                }`}
+              >
+                {t.side === "long" ? "Long" : "Short"}
+              </span>
+              <span className="font-mono text-base font-semibold text-kb-text">{t.symbol}</span>
+              {t.status === "open" && (
+                <span className="rounded-full bg-kb-accent/10 px-2 py-0.5 text-xs font-medium text-kb-accent">
+                  🕐 Pendiente
+                </span>
+              )}
+            </span>
+            <span
+              className={`font-mono text-base font-semibold ${
+                (t.realized_pnl ?? 0) >= 0 ? "text-kb-gain" : "text-kb-loss"
+              }`}
+            >
+              {t.realized_pnl === null ? "—" : formatCurrency(t.realized_pnl)}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <button
+        onClick={() => onAgregarOtra(vistaDia.dia)}
+        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-kb-accent/40 px-4 py-3.5 text-sm font-medium text-kb-accent hover:bg-kb-accent/10 transition-colors"
+      >
+        + Agregar otra operación
+      </button>
+    </div>
+  );
+}
+
 function MiniCalendario({
   trades,
-  estrategias,
   diaSeleccionado,
   onSeleccionarDia,
   onVerCompleto,
-  onTradeActualizado,
+  onAbrirDia,
   accountId,
   tieneCuentas,
 }: {
   trades: Trade[];
-  estrategias: Strategy[];
   diaSeleccionado: string;
   onSeleccionarDia: (clave: string) => void;
   onVerCompleto: () => void;
-  onTradeActualizado: () => void;
+  onAbrirDia: (clave: string, tradesDelDia: Trade[]) => void;
   accountId: string | null;
   tieneCuentas: boolean;
 }) {
@@ -1652,16 +2078,16 @@ function MiniCalendario({
     const hoy = new Date();
     return { year: hoy.getFullYear(), month: hoy.getMonth() };
   });
-  const [diaConVarios, setDiaConVarios] = useState<{ clave: string; trades: Trade[] } | null>(null);
-  const [tradeSeleccionado, setTradeSeleccionado] = useState<Trade | null>(null);
-  const [diaParaCrear, setDiaParaCrear] = useState<string | null>(null);
 
+  // BUGFIX: se usa fechaKeyLocal() en vez de entry_time.slice(0, 10). Ver
+  // el comentario de esa función más arriba — evita que operaciones
+  // cargadas de noche aparezcan en el día siguiente por la conversión a UTC.
   const resumenPorDia = useMemo(() => {
     const mapa = new Map<string, number>();
     trades
       .filter((t) => t.status === "closed" && t.realized_pnl !== null)
       .forEach((t) => {
-        const clave = t.entry_time.slice(0, 10);
+        const clave = fechaKeyLocal(t.entry_time);
         mapa.set(clave, (mapa.get(clave) ?? 0) + (t.realized_pnl ?? 0));
       });
     return mapa;
@@ -1669,7 +2095,7 @@ function MiniCalendario({
 
   const diasConPendiente = useMemo(() => {
     const set = new Set<string>();
-    trades.filter((t) => t.status === "open").forEach((t) => set.add(t.entry_time.slice(0, 10)));
+    trades.filter((t) => t.status === "open").forEach((t) => set.add(fechaKeyLocal(t.entry_time)));
     return set;
   }, [trades]);
 
@@ -1699,13 +2125,9 @@ function MiniCalendario({
   function manejarClickDia(clave: string) {
     // Incluye tanto operaciones cerradas como pendientes de ese día, para
     // poder finalizar una pendiente con un clic desde el calendario.
-    const tradesDelDia = trades.filter((t) => t.entry_time.slice(0, 10) === clave);
-    if (tradesDelDia.length === 0) {
-      onSeleccionarDia(clave);
-      setDiaParaCrear(clave);
-    } else {
-      setDiaConVarios({ clave, trades: tradesDelDia });
-    }
+    const tradesDelDia = trades.filter((t) => fechaKeyLocal(t.entry_time) === clave);
+    onSeleccionarDia(clave);
+    onAbrirDia(clave, tradesDelDia);
   }
 
   return (
@@ -1768,119 +2190,6 @@ function MiniCalendario({
           );
         })}
       </div>
-
-      {diaConVarios && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-          <div className="w-full max-w-sm rounded-2xl border border-kb-border bg-kb-surface p-6 shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="font-display text-lg font-bold">
-                {new Date(diaConVarios.clave + "T00:00:00").toLocaleDateString("es-ES", {
-                  day: "numeric",
-                  month: "long",
-                })}
-              </h3>
-              <button
-                onClick={() => setDiaConVarios(null)}
-                className="text-kb-text-muted hover:text-kb-text transition"
-                aria-label="Cerrar"
-              >
-                ✕
-              </button>
-            </div>
-            <p className="mb-3 text-xs text-kb-text-secondary">
-              Este día tenés {diaConVarios.trades.length} operación{diaConVarios.trades.length === 1 ? "" : "es"} registrada{diaConVarios.trades.length === 1 ? "" : "s"}.
-            </p>
-            <div className="space-y-2">
-              {diaConVarios.trades.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => {
-                    setTradeSeleccionado(t);
-                    setDiaConVarios(null);
-                  }}
-                  className="flex w-full items-center justify-between rounded-lg border border-kb-border-soft bg-kb-bg px-3 py-2.5 text-left hover:border-kb-accent transition-colors"
-                >
-                  <span className="flex items-center gap-2">
-                    <span
-                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                        t.side === "long" ? "bg-kb-gain/10 text-kb-gain" : "bg-kb-loss/10 text-kb-loss"
-                      }`}
-                    >
-                      {t.side === "long" ? "Long" : "Short"}
-                    </span>
-                    <span className="font-mono text-sm font-semibold">{t.symbol}</span>
-                  </span>
-                  <span
-                    className={`font-mono text-sm font-semibold ${
-                      (t.realized_pnl ?? 0) >= 0 ? "text-kb-gain" : "text-kb-loss"
-                    }`}
-                  >
-                    {t.realized_pnl === null ? "—" : formatCurrency(t.realized_pnl)}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => {
-                setDiaParaCrear(diaConVarios.clave);
-                setDiaConVarios(null);
-              }}
-              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-kb-accent/40 px-3 py-2.5 text-sm font-medium text-kb-accent hover:bg-kb-accent/10 transition-colors"
-            >
-              + Agregar otra operación
-            </button>
-          </div>
-        </div>
-      )}
-
-      {tradeSeleccionado && (
-        <ModalDetalleTrade
-          trade={tradeSeleccionado}
-          estrategias={estrategias}
-          onClose={() => setTradeSeleccionado(null)}
-          onActualizado={() => {
-            setTradeSeleccionado(null);
-            onTradeActualizado();
-          }}
-          onEliminado={() => {
-            setTradeSeleccionado(null);
-            onTradeActualizado();
-          }}
-        />
-      )}
-
-      {diaParaCrear && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8 overflow-y-auto">
-          <div className="w-full max-h-[85vh] max-w-2xl overflow-y-auto rounded-2xl border border-kb-border bg-kb-surface p-6 shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="font-display text-lg font-bold">
-                Registrar operación —{" "}
-                {new Date(diaParaCrear + "T00:00:00").toLocaleDateString("es-ES", {
-                  day: "numeric",
-                  month: "long",
-                })}
-              </h3>
-              <button
-                onClick={() => setDiaParaCrear(null)}
-                className="text-kb-text-muted hover:text-kb-text transition"
-                aria-label="Cerrar"
-              >
-                ✕
-              </button>
-            </div>
-            <FormularioTrade
-              accountId={accountId}
-              tieneCuentas={tieneCuentas}
-              diaParaRegistrar={diaParaCrear}
-              estrategiasDisponibles={estrategias}
-              onTradeCreado={() => {
-                setDiaParaCrear(null);
-                onTradeActualizado();
-              }}
-            />
-          </div>
-        </div>
-      )}
     </section>
   );
 }
@@ -1905,7 +2214,7 @@ function RoiResumenPanel({
   return (
     <section className="rounded-xl border border-kb-border bg-kb-surface p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-display text-sm font-semibold">ROI de Cuentas</h2>
+        <h2 className="font-display text-sm font-semibold">Rentabilidad</h2>
         <button onClick={onVerDetalle} className="text-xs font-medium text-kb-accent hover:underline">
           Ver detalle →
         </button>
@@ -2116,6 +2425,46 @@ const filtroSelectClass =
 // VISTA: ESTRATEGIAS
 // =====================================================================
 
+// =====================================================================
+// VISTA: ESTRATEGIAS — tarjetas por estrategia con stats (operaciones,
+// win rate, profit factor, neto) + su checklist de reglas — diseño
+// propio de KeboTrader (barra de acento + barra de aciertos), sin
+// copiar el layout de insignias/grilla de otras apps del rubro.
+// =====================================================================
+
+/** Paleta de acentos por estrategia, cíclica por índice: color de la barra superior y del punto de cada regla. */
+const PALETA_ESTRATEGIA = [
+  { barra: "bg-kb-accent", punto: "bg-kb-accent" },
+  { barra: "bg-purple-500", punto: "bg-purple-400" },
+  { barra: "bg-sky-500", punto: "bg-sky-400" },
+  { barra: "bg-amber-500", punto: "bg-amber-400" },
+  { barra: "bg-pink-500", punto: "bg-pink-400" },
+  { barra: "bg-teal-500", punto: "bg-teal-400" },
+];
+
+interface StatsEstrategia {
+  ops: number;
+  winRate: number;
+  profitFactor: number | null;
+  neto: number;
+}
+
+/** Calcula OPS / win rate / profit factor / P&L neto de una estrategia (o de "sin estrategia" si strategyId es null). */
+function calcularStatsEstrategia(trades: Trade[], strategyId: string | null): StatsEstrategia {
+  const cerrados = trades.filter(
+    (t) => t.status === "closed" && t.realized_pnl !== null && t.strategy_id === strategyId
+  );
+  const ops = cerrados.length;
+  const ganadores = cerrados.filter((t) => (t.realized_pnl ?? 0) > 0);
+  const perdedores = cerrados.filter((t) => (t.realized_pnl ?? 0) < 0);
+  const winRate = ops > 0 ? (ganadores.length / ops) * 100 : 0;
+  const gananciaTotal = ganadores.reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0);
+  const perdidaTotal = Math.abs(perdedores.reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0));
+  const profitFactor = perdidaTotal > 0 ? gananciaTotal / perdidaTotal : null;
+  const neto = cerrados.reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0);
+  return { ops, winRate, profitFactor, neto };
+}
+
 function EstrategiasView({
   trades,
   estrategias,
@@ -2125,176 +2474,334 @@ function EstrategiasView({
   estrategias: Strategy[];
   onCambio: () => void;
 }) {
-  const [nombreNueva, setNombreNueva] = useState("");
-  const [guardando, setGuardando] = useState(false);
+  const [mostrarModalNueva, setMostrarModalNueva] = useState(false);
 
-  async function crear(e: FormEvent) {
-    e.preventDefault();
-    const nombre = nombreNueva.trim();
-    if (!nombre) return;
-
-    const { data: userData } = await supabase.auth.getUser();
-    const userId = userData.user?.id;
-    if (!userId) return;
-
-    setGuardando(true);
-    await supabase.from("strategies").insert({ user_id: userId, name: nombre });
-    setGuardando(false);
-    setNombreNueva("");
-    onCambio();
-  }
-
-  return (
-    <div className="space-y-6">
-      <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
-        <h2 className="font-display text-lg font-semibold mb-3">Nueva estrategia</h2>
-        <form onSubmit={crear} className="flex gap-2">
-          <input
-            value={nombreNueva}
-            onChange={(e) => setNombreNueva(e.target.value)}
-            placeholder="Ej. Breakout, Soporte/Resistencia…"
-            className={inputClass}
-          />
-          <button
-            type="submit"
-            disabled={guardando}
-            className="shrink-0 rounded-lg bg-kb-accent px-4 text-sm font-medium text-kb-bg hover:brightness-110 transition disabled:opacity-60"
-          >
-            {guardando ? "Creando…" : "Crear"}
-          </button>
-        </form>
-      </section>
-
-      <GestionReglasEstrategias estrategias={estrategias} onCambio={onCambio} />
-
-      <ResumenPorEstrategia trades={trades} estrategias={estrategias} />
-    </div>
+  const statsSinEstrategia = useMemo(() => calcularStatsEstrategia(trades, null), [trades]);
+  const totalOps = useMemo(
+    () => estrategias.reduce((acc, e) => acc + calcularStatsEstrategia(trades, e.id).ops, 0),
+    [trades, estrategias]
   );
-}
-
-// =====================================================================
-// GESTIÓN DE REGLAS (CHECKLIST) POR ESTRATEGIA
-// =====================================================================
-
-function GestionReglasEstrategias({
-  estrategias,
-  onCambio,
-}: {
-  estrategias: Strategy[];
-  onCambio: () => void;
-}) {
-  const [expandidaId, setExpandidaId] = useState<string | null>(null);
 
   return (
-    <section className="rounded-xl border border-kb-border bg-kb-surface">
-      <div className="border-b border-kb-border-soft px-5 py-4">
-        <h2 className="font-display text-lg font-semibold">Reglas por estrategia</h2>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="font-display text-xl font-bold text-kb-text">Tus estrategias</h1>
+          <p className="mt-0.5 text-sm text-kb-text-secondary">
+            {estrategias.length === 0
+              ? "Todavía no armaste ningún setup."
+              : `${estrategias.length} setup${estrategias.length === 1 ? "" : "s"} · ${totalOps} operación${totalOps === 1 ? "" : "es"} clasificada${totalOps === 1 ? "" : "s"}`}
+          </p>
+        </div>
+        <button
+          onClick={() => setMostrarModalNueva(true)}
+          className="rounded-lg bg-kb-accent px-4 py-2.5 text-sm font-semibold text-kb-bg hover:brightness-110 transition"
+        >
+          + Nueva estrategia
+        </button>
+      </div>
+
+      <div className="flex items-start gap-2.5 rounded-xl border border-kb-border-soft bg-kb-surface/60 px-4 py-3">
+        <span className="mt-0.5 text-base">🧭</span>
         <p className="text-xs text-kb-text-secondary">
-          Definí un checklist para cada estrategia y validalo antes de entrar a una operación.
+          Cada estrategia es un patrón que repetís una y otra vez — separarlas te deja ver{" "}
+          <span className="font-medium text-kb-text">cuál setup realmente te da de comer</span> y
+          cuál te conviene dejar de operar. Asigná una estrategia a cada trade desde el
+          formulario de registro para que las tarjetas de abajo se llenen solas.
         </p>
       </div>
 
       {estrategias.length === 0 ? (
-        <p className="px-5 py-8 text-center text-sm text-kb-text-secondary">
-          Creá una estrategia arriba para poder agregarle reglas.
-        </p>
+        <section className="rounded-xl border border-dashed border-kb-accent/40 bg-kb-accent/5 p-8 text-center">
+          <p className="text-sm text-kb-text-secondary">
+            Todavía no creaste ninguna estrategia. Definí tu primer setup con el botón de arriba.
+          </p>
+        </section>
       ) : (
-        <div className="divide-y divide-kb-border-soft">
-          {estrategias.map((est) => (
-            <FilaEstrategiaConReglas
+        <div className="grid gap-4 lg:grid-cols-2">
+          {estrategias.map((est, i) => (
+            <TarjetaEstrategia
               key={est.id}
               estrategia={est}
-              expandida={expandidaId === est.id}
-              onToggle={() => setExpandidaId(expandidaId === est.id ? null : est.id)}
+              stats={calcularStatsEstrategia(trades, est.id)}
+              color={PALETA_ESTRATEGIA[i % PALETA_ESTRATEGIA.length]}
               onCambio={onCambio}
             />
           ))}
         </div>
       )}
-    </section>
+
+      {statsSinEstrategia.ops > 0 && (
+        <section className="rounded-xl border border-kb-border-soft bg-kb-surface/60 p-4">
+          <p className="text-xs text-kb-text-secondary">
+            <span className="font-semibold text-kb-text">{statsSinEstrategia.ops}</span> operación
+            {statsSinEstrategia.ops === 1 ? "" : "es"} sin estrategia asignada · P&amp;L neto{" "}
+            <span className={statsSinEstrategia.neto >= 0 ? "text-kb-gain" : "text-kb-loss"}>
+              {formatCurrency(statsSinEstrategia.neto)}
+            </span>
+          </p>
+        </section>
+      )}
+
+      {mostrarModalNueva && (
+        <ModalNuevaEstrategia
+          onClose={() => setMostrarModalNueva(false)}
+          onCreada={() => {
+            setMostrarModalNueva(false);
+            onCambio();
+          }}
+        />
+      )}
+    </div>
   );
 }
 
-function FilaEstrategiaConReglas({
+function ModalNuevaEstrategia({
+  onClose,
+  onCreada,
+}: {
+  onClose: () => void;
+  onCreada: () => void;
+}) {
+  const [nombre, setNombre] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    const nombreLimpio = nombre.trim();
+    if (!nombreLimpio) return;
+
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) {
+      setError("Tu sesión expiró. Vuelve a iniciar sesión.");
+      return;
+    }
+
+    setGuardando(true);
+    const { error: insertError } = await supabase
+      .from("strategies")
+      .insert({ user_id: userId, name: nombreLimpio });
+    setGuardando(false);
+
+    if (insertError) {
+      setError("No se pudo crear la estrategia. Intenta de nuevo.");
+      return;
+    }
+    onCreada();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+      <div className="w-full max-w-sm rounded-2xl border border-kb-border bg-kb-surface p-7 shadow-2xl">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="font-display text-xl font-bold">Nueva estrategia</h2>
+          <button onClick={onClose} className="text-kb-text-muted hover:text-kb-text transition" aria-label="Cerrar">
+            ✕
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Campo etiqueta="Nombre" ayuda="Ej. Breakout Apertura, Reversión Media…">
+            <input
+              autoFocus
+              required
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              placeholder="Ej. Breakout Apertura"
+              className={inputClass}
+            />
+          </Campo>
+          {error && (
+            <p className="rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">{error}</p>
+          )}
+          <button
+            type="submit"
+            disabled={guardando}
+            className="w-full rounded-lg bg-kb-accent py-2.5 text-sm font-semibold text-kb-bg hover:brightness-110 transition disabled:opacity-60"
+          >
+            {guardando ? "Creando…" : "Crear estrategia"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function TarjetaEstrategia({
   estrategia,
-  expandida,
-  onToggle,
+  stats,
+  color,
   onCambio,
 }: {
   estrategia: Strategy;
-  expandida: boolean;
-  onToggle: () => void;
+  stats: StatsEstrategia;
+  color: { barra: string; punto: string };
   onCambio: () => void;
 }) {
+  const reglas = estrategia.rules ?? [];
+  const [editandoNombre, setEditandoNombre] = useState(false);
+  const [nombreEditado, setNombreEditado] = useState(estrategia.name);
   const [nuevaRegla, setNuevaRegla] = useState("");
+  const [mostrarFormRegla, setMostrarFormRegla] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [confirmandoEliminar, setConfirmandoEliminar] = useState(false);
+
+  async function guardarNombre() {
+    const nombreLimpio = nombreEditado.trim();
+    if (!nombreLimpio || nombreLimpio === estrategia.name) {
+      setEditandoNombre(false);
+      setNombreEditado(estrategia.name);
+      return;
+    }
+    await supabase.from("strategies").update({ name: nombreLimpio }).eq("id", estrategia.id);
+    setEditandoNombre(false);
+    onCambio();
+  }
 
   async function agregarRegla(e: FormEvent) {
     e.preventDefault();
     const texto = nuevaRegla.trim();
     if (!texto) return;
-
     setGuardando(true);
     await supabase
       .from("strategies")
-      .update({ rules: [...estrategia.rules, texto] })
+      .update({ rules: [...reglas, texto] })
       .eq("id", estrategia.id);
     setGuardando(false);
     setNuevaRegla("");
+    setMostrarFormRegla(false);
     onCambio();
   }
 
   async function eliminarRegla(indice: number) {
-    const nuevasReglas = estrategia.rules.filter((_, i) => i !== indice);
+    const nuevasReglas = reglas.filter((_, i) => i !== indice);
     await supabase.from("strategies").update({ rules: nuevasReglas }).eq("id", estrategia.id);
     onCambio();
   }
 
+  async function eliminarEstrategia() {
+    // No borramos los trades: solo desvinculamos la estrategia de ellos
+    // (quedan como "Sin estrategia"), y después borramos la estrategia.
+    await supabase.from("trades").update({ strategy_id: null }).eq("strategy_id", estrategia.id);
+    await supabase.from("strategies").delete().eq("id", estrategia.id);
+    onCambio();
+  }
+
   return (
-    <div>
-      <button
-        onClick={onToggle}
-        className="flex w-full items-center justify-between px-5 py-3.5 text-left hover:bg-kb-bg/40 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-sm">{estrategia.name}</span>
-          <span className="rounded-full bg-kb-border px-2 py-0.5 text-[11px] text-kb-text-secondary">
-            {estrategia.rules.length} regla{estrategia.rules.length === 1 ? "" : "s"}
-          </span>
-        </div>
-        <span className={`text-kb-text-muted transition-transform ${expandida ? "rotate-180" : ""}`}>⌄</span>
-      </button>
+    <section className="overflow-hidden rounded-xl border border-kb-border bg-kb-surface">
+      <div className={`h-1 w-full ${color.barra}`} />
 
-      {expandida && (
-        <div className="px-5 pb-4">
-          {estrategia.rules.length === 0 ? (
-            <p className="mb-3 text-xs text-kb-text-secondary">
-              Todavía no tiene reglas. Agregá la primera abajo.
-            </p>
+      <div className="flex items-start justify-between gap-3 px-5 pt-4">
+        <div className="min-w-0">
+          {editandoNombre ? (
+            <input
+              autoFocus
+              value={nombreEditado}
+              onChange={(e) => setNombreEditado(e.target.value)}
+              onBlur={guardarNombre}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") guardarNombre();
+                if (e.key === "Escape") {
+                  setEditandoNombre(false);
+                  setNombreEditado(estrategia.name);
+                }
+              }}
+              className="rounded-md border border-kb-accent bg-kb-bg px-2 py-1 text-base font-semibold text-kb-text outline-none"
+            />
           ) : (
-            <ul className="mb-3 space-y-1.5">
-              {estrategia.rules.map((regla, i) => (
-                <li
-                  key={i}
-                  className="flex items-center justify-between rounded-lg border border-kb-border-soft bg-kb-bg px-3 py-2 text-sm"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="text-kb-accent">☑</span>
-                    {regla}
-                  </span>
-                  <button
-                    onClick={() => eliminarRegla(i)}
-                    className="text-xs text-kb-text-muted hover:text-kb-loss transition-colors"
-                  >
-                    ✕
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <h3 className="font-display text-base font-semibold text-kb-text">{estrategia.name}</h3>
           )}
+          <p className="mt-0.5 text-xs text-kb-text-muted">
+            {reglas.length} regla{reglas.length === 1 ? "" : "s"} de checklist
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            onClick={() => setEditandoNombre(true)}
+            className="rounded-lg border border-kb-border p-1.5 text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+            aria-label="Renombrar estrategia"
+            title="Renombrar"
+          >
+            ✎
+          </button>
+          <button
+            onClick={() => setConfirmandoEliminar(true)}
+            className="rounded-lg border border-kb-border p-1.5 text-kb-text-secondary hover:border-kb-loss hover:text-kb-loss transition-colors"
+            aria-label="Eliminar estrategia"
+            title="Eliminar"
+          >
+            🗑
+          </button>
+        </div>
+      </div>
 
+      <div className="px-5 pb-4 pt-3">
+        {stats.ops === 0 ? (
+          <p className="text-xs text-kb-text-muted">Todavía sin operaciones cerradas asignadas.</p>
+        ) : (
+          <>
+            <div className="flex items-end justify-between">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-kb-text-secondary">P&amp;L de este setup</p>
+                <p
+                  className={`font-mono text-xl font-bold leading-tight ${
+                    stats.neto >= 0 ? "text-kb-gain" : "text-kb-loss"
+                  }`}
+                >
+                  {stats.neto >= 0 ? "+" : ""}
+                  {formatCurrency(stats.neto)}
+                </p>
+              </div>
+              <div className="text-right text-[11px] text-kb-text-secondary">
+                <p>
+                  {stats.ops} op{stats.ops === 1 ? "" : "s"} ·{" "}
+                  <span className={stats.winRate >= 50 ? "text-kb-gain" : "text-kb-loss"}>
+                    {stats.winRate.toFixed(0)}% acierto
+                  </span>
+                </p>
+                <p>PF {stats.profitFactor !== null ? stats.profitFactor.toFixed(2) : "—"}</p>
+              </div>
+            </div>
+            <div className="mt-2.5 flex h-1.5 w-full overflow-hidden rounded-full bg-kb-border">
+              <div className="h-full bg-kb-gain" style={{ width: `${stats.winRate}%` }} />
+              <div className="h-full bg-kb-loss" style={{ width: `${100 - stats.winRate}%` }} />
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="border-t border-kb-border-soft p-4">
+        {reglas.length === 0 ? (
+          <p className="mb-3 text-xs text-kb-text-secondary">
+            Todavía no tiene reglas. Agregá la primera abajo.
+          </p>
+        ) : (
+          <ul className="mb-3 space-y-1.5">
+            {reglas.map((regla, i) => (
+              <li
+                key={i}
+                className="group flex items-center justify-between rounded-lg border border-kb-border-soft bg-kb-bg px-3 py-2 text-sm"
+              >
+                <span className="flex items-center gap-2">
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${color.punto}`} />
+                  <span className="text-kb-text">{regla}</span>
+                </span>
+                <button
+                  onClick={() => eliminarRegla(i)}
+                  className="text-xs text-kb-text-muted opacity-0 hover:text-kb-loss group-hover:opacity-100 transition-opacity"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {mostrarFormRegla ? (
           <form onSubmit={agregarRegla} className="flex gap-2">
             <input
+              autoFocus
               value={nuevaRegla}
               onChange={(e) => setNuevaRegla(e.target.value)}
               placeholder="Ej. ¿Hay confirmación de volumen?"
@@ -2303,24 +2810,118 @@ function FilaEstrategiaConReglas({
             <button
               type="submit"
               disabled={guardando}
-              className="shrink-0 rounded-lg border border-kb-accent/40 px-3 text-sm font-medium text-kb-accent hover:bg-kb-accent/10 transition-colors disabled:opacity-60"
+              className="shrink-0 rounded-lg bg-kb-accent px-3 text-sm font-medium text-kb-bg hover:brightness-110 transition disabled:opacity-60"
             >
-              + Agregar
+              Agregar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMostrarFormRegla(false);
+                setNuevaRegla("");
+              }}
+              className="shrink-0 rounded-lg border border-kb-border px-3 text-sm text-kb-text-secondary hover:text-kb-text transition-colors"
+            >
+              ✕
             </button>
           </form>
+        ) : (
+          <button
+            onClick={() => setMostrarFormRegla(true)}
+            className="text-xs font-medium text-kb-accent hover:underline"
+          >
+            + Añadir regla
+          </button>
+        )}
+      </div>
+
+      {confirmandoEliminar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-sm rounded-2xl border border-kb-border bg-kb-surface p-6 shadow-2xl">
+            <h3 className="font-display text-lg font-bold text-kb-text">
+              ¿Eliminar &quot;{estrategia.name}&quot;?
+            </h3>
+            <p className="mt-2 text-sm text-kb-text-secondary">
+              Sus reglas se pierden. Las {stats.ops} operación{stats.ops === 1 ? "" : "es"} que ya
+              tenía asignada no se borran — quedan como &quot;Sin estrategia&quot;.
+            </p>
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => setConfirmandoEliminar(false)}
+                className="flex-1 rounded-lg border border-kb-border py-2 text-sm font-medium text-kb-text-secondary hover:text-kb-text transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={eliminarEstrategia}
+                className="flex-1 rounded-lg bg-kb-loss py-2 text-sm font-semibold text-white hover:brightness-110 transition"
+              >
+                Sí, eliminar
+              </button>
+            </div>
+          </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }
+
+// =====================================================================
 // VISTA: REPORTES — insights automáticos a partir de los datos que ya
 // se registran (sesión, día, emoción, error, rachas y drawdown)
 // =====================================================================
 
-const DIAS_SEMANA_LARGO = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+/** Formatea minutos en un texto legible corto: "45min", "1h 27min", "2d 3h". */
+function formatDuracionMin(minutos: number): string {
+  if (minutos < 60) return `${Math.round(minutos)}min`;
+  const horas = Math.floor(minutos / 60);
+  const minRestantes = Math.round(minutos % 60);
+  if (horas < 24) return minRestantes > 0 ? `${horas}h ${minRestantes}min` : `${horas}h`;
+  const dias = Math.floor(horas / 24);
+  const horasRestantes = horas % 24;
+  return horasRestantes > 0 ? `${dias}d ${horasRestantes}h` : `${dias}d`;
+}
 
-function ReportesView({ trades }: { trades: Trade[] }) {
-  const cerrados = useMemo(
+/** Lista de rachas (ganadoras y perdedoras) del historial, para poder sacar tanto la máxima como el promedio. */
+function calcularListaDeRachas(cerrados: Trade[]): { ganadoras: number[]; perdedoras: number[] } {
+  const ganadoras: number[] = [];
+  const perdedoras: number[] = [];
+  let actual = 0;
+  let tipoActual: "g" | "p" | null = null;
+
+  cerrados.forEach((t) => {
+    const tipo = (t.realized_pnl ?? 0) >= 0 ? "g" : "p";
+    if (tipo === tipoActual) {
+      actual++;
+    } else {
+      if (tipoActual === "g") ganadoras.push(actual);
+      if (tipoActual === "p") perdedoras.push(actual);
+      tipoActual = tipo;
+      actual = 1;
+    }
+  });
+  if (tipoActual === "g") ganadoras.push(actual);
+  if (tipoActual === "p") perdedoras.push(actual);
+
+  return { ganadoras, perdedoras };
+}
+
+function promedio(valores: number[]): number {
+  return valores.length > 0 ? valores.reduce((a, v) => a + v, 0) / valores.length : 0;
+}
+
+const RANGOS_TIEMPO = [
+  { id: "7d", etiqueta: "7D", dias: 7 },
+  { id: "1m", etiqueta: "1M", dias: 30 },
+  { id: "3m", etiqueta: "3M", dias: 90 },
+  { id: "todo", etiqueta: "Todo", dias: null as number | null },
+] as const;
+type RangoTiempoId = (typeof RANGOS_TIEMPO)[number]["id"];
+
+function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: Strategy[] }) {
+  const [rango, setRango] = useState<RangoTiempoId>("todo");
+
+  const todosCerrados = useMemo(
     () =>
       trades
         .filter((t) => t.status === "closed" && t.realized_pnl !== null)
@@ -2328,53 +2929,111 @@ function ReportesView({ trades }: { trades: Trade[] }) {
     [trades]
   );
 
-  // ---- Mejor / peor día ----
-  const porDia = useMemo(() => {
-    const mapa = new Map<string, number>();
-    cerrados.forEach((t) => {
-      const clave = t.entry_time.slice(0, 10);
-      mapa.set(clave, (mapa.get(clave) ?? 0) + (t.realized_pnl ?? 0));
-    });
-    const entradas = Array.from(mapa.entries());
-    const mejor = entradas.reduce((a, b) => (b[1] > a[1] ? b : a), entradas[0] ?? null);
-    const peor = entradas.reduce((a, b) => (b[1] < a[1] ? b : a), entradas[0] ?? null);
-    return { mejor, peor };
-  }, [cerrados]);
+  // El rango de tiempo (7D/1M/3M/Todo) solo recorta las secciones de
+  // desempeño reciente — el panel de "Rendimiento mensual" más abajo
+  // siempre usa el historial completo, porque su gracia es mostrar
+  // patrones a lo largo del tiempo.
+  const cerrados = useMemo(() => {
+    const config = RANGOS_TIEMPO.find((r) => r.id === rango);
+    if (!config || config.dias === null) return todosCerrados;
+    const limite = Date.now() - config.dias * 24 * 60 * 60 * 1000;
+    return todosCerrados.filter((t) => new Date(t.entry_time).getTime() >= limite);
+  }, [todosCerrados, rango]);
 
-  // ---- Racha más larga (ganadora y perdedora) ----
-  const rachas = useMemo(() => {
-    let maxGanadora = 0;
-    let maxPerdedora = 0;
-    let actual = 0;
-    let tipoActual: "g" | "p" | null = null;
+  const ganadores = useMemo(() => cerrados.filter((t) => (t.realized_pnl ?? 0) > 0), [cerrados]);
+  const perdedores = useMemo(() => cerrados.filter((t) => (t.realized_pnl ?? 0) < 0), [cerrados]);
 
-    cerrados.forEach((t) => {
-      const esGanadora = (t.realized_pnl ?? 0) >= 0;
-      const tipo = esGanadora ? "g" : "p";
-      if (tipo === tipoActual) {
-        actual++;
-      } else {
-        tipoActual = tipo;
-        actual = 1;
-      }
-      if (tipo === "g") maxGanadora = Math.max(maxGanadora, actual);
-      else maxPerdedora = Math.max(maxPerdedora, actual);
-    });
+  const resultadoNeto = useMemo(() => cerrados.reduce((a, t) => a + (t.realized_pnl ?? 0), 0), [cerrados]);
+  const winRate = cerrados.length > 0 ? (ganadores.length / cerrados.length) * 100 : 0;
 
-    return { maxGanadora, maxPerdedora };
-  }, [cerrados]);
+  const gananciaTotal = useMemo(() => ganadores.reduce((a, t) => a + (t.realized_pnl ?? 0), 0), [ganadores]);
+  const perdidaTotalAbs = useMemo(
+    () => Math.abs(perdedores.reduce((a, t) => a + (t.realized_pnl ?? 0), 0)),
+    [perdedores]
+  );
+  const profitFactor = perdidaTotalAbs > 0 ? gananciaTotal / perdidaTotalAbs : null;
 
-  // ---- Drawdown máximo (sobre la curva de equity acumulada) ----
-  const drawdownMaximo = useMemo(() => {
+  const expectancy = useMemo(() => {
+    if (cerrados.length === 0) return null;
+    const wr = ganadores.length / cerrados.length;
+    const lr = perdedores.length / cerrados.length;
+    const avgWin = ganadores.length > 0 ? gananciaTotal / ganadores.length : 0;
+    const avgLoss = perdedores.length > 0 ? perdidaTotalAbs / perdedores.length : 0;
+    return wr * avgWin - lr * avgLoss;
+  }, [cerrados, ganadores, perdedores, gananciaTotal, perdidaTotalAbs]);
+
+  const drawdown = useMemo(() => {
     let acumulado = 0;
     let pico = 0;
-    let peorCaida = 0;
+    let peorCaidaMonto = 0;
+    let peorCaidaPorcentaje = 0;
     cerrados.forEach((t) => {
       acumulado += t.realized_pnl ?? 0;
       pico = Math.max(pico, acumulado);
-      peorCaida = Math.max(peorCaida, pico - acumulado);
+      const caida = pico - acumulado;
+      peorCaidaMonto = Math.max(peorCaidaMonto, caida);
+      if (pico > 0) peorCaidaPorcentaje = Math.max(peorCaidaPorcentaje, (caida / pico) * 100);
     });
-    return peorCaida;
+    return { monto: peorCaidaMonto, porcentaje: peorCaidaPorcentaje };
+  }, [cerrados]);
+
+  // ---- Duración promedio de ganadoras vs perdedoras ----
+  const duracionProm = useMemo(() => {
+    const minutosDe = (t: Trade) =>
+      t.exit_time ? (new Date(t.exit_time).getTime() - new Date(t.entry_time).getTime()) / 60000 : null;
+    const durGanadoras = ganadores.map(minutosDe).filter((m): m is number => m !== null && m >= 0);
+    const durPerdedoras = perdedores.map(minutosDe).filter((m): m is number => m !== null && m >= 0);
+    return { ganadoras: promedio(durGanadoras), perdedoras: promedio(durPerdedoras) };
+  }, [ganadores, perdedores]);
+
+  // ---- Rachas: máxima y promedio, separadas por tipo ----
+  const rachas = useMemo(() => calcularListaDeRachas(cerrados), [cerrados]);
+  const rachaMaxGanadora = rachas.ganadoras.length > 0 ? Math.max(...rachas.ganadoras) : 0;
+  const rachaMaxPerdedora = rachas.perdedoras.length > 0 ? Math.max(...rachas.perdedoras) : 0;
+  const rachaPromGanadora = promedio(rachas.ganadoras);
+  const rachaPromPerdedora = promedio(rachas.perdedoras);
+
+  // ---- Curva de equity del período filtrado ----
+  const puntosEquity = useMemo(() => {
+    let acumulado = 0;
+    return cerrados.map((t) => {
+      acumulado += t.realized_pnl ?? 0;
+      return { fecha: t.entry_time, acumulado };
+    });
+  }, [cerrados]);
+
+  // ---- "¿Dónde está tu edge?": por estrategia y por activo ----
+  const porEstrategia = useMemo(() => {
+    const grupos = new Map<string, { pnl: number; total: number; ganadores: number }>();
+    cerrados.forEach((t) => {
+      const clave = t.strategy_id ?? "sin_estrategia";
+      const actual = grupos.get(clave) ?? { pnl: 0, total: 0, ganadores: 0 };
+      actual.pnl += t.realized_pnl ?? 0;
+      actual.total += 1;
+      if ((t.realized_pnl ?? 0) > 0) actual.ganadores += 1;
+      grupos.set(clave, actual);
+    });
+    return Array.from(grupos.entries())
+      .map(([clave, d]) => ({
+        etiqueta: clave === "sin_estrategia" ? "Sin estrategia" : estrategias.find((e) => e.id === clave)?.name ?? "—",
+        ...d,
+        winRate: (d.ganadores / d.total) * 100,
+      }))
+      .sort((a, b) => b.pnl - a.pnl);
+  }, [cerrados, estrategias]);
+
+  const porActivo = useMemo(() => {
+    const grupos = new Map<string, { pnl: number; total: number; ganadores: number }>();
+    cerrados.forEach((t) => {
+      const actual = grupos.get(t.symbol) ?? { pnl: 0, total: 0, ganadores: 0 };
+      actual.pnl += t.realized_pnl ?? 0;
+      actual.total += 1;
+      if ((t.realized_pnl ?? 0) > 0) actual.ganadores += 1;
+      grupos.set(t.symbol, actual);
+    });
+    return Array.from(grupos.entries())
+      .map(([simbolo, d]) => ({ etiqueta: simbolo, ...d, winRate: (d.ganadores / d.total) * 100 }))
+      .sort((a, b) => b.pnl - a.pnl);
   }, [cerrados]);
 
   // ---- Rendimiento por sesión ----
@@ -2390,22 +3049,6 @@ function ReportesView({ trades }: { trades: Trade[] }) {
     });
     return Array.from(grupos.entries())
       .map(([sesion, d]) => ({ etiqueta: SESSION_LABELS[sesion], ...d, winRate: (d.ganadores / d.total) * 100 }))
-      .sort((a, b) => b.pnl - a.pnl);
-  }, [cerrados]);
-
-  // ---- Rendimiento por día de la semana ----
-  const porDiaSemana = useMemo(() => {
-    const grupos = new Map<number, { pnl: number; total: number; ganadores: number }>();
-    cerrados.forEach((t) => {
-      const dia = new Date(t.entry_time).getDay();
-      const actual = grupos.get(dia) ?? { pnl: 0, total: 0, ganadores: 0 };
-      actual.pnl += t.realized_pnl ?? 0;
-      actual.total += 1;
-      if ((t.realized_pnl ?? 0) > 0) actual.ganadores += 1;
-      grupos.set(dia, actual);
-    });
-    return Array.from(grupos.entries())
-      .map(([dia, d]) => ({ etiqueta: DIAS_SEMANA_LARGO[dia], ...d, winRate: (d.ganadores / d.total) * 100 }))
       .sort((a, b) => b.pnl - a.pnl);
   }, [cerrados]);
 
@@ -2429,7 +3072,7 @@ function ReportesView({ trades }: { trades: Trade[] }) {
       .sort((a, b) => b.pnl - a.pnl);
   }, [cerrados]);
 
-  // ---- Error más frecuente y su costo ----
+  // ---- Errores más frecuentes ----
   const porError = useMemo(() => {
     const grupos = new Map<MistakeType, { pnl: number; total: number }>();
     cerrados.forEach((t) => {
@@ -2444,11 +3087,38 @@ function ReportesView({ trades }: { trades: Trade[] }) {
       .sort((a, b) => b.total - a.total);
   }, [cerrados]);
 
-  if (cerrados.length === 0) {
+  // ---- Rendimiento mensual por año (siempre con el historial completo) ----
+  const rendimientoMensual = useMemo(() => {
+    const mapa = new Map<number, number[]>(); // año -> [pnl x 12 meses]
+    todosCerrados.forEach((t) => {
+      const fecha = new Date(t.entry_time);
+      const año = fecha.getFullYear();
+      const mes = fecha.getMonth();
+      if (!mapa.has(año)) mapa.set(año, Array(12).fill(0));
+      mapa.get(año)![mes] += t.realized_pnl ?? 0;
+    });
+    return Array.from(mapa.entries()).sort((a, b) => b[0] - a[0]);
+  }, [todosCerrados]);
+
+  // ---- Frecuencia de operaciones ----
+  const frecuenciaPorDiaSemana = useMemo(() => {
+    const conteo = Array(7).fill(0);
+    todosCerrados.forEach((t) => conteo[new Date(t.entry_time).getDay()]++);
+    // Reordenamos para que arranque en lunes, como el resto del calendario.
+    return [1, 2, 3, 4, 5, 6, 0].map((i) => ({ etiqueta: DIAS_SEMANA[[1, 2, 3, 4, 5, 6, 0].indexOf(i)], valor: conteo[i] }));
+  }, [todosCerrados]);
+
+  const frecuenciaPorMes = useMemo(() => {
+    const conteo = Array(12).fill(0);
+    todosCerrados.forEach((t) => conteo[new Date(t.entry_time).getMonth()]++);
+    return MESES.map((m, i) => ({ etiqueta: m.slice(0, 3), valor: conteo[i] }));
+  }, [todosCerrados]);
+
+  if (todosCerrados.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-kb-border bg-kb-surface p-8 text-center">
         <p className="text-sm text-kb-text-secondary">
-          Cierra algunas operaciones para desbloquear tus reportes automáticos aquí.
+          Cierra algunas operaciones para desbloquear tus métricas automáticas aquí.
         </p>
       </div>
     );
@@ -2456,51 +3126,101 @@ function ReportesView({ trades }: { trades: Trade[] }) {
 
   return (
     <div className="space-y-6">
-      {/* ---------- Tarjetas resumen ---------- */}
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="font-display text-xl font-bold text-kb-text">Métricas</h1>
+          <p className="mt-0.5 text-sm text-kb-text-secondary">
+            {cerrados.length} operación{cerrados.length === 1 ? "" : "es"} en el período seleccionado
+          </p>
+        </div>
+        <div className="flex rounded-lg border border-kb-border-soft bg-kb-bg p-0.5">
+          {RANGOS_TIEMPO.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setRango(r.id)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                rango === r.id ? "bg-kb-gain text-kb-bg" : "text-kb-text-secondary hover:text-kb-text"
+              }`}
+            >
+              {r.etiqueta}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ---------- Fila de KPIs principales ---------- */}
+      <section className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <MetricCard
-          etiqueta="Mejor día"
-          valor={porDia.mejor ? formatCurrency(porDia.mejor[1]) : "—"}
-          tono={porDia.mejor ? (porDia.mejor[1] >= 0 ? "gain" : "loss") : undefined}
+          etiqueta="Resultado neto"
+          valor={formatCurrency(resultadoNeto)}
+          tono={resultadoNeto >= 0 ? "gain" : "loss"}
+        />
+        <MetricCard etiqueta="Win rate" valor={`${winRate.toFixed(1)}%`} tono={winRate >= 50 ? "gain" : "loss"} />
+        <MetricCard
+          etiqueta="Profit factor"
+          valor={profitFactor !== null ? profitFactor.toFixed(2) : "—"}
+          tono={profitFactor !== null ? (profitFactor >= 1 ? "gain" : "loss") : undefined}
         />
         <MetricCard
-          etiqueta="Peor día"
-          valor={porDia.peor ? formatCurrency(porDia.peor[1]) : "—"}
-          tono={porDia.peor ? (porDia.peor[1] >= 0 ? "gain" : "loss") : undefined}
-        />
-        <MetricCard
-          etiqueta="Racha ganadora más larga"
-          valor={`🔥 ${rachas.maxGanadora}`}
-          tono="gain"
+          etiqueta="Expectativa / trade"
+          valor={expectancy !== null ? formatCurrency(expectancy) : "—"}
+          tono={expectancy !== null ? (expectancy >= 0 ? "gain" : "loss") : undefined}
         />
         <MetricCard
           etiqueta="Drawdown máximo"
-          valor={formatCurrency(drawdownMaximo)}
-          tono={drawdownMaximo > 0 ? "loss" : undefined}
+          valor={formatCurrency(drawdown.monto)}
+          tono={drawdown.monto > 0 ? "loss" : undefined}
         />
       </section>
 
-      {/* ---------- Rendimiento por sesión ---------- */}
-      <ReporteBarras
-        titulo="Rendimiento por sesión"
-        subtitulo="¿En qué sesión de mercado rindes mejor?"
-        filas={porSesion}
-      />
+      {/* ---------- Curva de equity del período ---------- */}
+      <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-display text-base font-semibold">Curva de equity</h2>
+          <span className="text-xs text-kb-text-muted">
+            Caída máxima {formatCurrency(drawdown.monto)} ({drawdown.porcentaje.toFixed(1)}%)
+          </span>
+        </div>
+        <MiniCurvaEquity puntos={puntosEquity} />
+      </section>
 
-      {/* ---------- Rendimiento por día de la semana ---------- */}
-      <ReporteBarras
-        titulo="Rendimiento por día de la semana"
-        subtitulo="¿Hay algún día que te conviene evitar?"
-        filas={porDiaSemana}
-      />
+      {/* ---------- Ganadores vs perdedores ---------- */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-kb-gain/30 bg-kb-gain/5 p-5">
+          <p className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-kb-gain">
+            <span className="h-1.5 w-1.5 rounded-full bg-kb-gain" /> Ganadoras
+          </p>
+          <dl className="space-y-2.5 text-sm">
+            <div className="flex justify-between"><dt className="text-kb-text-secondary">Total</dt><dd className="font-mono font-semibold text-kb-text">{ganadores.length}</dd></div>
+            <div className="flex justify-between"><dt className="text-kb-text-secondary">Mayor ganancia</dt><dd className="font-mono font-semibold text-kb-gain">{ganadores.length > 0 ? formatCurrency(Math.max(...ganadores.map((t) => t.realized_pnl ?? 0))) : "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-kb-text-secondary">Promedio</dt><dd className="font-mono font-semibold text-kb-gain">{ganadores.length > 0 ? formatCurrency(gananciaTotal / ganadores.length) : "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-kb-text-secondary">Racha máx. / promedio</dt><dd className="font-mono font-semibold text-kb-text">{rachaMaxGanadora} / {rachaPromGanadora.toFixed(1)}</dd></div>
+            <div className="flex justify-between"><dt className="text-kb-text-secondary">Duración promedio</dt><dd className="font-mono font-semibold text-kb-text">{ganadores.length > 0 ? formatDuracionMin(duracionProm.ganadoras) : "—"}</dd></div>
+          </dl>
+        </div>
+        <div className="rounded-xl border border-kb-loss/30 bg-kb-loss/5 p-5">
+          <p className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-kb-loss">
+            <span className="h-1.5 w-1.5 rounded-full bg-kb-loss" /> Perdedoras
+          </p>
+          <dl className="space-y-2.5 text-sm">
+            <div className="flex justify-between"><dt className="text-kb-text-secondary">Total</dt><dd className="font-mono font-semibold text-kb-text">{perdedores.length}</dd></div>
+            <div className="flex justify-between"><dt className="text-kb-text-secondary">Mayor pérdida</dt><dd className="font-mono font-semibold text-kb-loss">{perdedores.length > 0 ? formatCurrency(Math.min(...perdedores.map((t) => t.realized_pnl ?? 0))) : "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-kb-text-secondary">Promedio</dt><dd className="font-mono font-semibold text-kb-loss">{perdedores.length > 0 ? formatCurrency(-perdidaTotalAbs / perdedores.length) : "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-kb-text-secondary">Racha máx. / promedio</dt><dd className="font-mono font-semibold text-kb-text">{rachaMaxPerdedora} / {rachaPromPerdedora.toFixed(1)}</dd></div>
+            <div className="flex justify-between"><dt className="text-kb-text-secondary">Duración promedio</dt><dd className="font-mono font-semibold text-kb-text">{perdedores.length > 0 ? formatDuracionMin(duracionProm.perdedoras) : "—"}</dd></div>
+          </dl>
+        </div>
+      </section>
 
-      {/* ---------- Rendimiento por emoción ---------- */}
-      <ReporteBarras
-        titulo="Rendimiento por emoción"
-        subtitulo="¿Con qué estado emocional operas mejor?"
-        filas={porEmocion}
-        vacio="Todavía no registraste la emoción en ninguna operación."
-      />
+      {/* ---------- Dónde rendís mejor: estrategia + activo ---------- */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        <TablaMetricaEdge titulo="Por estrategia" filas={porEstrategia} />
+        <TablaMetricaEdge titulo="Por activo" filas={porActivo} />
+      </section>
+
+      {/* ---------- Rendimiento por sesión / día / emoción ---------- */}
+      <ReporteBarras titulo="Rendimiento por sesión" subtitulo="¿En qué sesión de mercado rindes mejor?" filas={porSesion} />
+      <ReporteBarras titulo="Rendimiento por emoción" subtitulo="¿Con qué estado emocional operas mejor?" filas={porEmocion} vacio="Todavía no registraste la emoción en ninguna operación." />
 
       {/* ---------- Errores más frecuentes ---------- */}
       <section className="rounded-xl border border-kb-border bg-kb-surface">
@@ -2509,32 +3229,164 @@ function ReportesView({ trades }: { trades: Trade[] }) {
           <p className="text-xs text-kb-text-secondary">Cuánto te costó cada patrón de error</p>
         </div>
         {porError.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-kb-text-secondary">
-            Sin errores registrados todavía — ¡buena señal!
-          </p>
+          <p className="px-5 py-8 text-center text-sm text-kb-text-secondary">Sin errores registrados todavía — ¡buena señal!</p>
         ) : (
           <div className="divide-y divide-kb-border-soft">
             {porError.map((f) => (
               <div key={f.etiqueta} className="flex items-center justify-between px-5 py-3">
                 <div>
                   <p className="text-sm font-medium">{f.etiqueta}</p>
-                  <p className="text-xs text-kb-text-secondary">
-                    {f.total} operacion{f.total === 1 ? "" : "es"}
-                  </p>
+                  <p className="text-xs text-kb-text-secondary">{f.total} operacion{f.total === 1 ? "" : "es"}</p>
                 </div>
-                <span
-                  className={`font-mono text-sm font-semibold ${
-                    f.pnl >= 0 ? "text-kb-gain" : "text-kb-loss"
-                  }`}
-                >
-                  {formatCurrency(f.pnl)}
-                </span>
+                <span className={`font-mono text-sm font-semibold ${f.pnl >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>{formatCurrency(f.pnl)}</span>
               </div>
             ))}
           </div>
         )}
       </section>
+
+      {/* ---------- Rendimiento mensual ---------- */}
+      <section className="rounded-xl border border-kb-border bg-kb-surface">
+        <div className="border-b border-kb-border-soft px-5 py-4">
+          <h2 className="font-display text-lg font-semibold">Rendimiento mes a mes</h2>
+          <p className="text-xs text-kb-text-secondary">Todo tu historial, sin importar el filtro de arriba</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-kb-border-soft text-kb-text-secondary">
+                <th className="sticky left-0 bg-kb-surface px-4 py-2.5 font-medium">Año</th>
+                {MESES.map((m) => (
+                  <th key={m} className="px-3 py-2.5 text-center font-medium">{m.slice(0, 3)}</th>
+                ))}
+                <th className="px-4 py-2.5 text-right font-medium">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rendimientoMensual.map(([año, meses]) => {
+                const totalAño = meses.reduce((a, v) => a + v, 0);
+                return (
+                  <tr key={año} className="border-b border-kb-border-soft last:border-0">
+                    <td className="sticky left-0 bg-kb-surface px-4 py-2.5 font-semibold text-kb-text">{año}</td>
+                    {meses.map((v, i) => (
+                      <td key={i} className={`px-3 py-2.5 text-center font-mono ${v === 0 ? "text-kb-text-muted" : v > 0 ? "text-kb-gain" : "text-kb-loss"}`}>
+                        {v === 0 ? "—" : formatCurrency(v)}
+                      </td>
+                    ))}
+                    <td className={`px-4 py-2.5 text-right font-mono font-semibold ${totalAño >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
+                      {formatCurrency(totalAño)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* ---------- Frecuencia de operaciones ---------- */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        <GraficoFrecuencia titulo="Operaciones por día de la semana" datos={frecuenciaPorDiaSemana} />
+        <GraficoFrecuencia titulo="Operaciones por mes" datos={frecuenciaPorMes} />
+      </section>
     </div>
+  );
+}
+
+/** Curva de equity compacta y propia para la vista de Métricas (distinta del gráfico grande del Dashboard). */
+function MiniCurvaEquity({ puntos }: { puntos: Array<{ fecha: string; acumulado: number }> }) {
+  if (puntos.length === 0) {
+    return <p className="py-10 text-center text-sm text-kb-text-secondary">Sin operaciones en este período.</p>;
+  }
+  const ancho = 800;
+  const alto = 180;
+  const valores = puntos.map((p) => p.acumulado);
+  const max = Math.max(...valores, 0);
+  const min = Math.min(...valores, 0);
+  const rango = max - min || 1;
+  const coordX = (i: number) => (i / Math.max(puntos.length - 1, 1)) * ancho;
+  const coordY = (v: number) => alto - ((v - min) / rango) * alto;
+  const path = puntos.map((p, i) => `${i === 0 ? "M" : "L"} ${coordX(i)} ${coordY(p.acumulado)}`).join(" ");
+  const final = puntos[puntos.length - 1].acumulado;
+  const color = final >= 0 ? "var(--kb-gain)" : "var(--kb-loss)";
+
+  return (
+    <svg viewBox={`0 0 ${ancho} ${alto}`} className="h-40 w-full" preserveAspectRatio="none">
+      <path d={path} fill="none" stroke={color} strokeWidth="2" />
+    </svg>
+  );
+}
+
+/** Tabla compacta "Nombre / Ops / Winrate (barra) / Neto", para comparar estrategias o activos entre sí. */
+function TablaMetricaEdge({ titulo, filas }: { titulo: string; filas: FilaReporte[] }) {
+  return (
+    <section className="rounded-xl border border-kb-border bg-kb-surface">
+      <div className="border-b border-kb-border-soft px-5 py-4">
+        <h2 className="font-display text-base font-semibold">{titulo}</h2>
+      </div>
+      {filas.length === 0 ? (
+        <p className="px-5 py-8 text-center text-sm text-kb-text-secondary">Sin datos todavía.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-kb-border-soft text-kb-text-secondary">
+                <th className="px-4 py-2.5 font-medium">Nombre</th>
+                <th className="px-3 py-2.5 font-medium">Ops</th>
+                <th className="px-3 py-2.5 font-medium">Winrate</th>
+                <th className="px-4 py-2.5 text-right font-medium">Neto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filas.slice(0, 8).map((f) => (
+                <tr key={f.etiqueta} className="border-b border-kb-border-soft last:border-0">
+                  <td className="px-4 py-2.5 font-medium text-kb-text">{f.etiqueta}</td>
+                  <td className="px-3 py-2.5 font-mono text-kb-text-secondary">{f.total}</td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-kb-border">
+                        <div className="h-full bg-kb-gain" style={{ width: `${f.winRate}%` }} />
+                      </div>
+                      <span className="font-mono text-kb-text-secondary">{f.winRate.toFixed(0)}%</span>
+                    </div>
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-mono font-semibold ${f.pnl >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
+                    {formatCurrency(f.pnl)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Barras verticales simples para mostrar cuántas operaciones hacés según el día/mes — no es P&L, es frecuencia. */
+function GraficoFrecuencia({ titulo, datos }: { titulo: string; datos: { etiqueta: string; valor: number }[] }) {
+  const max = Math.max(...datos.map((d) => d.valor), 1);
+  const total = datos.reduce((a, d) => a + d.valor, 0);
+  const bucketsActivos = datos.filter((d) => d.valor > 0).length || 1;
+  const promedioTexto = (total / bucketsActivos).toFixed(1);
+
+  return (
+    <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
+      <h2 className="font-display text-base font-semibold">{titulo}</h2>
+      <p className="mb-4 text-xs text-kb-text-secondary">Promedio {promedioTexto} operaciones por período activo</p>
+      <div className="flex h-32 items-end gap-2">
+        {datos.map((d) => (
+          <div key={d.etiqueta} className="flex flex-1 flex-col items-center gap-1">
+            <div
+              className="w-full rounded-t-sm bg-kb-gain/70"
+              style={{ height: `${Math.max((d.valor / max) * 100, d.valor > 0 ? 6 : 0)}%` }}
+              title={`${d.valor} operaciones`}
+            />
+            <span className="text-[10px] text-kb-text-muted">{d.etiqueta}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -2605,10 +3457,6 @@ function ReporteBarras({
 }
 
 // =====================================================================
-// VISTA: PERFIL
-// =====================================================================
-
-// =====================================================================
 // VISTA: ROI DE CUENTAS — comparación completa de invertido/retirado/ROI
 // por cada cuenta
 // =====================================================================
@@ -2657,7 +3505,7 @@ function RoiCuentasView({
   if (cuentas.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-kb-border bg-kb-surface p-8 text-center">
-        <p className="text-sm text-kb-text-secondary">Crea una cuenta para ver su ROI aquí.</p>
+        <p className="text-sm text-kb-text-secondary">Crea una cuenta para ver su rentabilidad aquí.</p>
       </div>
     );
   }
@@ -2684,7 +3532,7 @@ function RoiCuentasView({
 
       <section className="rounded-xl border border-kb-border bg-kb-surface">
         <div className="border-b border-kb-border-soft px-5 py-4">
-          <h2 className="font-display text-lg font-semibold">ROI por cuenta</h2>
+          <h2 className="font-display text-lg font-semibold">Rentabilidad por cuenta</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -2772,6 +3620,8 @@ function RetirosView({
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const totalRetirado = useMemo(() => retiros.reduce((acc, r) => acc + r.amount, 0), [retiros]);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -2819,114 +3669,134 @@ function RetirosView({
   }
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
-        <h2 className="font-display text-lg font-semibold mb-1">Registrar retiro</h2>
-        <p className="mb-4 text-sm text-kb-text-secondary">
-          Cuando retiras ganancias de una cuenta, regístralo aquí para que tu balance y ROI
-          reflejen la realidad.
+    <div className="space-y-4">
+      <div>
+        <h1 className="font-display text-xl font-bold text-kb-text">Retiros</h1>
+        <p className="mt-0.5 text-sm text-kb-text-secondary">
+          {retiros.length === 0
+            ? "Todavía no registraste ningún retiro."
+            : `${retiros.length} retiro${retiros.length === 1 ? "" : "s"} registrado${retiros.length === 1 ? "" : "s"} · ${formatCurrency(totalRetirado)} en total`}
         </p>
+      </div>
 
-        {cuentas.length === 0 ? (
-          <p className="rounded-lg border border-kb-accent/30 bg-kb-accent/10 px-3 py-2 text-xs text-kb-accent">
-            Crea una cuenta primero para poder registrar retiros.
+      <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
+        <section className="h-fit rounded-xl border border-kb-border bg-kb-surface p-5">
+          <h2 className="font-display text-base font-semibold mb-1">Sacar ganancias</h2>
+          <p className="mb-4 text-xs text-kb-text-secondary">
+            Cada retiro que cargues acá ajusta tu balance y tu rentabilidad automáticamente.
           </p>
-        ) : (
-          <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
-            <Campo etiqueta="Cuenta">
-              <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className={inputClass}>
-                {cuentas.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </Campo>
-            <Campo etiqueta="Monto retirado">
-              <input
-                required
-                type="number"
-                step="any"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="Ej. 500"
-                className={inputClass}
-              />
-            </Campo>
-            <Campo etiqueta="Fecha">
-              <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className={inputClass} />
-            </Campo>
-            <Campo etiqueta="Notas (opcional)">
-              <input
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Ej. Primer payout"
-                className={inputClass}
-              />
-            </Campo>
 
-            {error && (
-              <p className="sm:col-span-2 rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
-                {error}
-              </p>
-            )}
+          {cuentas.length === 0 ? (
+            <p className="rounded-lg border border-kb-accent/30 bg-kb-accent/10 px-3 py-2 text-xs text-kb-accent">
+              Crea una cuenta primero para poder registrar retiros.
+            </p>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <Campo etiqueta="Cuenta">
+                <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className={inputClass}>
+                  {cuentas.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </Campo>
+              <Campo etiqueta="Monto retirado">
+                <input
+                  required
+                  type="number"
+                  step="any"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="Ej. 500"
+                  className={inputClass}
+                />
+              </Campo>
+              <Campo etiqueta="Fecha">
+                <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className={inputClass} />
+              </Campo>
+              <Campo etiqueta="Notas (opcional)">
+                <input
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Ej. Primer payout"
+                  className={inputClass}
+                />
+              </Campo>
 
-            <div className="sm:col-span-2">
+              {error && (
+                <p className="rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
+                  {error}
+                </p>
+              )}
+
               <button
                 type="submit"
                 disabled={enviando}
-                className="rounded-lg bg-kb-accent px-5 py-2.5 text-sm font-semibold text-kb-bg hover:brightness-110 transition disabled:opacity-60"
+                className="w-full rounded-lg bg-kb-gain py-2.5 text-sm font-semibold text-kb-bg hover:brightness-110 transition disabled:opacity-60"
               >
                 {enviando ? "Guardando…" : "Registrar retiro"}
               </button>
-            </div>
-          </form>
-        )}
-      </section>
+            </form>
+          )}
+        </section>
 
-      <section className="rounded-xl border border-kb-border bg-kb-surface">
-        <div className="border-b border-kb-border-soft px-5 py-4">
-          <h2 className="font-display text-lg font-semibold">Historial de retiros</h2>
-        </div>
-
-        {cargando ? (
-          <SkeletonFilas filas={4} />
-        ) : retiros.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-kb-text-secondary">
-            Todavía no registraste ningún retiro.
-          </p>
-        ) : (
-          <div className="divide-y divide-kb-border-soft">
-            {retiros.map((r) => {
-              const cuentaDelRetiro = cuentas.find((c) => c.id === r.account_id);
-              return (
-                <div key={r.id} className="flex items-center justify-between px-5 py-3">
-                  <div>
-                    <p className="text-sm font-medium">{cuentaDelRetiro?.name ?? "Cuenta eliminada"}</p>
-                    <p className="text-xs text-kb-text-secondary">
-                      {new Date(r.withdrawal_date + "T00:00:00").toLocaleDateString("es-ES", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                      {r.notes ? ` · ${r.notes}` : ""}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-sm font-semibold text-kb-gain">
-                      +{formatCurrency(r.amount)}
-                    </span>
-                    <button
-                      onClick={() => eliminar(r.id)}
-                      className="text-xs text-kb-text-muted hover:text-kb-loss transition-colors"
-                    >
-                      Eliminar
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+        <section className="overflow-hidden rounded-xl border border-kb-border bg-kb-surface">
+          <div className="flex items-center justify-between border-b border-kb-border-soft px-5 py-4">
+            <h2 className="font-display text-base font-semibold">Historial</h2>
+            {retiros.length > 0 && (
+              <span className="rounded-full bg-kb-gain/10 px-3 py-1 text-xs font-semibold text-kb-gain">
+                Total {formatCurrency(totalRetirado)}
+              </span>
+            )}
           </div>
-        )}
-      </section>
+
+          {cargando ? (
+            <SkeletonFilas filas={4} />
+          ) : retiros.length === 0 ? (
+            <p className="px-5 py-10 text-center text-sm text-kb-text-secondary">
+              Todavía no registraste ningún retiro.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-kb-border-soft text-xs text-kb-text-secondary">
+                    <th className="px-5 py-3 font-medium">Fecha</th>
+                    <th className="px-5 py-3 font-medium">Cuenta</th>
+                    <th className="px-5 py-3 font-medium">Notas</th>
+                    <th className="px-5 py-3 font-medium text-right">Monto</th>
+                    <th className="px-5 py-3 font-medium"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {retiros.map((r) => {
+                    const cuentaDelRetiro = cuentas.find((c) => c.id === r.account_id);
+                    return (
+                      <tr key={r.id} className="border-b border-kb-border-soft last:border-0">
+                        <td className="px-5 py-3 text-kb-text-secondary">{formatDateOnly(r.withdrawal_date)}</td>
+                        <td className="px-5 py-3 font-medium text-kb-text">
+                          {cuentaDelRetiro?.name ?? "Cuenta eliminada"}
+                        </td>
+                        <td className="px-5 py-3 text-kb-text-muted">{r.notes ?? "—"}</td>
+                        <td className="px-5 py-3 text-right font-mono font-semibold text-kb-gain">
+                          +{formatCurrency(r.amount)}
+                        </td>
+                        <td className="px-5 py-3 text-right">
+                          <button
+                            onClick={() => eliminar(r.id)}
+                            className="text-xs text-kb-text-muted hover:text-kb-loss transition-colors"
+                          >
+                            Eliminar
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
@@ -3247,7 +4117,7 @@ function TarjetaLogro({
       <div className="p-3">
         <p className="text-sm font-semibold leading-tight">{logro.title}</p>
         <p className="mt-0.5 text-xs text-kb-text-secondary">
-          {formatDate(logro.achieved_date)}
+          {formatDateOnly(logro.achieved_date)}
           {cuenta ? ` · ${cuenta.name}` : ""}
         </p>
         {logro.description && (
@@ -3567,16 +4437,559 @@ function PerfilView({ session }: { session: Session }) {
 }
 
 // =====================================================================
+// VISTA: IMPORTAR — importador genérico de CSV. No asume el formato de
+// ningún broker en particular: el usuario sube cualquier CSV y mapea a
+// mano qué columna corresponde a qué campo (símbolo, precios, fechas,
+// etc.), así funciona sea cual sea la plataforma de origen.
+// =====================================================================
+
+/** Parser de CSV básico (soporta comillas y campos con comas adentro). Detecta "," o ";" como separador. */
+function parsearCSV(texto: string): string[][] {
+  const primerSalto = texto.indexOf("\n");
+  const primeraLinea = primerSalto === -1 ? texto : texto.slice(0, primerSalto);
+  const separador = (primeraLinea.match(/;/g)?.length ?? 0) > (primeraLinea.match(/,/g)?.length ?? 0) ? ";" : ",";
+
+  const filas: string[][] = [];
+  let fila: string[] = [];
+  let campo = "";
+  let entreComillas = false;
+
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i];
+    if (entreComillas) {
+      if (c === '"') {
+        if (texto[i + 1] === '"') {
+          campo += '"';
+          i++;
+        } else {
+          entreComillas = false;
+        }
+      } else {
+        campo += c;
+      }
+    } else if (c === '"') {
+      entreComillas = true;
+    } else if (c === separador) {
+      fila.push(campo);
+      campo = "";
+    } else if (c === "\r") {
+      // ignorar, lo maneja el \n siguiente
+    } else if (c === "\n") {
+      fila.push(campo);
+      filas.push(fila);
+      fila = [];
+      campo = "";
+    } else {
+      campo += c;
+    }
+  }
+  if (campo !== "" || fila.length > 0) {
+    fila.push(campo);
+    filas.push(fila);
+  }
+  return filas.filter((f) => f.some((v) => v.trim() !== ""));
+}
+
+/** Convierte un texto numérico de CSV (con comas de miles, símbolos de moneda, etc.) a número. */
+function parsearNumeroCSV(valor: string | undefined): number | null {
+  if (!valor) return null;
+  const limpio = valor.replace(/[^0-9.,\-]/g, "").trim();
+  if (limpio === "") return null;
+  // Si tiene coma Y punto, asumimos que la coma es separador de miles (formato "1,234.56")
+  const normalizado = limpio.includes(",") && limpio.includes(".") ? limpio.replace(/,/g, "") : limpio.replace(",", ".");
+  const n = parseFloat(normalizado);
+  return Number.isNaN(n) ? null : n;
+}
+
+/** Convierte una fecha de CSV a ISO. Soporta el formato con puntos típico de MT4/MT5 ("2026.07.05 14:30:00"). */
+function parsearFechaCSV(valor: string | undefined): string | null {
+  if (!valor) return null;
+  const conGuiones = valor.trim().replace(/^(\d{4})\.(\d{2})\.(\d{2})/, "$1-$2-$3");
+  const fecha = new Date(conGuiones);
+  return Number.isNaN(fecha.getTime()) ? null : fecha.toISOString();
+}
+
+type CampoDestino =
+  | "symbol"
+  | "side"
+  | "quantity"
+  | "entry_price"
+  | "exit_price"
+  | "entry_time"
+  | "exit_time"
+  | "realized_pnl"
+  | "fees"
+  | "notes";
+
+const CAMPOS_IMPORTACION: { campo: CampoDestino; etiqueta: string; requerido: boolean }[] = [
+  { campo: "symbol", etiqueta: "Símbolo", requerido: true },
+  { campo: "side", etiqueta: "Dirección (compra/venta)", requerido: false },
+  { campo: "quantity", etiqueta: "Cantidad / Lotes", requerido: true },
+  { campo: "entry_price", etiqueta: "Precio de entrada", requerido: true },
+  { campo: "exit_price", etiqueta: "Precio de salida", requerido: false },
+  { campo: "entry_time", etiqueta: "Fecha/hora de entrada", requerido: true },
+  { campo: "exit_time", etiqueta: "Fecha/hora de salida", requerido: false },
+  { campo: "realized_pnl", etiqueta: "P&L / Ganancia", requerido: false },
+  { campo: "fees", etiqueta: "Comisión", requerido: false },
+  { campo: "notes", etiqueta: "Notas / Comentario", requerido: false },
+];
+
+function ImportarView({
+  cuentas,
+  estrategias,
+  onImportado,
+}: {
+  cuentas: Account[];
+  estrategias: Strategy[];
+  onImportado: () => void;
+}) {
+  const [paso, setPaso] = useState<"subir" | "mapear" | "revisar" | "listo">("subir");
+  const [nombreArchivo, setNombreArchivo] = useState("");
+  const [encabezados, setEncabezados] = useState<string[]>([]);
+  const [filasDatos, setFilasDatos] = useState<string[][]>([]);
+  const [mapeo, setMapeo] = useState<Partial<Record<CampoDestino, number>>>({});
+  const [accountId, setAccountId] = useState("");
+  const [strategyId, setStrategyId] = useState("");
+  const [sideDefault, setSideDefault] = useState<TradeSide>("long");
+  const [error, setError] = useState<string | null>(null);
+  const [importando, setImportando] = useState(false);
+  const [resultado, setResultado] = useState<{ insertados: number; saltados: number } | null>(null);
+  const [mostrarGuia, setMostrarGuia] = useState(true);
+
+  function manejarArchivo(archivo: File) {
+    setError(null);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const texto = String(e.target?.result ?? "");
+      const filas = parsearCSV(texto);
+      if (filas.length < 2) {
+        setError("El archivo no parece tener datos (se necesita al menos un encabezado y una fila).");
+        return;
+      }
+      setEncabezados(filas[0]);
+      setFilasDatos(filas.slice(1));
+      setNombreArchivo(archivo.name);
+
+      // Auto-mapeo básico: si alguna columna se llama parecido a lo que
+      // buscamos, la pre-seleccionamos (el usuario puede corregirla).
+      const autoMapeo: Partial<Record<CampoDestino, number>> = {};
+      const alias: Record<CampoDestino, string[]> = {
+        symbol: ["symbol", "simbolo", "símbolo", "ticker", "instrument", "activo"],
+        side: ["side", "type", "tipo", "direction", "direccion"],
+        quantity: ["quantity", "cantidad", "lots", "lotes", "volume", "volumen", "size"],
+        entry_price: ["entry", "open price", "precio entrada", "precio apertura", "openprice"],
+        exit_price: ["exit", "close price", "precio salida", "precio cierre", "closeprice"],
+        entry_time: ["entry time", "open time", "fecha entrada", "fecha apertura", "opentime"],
+        exit_time: ["exit time", "close time", "fecha salida", "fecha cierre", "closetime"],
+        realized_pnl: ["profit", "pnl", "p&l", "ganancia", "resultado", "ganancia neta"],
+        fees: ["commission", "comision", "comisión", "fee", "fees", "swap"],
+        notes: ["comment", "comentario", "notes", "notas"],
+      };
+      filas[0].forEach((encabezado, i) => {
+        const normalizado = encabezado.trim().toLowerCase();
+        (Object.keys(alias) as CampoDestino[]).forEach((campo) => {
+          if (autoMapeo[campo] === undefined && alias[campo].some((a) => normalizado.includes(a))) {
+            autoMapeo[campo] = i;
+          }
+        });
+      });
+      setMapeo(autoMapeo);
+      setPaso("mapear");
+    };
+    reader.readAsText(archivo);
+  }
+
+  function validarMapeo(): string | null {
+    const faltantes = CAMPOS_IMPORTACION.filter((c) => c.requerido && mapeo[c.campo] === undefined);
+    if (faltantes.length > 0) {
+      return `Faltan mapear campos obligatorios: ${faltantes.map((f) => f.etiqueta).join(", ")}.`;
+    }
+    if (!accountId) return "Elegí a qué cuenta se van a importar estas operaciones.";
+    return null;
+  }
+
+  async function confirmarImportacion() {
+    const errorValidacion = validarMapeo();
+    if (errorValidacion) {
+      setError(errorValidacion);
+      return;
+    }
+    setError(null);
+    setImportando(true);
+
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) {
+      setImportando(false);
+      setError("Tu sesión expiró. Vuelve a iniciar sesión.");
+      return;
+    }
+
+    const filasParaInsertar: Record<string, unknown>[] = [];
+    let saltados = 0;
+
+    for (const fila of filasDatos) {
+      const obtener = (campo: CampoDestino): string | undefined => {
+        const idx = mapeo[campo];
+        return idx !== undefined ? fila[idx] : undefined;
+      };
+
+      const symbol = obtener("symbol")?.trim();
+      const quantity = parsearNumeroCSV(obtener("quantity"));
+      const entryPrice = parsearNumeroCSV(obtener("entry_price"));
+      const entryTime = parsearFechaCSV(obtener("entry_time"));
+
+      if (!symbol || quantity === null || entryPrice === null || !entryTime) {
+        saltados++;
+        continue;
+      }
+
+      const exitPrice = parsearNumeroCSV(obtener("exit_price"));
+      const exitTime = parsearFechaCSV(obtener("exit_time"));
+      const realizedPnl = parsearNumeroCSV(obtener("realized_pnl"));
+      const fees = parsearNumeroCSV(obtener("fees")) ?? 0;
+      const notes = obtener("notes")?.trim() || null;
+
+      const sideTexto = obtener("side")?.trim().toLowerCase();
+      let side: TradeSide = sideDefault;
+      if (sideTexto) {
+        if (sideTexto.includes("sell") || sideTexto.includes("short") || sideTexto.includes("venta")) {
+          side = "short";
+        } else if (sideTexto.includes("buy") || sideTexto.includes("long") || sideTexto.includes("compra")) {
+          side = "long";
+        }
+      }
+
+      const estaCerrado = exitPrice !== null || realizedPnl !== null;
+
+      filasParaInsertar.push({
+        user_id: userId,
+        account_id: accountId,
+        strategy_id: strategyId === "" ? null : strategyId,
+        symbol: symbol.toUpperCase(),
+        instrument_type: "forex" as InstrumentType,
+        side,
+        status: estaCerrado ? "closed" : "open",
+        quantity,
+        entry_price: entryPrice,
+        exit_price: exitPrice,
+        fees,
+        realized_pnl: estaCerrado ? (realizedPnl ?? 0) - fees : null,
+        result_type: estaCerrado ? "manual" : null,
+        notes,
+        entry_time: entryTime,
+        exit_time: exitTime,
+        tradingview_links: [],
+        evidence_images: [],
+        mistake: "ninguno",
+      });
+    }
+
+    // Insertamos en tandas de 200 para no mandar un solo request gigante.
+    let insertados = 0;
+    for (let i = 0; i < filasParaInsertar.length; i += 200) {
+      const tanda = filasParaInsertar.slice(i, i + 200);
+      const { error: insertError } = await supabase.from("trades").insert(tanda);
+      if (!insertError) insertados += tanda.length;
+      else saltados += tanda.length;
+    }
+
+    setImportando(false);
+    setResultado({ insertados, saltados });
+    setPaso("listo");
+    onImportado();
+  }
+
+  function reiniciar() {
+    setPaso("subir");
+    setNombreArchivo("");
+    setEncabezados([]);
+    setFilasDatos([]);
+    setMapeo({});
+    setError(null);
+    setResultado(null);
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-xl font-bold text-kb-text">Importar operaciones</h1>
+        <p className="mt-0.5 text-sm text-kb-text-secondary">
+          Subí un CSV exportado de tu broker o plataforma. Funciona con cualquier formato —
+          vos le decís qué columna es cada cosa.
+        </p>
+      </div>
+
+      <section className="rounded-xl border border-kb-border bg-kb-surface">
+        <button
+          onClick={() => setMostrarGuia((v) => !v)}
+          className="flex w-full items-center justify-between px-5 py-3.5 text-left"
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold text-kb-text">
+            📖 ¿Cómo saco el CSV de mi cuenta?
+          </span>
+          <span className={`text-kb-text-muted transition-transform ${mostrarGuia ? "rotate-180" : ""}`}>⌄</span>
+        </button>
+
+        {mostrarGuia && (
+          <div className="space-y-4 border-t border-kb-border-soft px-5 py-4">
+            <div>
+              <p className="mb-1.5 text-sm font-semibold text-kb-accent">Desde MT5 (escritorio)</p>
+              <ol className="list-decimal space-y-1 pl-5 text-xs text-kb-text-secondary">
+                <li>Abrí MetaTrader 5 y andá a la pestaña <span className="text-kb-text">"Trade"</span> abajo de la pantalla.</li>
+                <li>Hacé clic en la sub-pestaña <span className="text-kb-text">"History"</span> (Historial).</li>
+                <li>
+                  Click derecho sobre la tabla → <span className="text-kb-text">"Custom period"</span> para elegir el
+                  rango de fechas (o "Todo el historial").
+                </li>
+                <li>
+                  Click derecho de nuevo → <span className="text-kb-text">"Report" → "Save as Report"</span> (o
+                  "Export to CSV" según tu versión).
+                </li>
+                <li>Guardalo en tu computadora — ese es el archivo que subís acá abajo.</li>
+              </ol>
+              <p className="mt-1.5 text-[11px] text-kb-text-muted">
+                Si tu versión solo exporta a Excel/HTML: abrilo y hacé "Guardar como" → elegí formato CSV.
+              </p>
+            </div>
+
+            <div>
+              <p className="mb-1.5 text-sm font-semibold text-kb-accent">Cuenta de prop firm (FTMO, FundedNext, MyForexFunds, etc.)</p>
+              <p className="text-xs text-kb-text-secondary">
+                Entrá al dashboard web de tu prop firm (no MT5) y buscá la sección{" "}
+                <span className="text-kb-text">"Trading History"</span> o{" "}
+                <span className="text-kb-text">"Statement"</span> — casi todas tienen un botón de
+                exportar/descargar CSV directo ahí, suele ser más simple que desde MT5.
+              </p>
+            </div>
+
+            <div>
+              <p className="mb-1.5 text-sm font-semibold text-kb-accent">Otro bróker (IBKR, cTrader, etc.)</p>
+              <p className="text-xs text-kb-text-secondary">
+                Buscá la sección de <span className="text-kb-text">"Historial de operaciones"</span>,{" "}
+                <span className="text-kb-text">"Trade History"</span> o{" "}
+                <span className="text-kb-text">"Statements"</span> en la web o plataforma de tu bróker.
+                El nombre cambia según cada uno, pero todos tienen una opción de exportar a CSV o Excel
+                cerca de donde ves tus operaciones cerradas.
+              </p>
+            </div>
+
+            <p className="rounded-lg border border-kb-accent/30 bg-kb-accent/10 px-3 py-2 text-[11px] text-kb-accent">
+              💡 No importa el formato exacto de columnas que traiga tu archivo — en el siguiente
+              paso vas a poder decirle a mano a KeboTrader cuál columna es cuál.
+            </p>
+          </div>
+        )}
+      </section>
+
+      {paso === "subir" && (
+        <section className="rounded-xl border border-dashed border-kb-accent/40 bg-kb-accent/5 p-8 text-center">
+          <p className="mb-4 text-sm text-kb-text-secondary">
+            Elegí un archivo .csv exportado de MT4, MT5, cTrader, o cualquier otra plataforma.
+          </p>
+          <label className="inline-block cursor-pointer rounded-lg bg-kb-accent px-5 py-2.5 text-sm font-semibold text-kb-bg hover:brightness-110 transition">
+            Elegir archivo CSV
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const archivo = e.target.files?.[0];
+                if (archivo) manejarArchivo(archivo);
+              }}
+            />
+          </label>
+        </section>
+      )}
+
+      {paso === "mapear" && (
+        <>
+          <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="font-display text-lg font-semibold">Mapear columnas</h2>
+                <p className="text-xs text-kb-text-secondary">
+                  {nombreArchivo} · {filasDatos.length} fila{filasDatos.length === 1 ? "" : "s"} detectada
+                  {filasDatos.length === 1 ? "" : "s"}
+                </p>
+              </div>
+              <button onClick={reiniciar} className="text-xs font-medium text-kb-text-secondary hover:text-kb-text">
+                Elegir otro archivo
+              </button>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {CAMPOS_IMPORTACION.map(({ campo, etiqueta, requerido }) => (
+                <Campo key={campo} etiqueta={`${etiqueta}${requerido ? " *" : ""}`}>
+                  <select
+                    value={mapeo[campo] ?? ""}
+                    onChange={(e) =>
+                      setMapeo((prev) => ({
+                        ...prev,
+                        [campo]: e.target.value === "" ? undefined : Number(e.target.value),
+                      }))
+                    }
+                    className={inputClass}
+                  >
+                    <option value="">— No mapear —</option>
+                    {encabezados.map((enc, i) => (
+                      <option key={i} value={i}>
+                        {enc || `Columna ${i + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </Campo>
+              ))}
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Campo etiqueta="Importar a la cuenta *">
+                <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className={inputClass}>
+                  <option value="">Elegí una cuenta…</option>
+                  {cuentas.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </Campo>
+              <Campo etiqueta="Estrategia (opcional)">
+                <select value={strategyId} onChange={(e) => setStrategyId(e.target.value)} className={inputClass}>
+                  <option value="">Sin estrategia</option>
+                  {estrategias.map((e) => (
+                    <option key={e.id} value={e.id}>{e.name}</option>
+                  ))}
+                </select>
+              </Campo>
+              <Campo
+                etiqueta="Dirección por defecto"
+                ayuda={mapeo.side !== undefined ? "Se usa solo si una fila no trae dirección clara" : "No mapeaste columna de dirección — se usa esta para todas"}
+              >
+                <select value={sideDefault} onChange={(e) => setSideDefault(e.target.value as TradeSide)} className={inputClass}>
+                  <option value="long">Long (compra)</option>
+                  <option value="short">Short (venta)</option>
+                </select>
+              </Campo>
+            </div>
+
+            {error && (
+              <p className="mt-4 rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
+                {error}
+              </p>
+            )}
+
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => setPaso("revisar")}
+                className="rounded-lg bg-kb-accent px-5 py-2.5 text-sm font-semibold text-kb-bg hover:brightness-110 transition"
+              >
+                Ver vista previa →
+              </button>
+            </div>
+          </section>
+        </>
+      )}
+
+      {paso === "revisar" && (
+        <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
+          <h2 className="font-display text-lg font-semibold mb-1">Vista previa</h2>
+          <p className="mb-4 text-xs text-kb-text-secondary">
+            Mostrando las primeras 5 de {filasDatos.length} filas, con el mapeo que elegiste.
+            Revisá que los datos tengan sentido antes de confirmar.
+          </p>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-kb-border-soft text-kb-text-secondary">
+                  {CAMPOS_IMPORTACION.filter((c) => mapeo[c.campo] !== undefined).map((c) => (
+                    <th key={c.campo} className="px-3 py-2 font-medium">{c.etiqueta}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filasDatos.slice(0, 5).map((fila, i) => (
+                  <tr key={i} className="border-b border-kb-border-soft">
+                    {CAMPOS_IMPORTACION.filter((c) => mapeo[c.campo] !== undefined).map((c) => (
+                      <td key={c.campo} className="px-3 py-2 text-kb-text">
+                        {fila[mapeo[c.campo] as number] ?? ""}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {error && (
+            <p className="mt-4 rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
+              {error}
+            </p>
+          )}
+
+          <div className="mt-5 flex gap-3">
+            <button
+              onClick={() => setPaso("mapear")}
+              className="rounded-lg border border-kb-border px-5 py-2.5 text-sm font-medium text-kb-text-secondary hover:text-kb-text transition-colors"
+            >
+              ← Volver a mapear
+            </button>
+            <button
+              onClick={confirmarImportacion}
+              disabled={importando}
+              className="rounded-lg bg-kb-accent px-5 py-2.5 text-sm font-semibold text-kb-bg hover:brightness-110 transition disabled:opacity-60"
+            >
+              {importando ? "Importando…" : `Importar ${filasDatos.length} operaciones`}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {paso === "listo" && resultado && (
+        <section className="rounded-xl border border-kb-gain/30 bg-kb-gain/5 p-8 text-center">
+          <p className="text-3xl">✅</p>
+          <h2 className="mt-2 font-display text-lg font-semibold text-kb-text">Importación completa</h2>
+          <p className="mt-1 text-sm text-kb-text-secondary">
+            <span className="font-semibold text-kb-gain">{resultado.insertados}</span> operaciones
+            importadas correctamente
+            {resultado.saltados > 0 && (
+              <>
+                {" "}
+                · <span className="font-semibold text-kb-loss">{resultado.saltados}</span> filas
+                se saltearon (les faltaban datos obligatorios o el formato no se pudo leer)
+              </>
+            )}
+            .
+          </p>
+          <button
+            onClick={reiniciar}
+            className="mt-4 rounded-lg border border-kb-border px-5 py-2.5 text-sm font-medium text-kb-text-secondary hover:text-kb-text transition-colors"
+          >
+            Importar otro archivo
+          </button>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// =====================================================================
 // VISTA: CONFIGURACIÓN — gestión de cuentas (crear vive en el header,
 // aquí se edita/archiva/elimina, y se pueden ver las archivadas)
 // =====================================================================
 
 function ConfiguracionView({
   cuentas,
+  trades,
+  pnlPorCuenta,
+  retiradoPorCuenta,
+  historialFases,
   onCambio,
   onVerArchivadas,
 }: {
   cuentas: Account[];
+  trades: Trade[];
+  pnlPorCuenta: Map<string, number>;
+  retiradoPorCuenta: Map<string, number>;
+  historialFases: PhaseHistoryEntry[];
   onCambio: () => void;
   onVerArchivadas: () => void;
 }) {
@@ -3584,34 +4997,45 @@ function ConfiguracionView({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-kb-border bg-kb-surface">
-        <div className="flex items-center justify-between border-b border-kb-border-soft px-5 py-4">
-          <h2 className="font-display text-lg font-semibold">Tus cuentas</h2>
-          <button
-            onClick={onVerArchivadas}
-            className="text-xs text-kb-text-secondary hover:text-kb-accent transition-colors underline-offset-2 hover:underline"
-          >
-            Ver cuentas archivadas
-          </button>
-        </div>
-
-        {cuentas.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-kb-text-secondary">
-            No tienes ninguna cuenta activa todavía.
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="font-display text-xl font-bold text-kb-text">Tus cuentas de fondeo</h1>
+          <p className="mt-0.5 text-sm text-kb-text-secondary">
+            {cuentas.length} cuenta{cuentas.length === 1 ? "" : "s"} activa{cuentas.length === 1 ? "" : "s"} · costo,
+            retiros y rendimiento en un solo vistazo
           </p>
-        ) : (
-          <div className="divide-y divide-kb-border-soft">
-            {cuentas.map((c) => (
-              <FilaCuentaConfig
-                key={c.id}
-                cuenta={c}
-                onEditar={() => setCuentaEditando(c)}
-                onCambio={onCambio}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+        </div>
+        <button
+          onClick={onVerArchivadas}
+          className="text-xs font-medium text-kb-text-secondary hover:text-kb-gain transition-colors underline-offset-2 hover:underline"
+        >
+          Ver cuentas archivadas
+        </button>
+      </div>
+
+      {cuentas.length === 0 ? (
+        <section className="rounded-xl border border-dashed border-kb-accent/40 bg-kb-accent/5 p-8 text-center">
+          <p className="text-sm text-kb-text-secondary">
+            No tenés ninguna cuenta activa todavía. Creá una desde el selector del sidebar.
+          </p>
+        </section>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {cuentas.map((c, i) => (
+            <TarjetaCuenta
+              key={c.id}
+              cuenta={c}
+              trades={trades}
+              pnl={pnlPorCuenta.get(c.id) ?? 0}
+              retirado={retiradoPorCuenta.get(c.id) ?? 0}
+              color={PALETA_ESTRATEGIA[i % PALETA_ESTRATEGIA.length]}
+              historial={historialFases.filter((h) => h.account_id === c.id)}
+              onEditar={() => setCuentaEditando(c)}
+              onCambio={onCambio}
+            />
+          ))}
+        </div>
+      )}
 
       <ExportarBackup />
 
@@ -3741,17 +5165,38 @@ function ExportarBackup() {
   );
 }
 
-function FilaCuentaConfig({
+function TarjetaCuenta({
   cuenta,
+  trades,
+  pnl,
+  retirado,
+  color,
+  historial,
   onEditar,
   onCambio,
 }: {
   cuenta: Account;
+  trades: Trade[];
+  pnl: number;
+  retirado: number;
+  color: { barra: string; punto: string };
+  historial: PhaseHistoryEntry[];
   onEditar: () => void;
   onCambio: () => void;
 }) {
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(false);
   const [procesando, setProcesando] = useState(false);
+  const [conteo, setConteo] = useState<{ trades: number; retiros: number } | null>(null);
+  const [cargandoConteo, setCargandoConteo] = useState(false);
+  const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
+
+  const cerrados = useMemo(
+    () => trades.filter((t) => t.account_id === cuenta.id && t.status === "closed" && t.realized_pnl !== null),
+    [trades, cuenta.id]
+  );
+  const ganadores = cerrados.filter((t) => (t.realized_pnl ?? 0) > 0).length;
+  const winRate = cerrados.length > 0 ? (ganadores / cerrados.length) * 100 : null;
+  const invertido = cuenta.purchase_cost ?? cuenta.starting_balance;
 
   async function archivar() {
     setProcesando(true);
@@ -3760,64 +5205,173 @@ function FilaCuentaConfig({
     onCambio();
   }
 
+  async function abrirConfirmacion() {
+    setConfirmandoEliminar(true);
+    setCargandoConteo(true);
+    const [tradesRes, retirosRes] = await Promise.all([
+      supabase.from("trades").select("id", { count: "exact", head: true }).eq("account_id", cuenta.id),
+      supabase.from("withdrawals").select("id", { count: "exact", head: true }).eq("account_id", cuenta.id),
+    ]);
+    setConteo({ trades: tradesRes.count ?? 0, retiros: retirosRes.count ?? 0 });
+    setCargandoConteo(false);
+  }
+
   async function eliminar() {
     setProcesando(true);
-    await supabase.from("accounts").delete().eq("id", cuenta.id);
+    setErrorEliminar(null);
+
+    // Borrado en cascada explícito: primero las operaciones y retiros de
+    // esta cuenta, después desvinculamos los logros (no se borran, son
+    // certificados/documentos), y al final la cuenta misma.
+    //
+    // BUGFIX: antes no se revisaba si estos pasos fallaban (por ejemplo,
+    // por un permiso de Supabase/RLS mal configurado en "trades" o
+    // "withdrawals"). Si fallaban, el código igual seguía adelante y
+    // borraba la cuenta, dejando esas operaciones "huérfanas" en la base
+    // — apuntando a una cuenta que ya no existía, y que por eso seguían
+    // apareciendo en el Dashboard. Ahora, si cualquiera de estos pasos
+    // falla, se detiene todo el proceso y se avisa en vez de continuar.
+    const borradoTrades = await supabase.from("trades").delete().eq("account_id", cuenta.id);
+    if (borradoTrades.error) {
+      setProcesando(false);
+      setErrorEliminar(
+        `No se pudieron borrar las operaciones de esta cuenta (${borradoTrades.error.message}). La cuenta NO se eliminó para evitar dejar datos huérfanos.`
+      );
+      return;
+    }
+
+    const borradoRetiros = await supabase.from("withdrawals").delete().eq("account_id", cuenta.id);
+    if (borradoRetiros.error) {
+      setProcesando(false);
+      setErrorEliminar(
+        `No se pudieron borrar los retiros de esta cuenta (${borradoRetiros.error.message}). La cuenta NO se eliminó para evitar dejar datos huérfanos.`
+      );
+      return;
+    }
+
+    await supabase.from("achievements").update({ account_id: null }).eq("account_id", cuenta.id);
+
+    const borradoCuenta = await supabase.from("accounts").delete().eq("id", cuenta.id);
+    if (borradoCuenta.error) {
+      setProcesando(false);
+      setErrorEliminar(`No se pudo eliminar la cuenta (${borradoCuenta.error.message}).`);
+      return;
+    }
+
     setProcesando(false);
     setConfirmandoEliminar(false);
     onCambio();
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-      <div>
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold">{cuenta.name}</p>
-          <span
-            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-              cuenta.account_type === "real"
-                ? "bg-kb-loss/10 text-kb-loss"
-                : "bg-kb-gain/10 text-kb-gain"
-            }`}
-          >
-            {cuenta.account_type === "real" ? "Real" : "Demo"}
-          </span>
-          {cuenta.phase !== "no_aplica" && (
-            <span className="rounded-full bg-kb-accent/10 px-2 py-0.5 text-[11px] font-medium text-kb-accent">
-              {PHASE_LABELS[cuenta.phase]}
-            </span>
-          )}
+    <section className="overflow-hidden rounded-xl border border-kb-border bg-kb-surface">
+      <div className={`h-1 w-full ${color.barra}`} />
+
+      <div className="flex items-start justify-between gap-3 px-5 pt-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                cuenta.account_type === "real" ? "bg-kb-loss" : "bg-kb-gain"
+              }`}
+            />
+            <h3 className="font-display text-base font-semibold text-kb-text">{cuenta.name}</h3>
+            {cuenta.phase !== "no_aplica" && (
+              <span className="rounded-full bg-kb-accent/10 px-2 py-0.5 text-[11px] font-medium text-kb-accent">
+                {PHASE_LABELS[cuenta.phase]}
+              </span>
+            )}
+          </div>
+          <p className="mt-0.5 text-xs text-kb-text-muted">
+            {cuenta.broker ? `${cuenta.broker} · ` : ""}
+            {cuenta.account_type === "real" ? "Cuenta real" : "Demo"} · Balance {formatCurrency(cuenta.starting_balance)}
+          </p>
         </div>
-        <p className="mt-0.5 text-xs text-kb-text-secondary">
-          {cuenta.broker ? `${cuenta.broker} · ` : ""}
-          Balance inicial {formatCurrency(cuenta.starting_balance)}
-          {cuenta.max_daily_loss ? ` · Pérdida diaria máx. ${formatCurrency(cuenta.max_daily_loss)}` : ""}
-          {cuenta.max_total_loss ? ` · Pérdida total máx. ${formatCurrency(cuenta.max_total_loss)}` : ""}
-        </p>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            onClick={onEditar}
+            className="rounded-lg border border-kb-border p-1.5 text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+            aria-label="Editar cuenta"
+            title="Editar"
+          >
+            ✎
+          </button>
+          <button
+            onClick={archivar}
+            disabled={procesando}
+            className="rounded-lg border border-kb-border p-1.5 text-kb-text-secondary hover:text-kb-text transition-colors disabled:opacity-60"
+            aria-label="Archivar cuenta"
+            title="Archivar"
+          >
+            🗂
+          </button>
+          <button
+            onClick={abrirConfirmacion}
+            disabled={procesando}
+            className="rounded-lg border border-kb-border p-1.5 text-kb-text-secondary hover:border-kb-loss hover:text-kb-loss transition-colors disabled:opacity-60"
+            aria-label="Eliminar cuenta"
+            title="Eliminar"
+          >
+            🗑
+          </button>
+        </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
-        <button
-          onClick={onEditar}
-          className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
-        >
-          Editar
-        </button>
-        <button
-          onClick={archivar}
-          disabled={procesando}
-          className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-medium text-kb-text-secondary hover:text-kb-text transition-colors disabled:opacity-60"
-        >
-          Archivar
-        </button>
-        <button
-          onClick={() => setConfirmandoEliminar(true)}
-          disabled={procesando}
-          className="rounded-lg border border-kb-loss/30 px-3 py-1.5 text-xs font-medium text-kb-loss hover:bg-kb-loss/10 transition-colors disabled:opacity-60"
-        >
-          Eliminar
-        </button>
+      <div className="px-5 pb-4 pt-3">
+        <p className="text-[10px] uppercase tracking-wide text-kb-text-secondary">P&amp;L acumulado</p>
+        <p className={`font-mono text-xl font-bold leading-tight ${pnl >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
+          {pnl >= 0 ? "+" : ""}
+          {formatCurrency(pnl)}
+        </p>
+
+        {(cuenta.max_daily_loss || cuenta.max_total_loss) && (
+          <p className="mt-1 text-[11px] text-kb-text-muted">
+            {cuenta.max_daily_loss ? `Límite diario ${formatCurrency(cuenta.max_daily_loss)}` : ""}
+            {cuenta.max_daily_loss && cuenta.max_total_loss ? " · " : ""}
+            {cuenta.max_total_loss ? `Límite total ${formatCurrency(cuenta.max_total_loss)}` : ""}
+          </p>
+        )}
       </div>
+
+      <div className="grid grid-cols-3 divide-x divide-kb-border-soft border-t border-kb-border-soft">
+        <div className="px-3 py-3 text-center">
+          <p className="text-[10px] uppercase tracking-wide text-kb-text-muted">Invertido</p>
+          <p className="mt-0.5 font-mono text-sm font-semibold text-kb-text">{formatCurrency(invertido)}</p>
+        </div>
+        <div className="px-3 py-3 text-center">
+          <p className="text-[10px] uppercase tracking-wide text-kb-text-muted">Retirado</p>
+          <p className="mt-0.5 font-mono text-sm font-semibold text-kb-gain">
+            {retirado > 0 ? formatCurrency(retirado) : "—"}
+          </p>
+        </div>
+        <div className="px-3 py-3 text-center">
+          <p className="text-[10px] uppercase tracking-wide text-kb-text-muted">Win rate</p>
+          <p
+            className={`mt-0.5 font-mono text-sm font-semibold ${
+              winRate !== null ? (winRate >= 50 ? "text-kb-gain" : "text-kb-loss") : "text-kb-text"
+            }`}
+          >
+            {winRate !== null ? `${winRate.toFixed(0)}%` : "—"}
+          </p>
+        </div>
+      </div>
+
+      {historial.length > 0 && (
+        <div className="border-t border-kb-border-soft px-5 py-3">
+          <p className="mb-1.5 text-[10px] uppercase tracking-wide text-kb-text-muted">Historial de fases</p>
+          <div className="flex flex-wrap gap-1.5">
+            {historial.map((h) => (
+              <span
+                key={h.id}
+                className="rounded-full border border-kb-gain/30 bg-kb-gain/10 px-2 py-1 text-[11px] font-medium text-kb-gain"
+                title={`Completada el ${formatDate(h.completado_en)}`}
+              >
+                ✓ {PHASE_LABELS[h.phase]} · +{formatCurrency(h.pnl_alcanzado)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {confirmandoEliminar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
@@ -3826,28 +5380,53 @@ function FilaCuentaConfig({
               ¿Eliminar &quot;{cuenta.name}&quot;?
             </h3>
             <p className="mt-2 text-sm text-kb-text-secondary">
-              Esta acción no se puede deshacer. Tus operaciones registradas en ella no se
-              borrarán, pero quedarán sin cuenta asignada.
+              Esta acción es <span className="font-semibold text-kb-loss">definitiva</span> y no
+              se puede deshacer.
             </p>
+            <div className="mt-3 rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2.5 text-sm">
+              {cargandoConteo ? (
+                <span className="text-kb-text-secondary">Revisando qué se va a borrar…</span>
+              ) : (
+                <span className="text-kb-loss">
+                  Se van a borrar también{" "}
+                  <span className="font-semibold">
+                    {conteo?.trades ?? 0} operación{conteo?.trades === 1 ? "" : "es"}
+                  </span>{" "}
+                  y{" "}
+                  <span className="font-semibold">
+                    {conteo?.retiros ?? 0} retiro{conteo?.retiros === 1 ? "" : "s"}
+                  </span>{" "}
+                  registrados en esta cuenta.
+                </span>
+              )}
+            </div>
+            {errorEliminar && (
+              <p className="mt-3 rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
+                {errorEliminar}
+              </p>
+            )}
             <div className="mt-5 flex gap-3">
               <button
-                onClick={() => setConfirmandoEliminar(false)}
+                onClick={() => {
+                  setConfirmandoEliminar(false);
+                  setErrorEliminar(null);
+                }}
                 className="flex-1 rounded-lg border border-kb-border py-2 text-sm font-medium text-kb-text-secondary hover:text-kb-text transition-colors"
               >
                 Cancelar
               </button>
               <button
                 onClick={eliminar}
-                disabled={procesando}
+                disabled={procesando || cargandoConteo}
                 className="flex-1 rounded-lg bg-kb-loss py-2 text-sm font-semibold text-white hover:brightness-110 transition disabled:opacity-60"
               >
-                {procesando ? "Eliminando…" : "Sí, eliminar"}
+                {procesando ? "Eliminando…" : "Sí, eliminar todo"}
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -3868,6 +5447,7 @@ function ModalEditarCuenta({
   const [broker, setBroker] = useState(cuenta.broker ?? "");
   const [accountType, setAccountType] = useState<AccountType>(cuenta.account_type);
   const [phase, setPhase] = useState<AccountPhase>(cuenta.phase);
+  const [challengeType, setChallengeType] = useState<AccountChallengeType>(cuenta.challenge_type ?? "dos_fases");
   const [startingBalance, setStartingBalance] = useState(String(cuenta.starting_balance));
   const [purchaseCost, setPurchaseCost] = useState(
     cuenta.purchase_cost !== null ? String(cuenta.purchase_cost) : ""
@@ -3879,6 +5459,9 @@ function ModalEditarCuenta({
     cuenta.max_total_loss !== null ? String(cuenta.max_total_loss) : ""
   );
   const [description, setDescription] = useState(cuenta.description ?? "");
+  const [phaseTargetPercent, setPhaseTargetPercent] = useState(
+    cuenta.phase_target_percent !== null ? String(cuenta.phase_target_percent) : ""
+  );
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -3900,11 +5483,17 @@ function ModalEditarCuenta({
         broker: broker.trim() === "" ? null : broker.trim(),
         account_type: accountType,
         phase,
+        challenge_type: challengeType,
         starting_balance: balance,
         purchase_cost: purchaseCost.trim() === "" ? null : parseFloat(purchaseCost),
         max_daily_loss: maxDailyLoss.trim() === "" ? null : parseFloat(maxDailyLoss),
         max_total_loss: maxTotalLoss.trim() === "" ? null : parseFloat(maxTotalLoss),
         description: description.trim() === "" ? null : description.trim(),
+        phase_target_percent: phaseTargetPercent.trim() === "" ? null : parseFloat(phaseTargetPercent),
+        // Si cambiaste la fase a mano desde acá, reseteamos desde cuándo
+        // se cuenta el progreso — para que no arrastre P&L de la fase
+        // anterior como si fuera de la nueva.
+        ...(phase !== cuenta.phase ? { phase_started_at: new Date().toISOString() } : {}),
       })
       .eq("id", cuenta.id);
     setEnviando(false);
@@ -3937,6 +5526,20 @@ function ModalEditarCuenta({
 
           <Campo etiqueta="Empresa / Broker">
             <input value={broker} onChange={(e) => setBroker(e.target.value)} className={inputClass} />
+          </Campo>
+
+          <Campo etiqueta="Camino de fondeo">
+            <select
+              value={challengeType}
+              onChange={(e) => setChallengeType(e.target.value as AccountChallengeType)}
+              className={inputClass}
+            >
+              {(Object.entries(CHALLENGE_TYPE_LABELS) as [AccountChallengeType, string][]).map(
+                ([valor, etiqueta]) => (
+                  <option key={valor} value={valor}>{etiqueta}</option>
+                )
+              )}
+            </select>
           </Campo>
 
           <div className="grid grid-cols-2 gap-3">
@@ -3989,6 +5592,22 @@ function ModalEditarCuenta({
               className={inputClass}
             />
           </Campo>
+
+          {(phase === "fase_1" || phase === "fase_2") && (
+            <Campo
+              etiqueta="Objetivo de esta fase (%)"
+              ayuda="Ej. 8 para un objetivo de 8% de ganancia. La app va a avisarte solo cuando lo alcances."
+            >
+              <input
+                type="number"
+                step="any"
+                value={phaseTargetPercent}
+                onChange={(e) => setPhaseTargetPercent(e.target.value)}
+                placeholder="Ej. 8"
+                className={inputClass}
+              />
+            </Campo>
+          )}
 
           <div className="rounded-lg border border-kb-border-soft bg-kb-bg p-3">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-kb-accent">
@@ -4106,14 +5725,27 @@ function ModalNuevaCuenta({
   const [name, setName] = useState("");
   const [broker, setBroker] = useState("");
   const [accountType, setAccountType] = useState<AccountType>("demo");
-  const [phase, setPhase] = useState<AccountPhase>("no_aplica");
+  const [challengeType, setChallengeType] = useState<AccountChallengeType>("dos_fases");
   const [startingBalance, setStartingBalance] = useState("10000");
   const [purchaseCost, setPurchaseCost] = useState("");
   const [maxDailyLoss, setMaxDailyLoss] = useState("");
   const [maxTotalLoss, setMaxTotalLoss] = useState("");
   const [description, setDescription] = useState("");
+  const [phaseTargetPercent, setPhaseTargetPercent] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // La fase inicial queda determinada por el tipo de cuenta elegido, para
+  // que quede todo configurado de una sola vez: capital propio no tiene
+  // fases, una cuenta instantánea ya nace fondeada, y los challenges
+  // arrancan en Fase 1 (después la app misma detecta cuándo avanzan).
+  const faseInicial: AccountPhase =
+    challengeType === "capital_propio"
+      ? "no_aplica"
+      : challengeType === "instantanea"
+      ? "financiada"
+      : "fase_1";
+  const necesitaObjetivo = challengeType === "una_fase" || challengeType === "dos_fases";
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -4140,12 +5772,14 @@ function ModalNuevaCuenta({
         name: name.trim(),
         broker: broker.trim() === "" ? null : broker.trim(),
         account_type: accountType,
-        phase,
+        challenge_type: challengeType,
+        phase: faseInicial,
         starting_balance: balance,
         purchase_cost: purchaseCost.trim() === "" ? null : parseFloat(purchaseCost),
         max_daily_loss: maxDailyLoss.trim() === "" ? null : parseFloat(maxDailyLoss),
         max_total_loss: maxTotalLoss.trim() === "" ? null : parseFloat(maxTotalLoss),
         description: description.trim() === "" ? null : description.trim(),
+        phase_target_percent: necesitaObjetivo && phaseTargetPercent.trim() !== "" ? parseFloat(phaseTargetPercent) : null,
       })
       .select()
       .single();
@@ -4193,31 +5827,46 @@ function ModalNuevaCuenta({
             />
           </Campo>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Campo etiqueta="Tipo de cuenta">
-              <select
-                value={accountType}
-                onChange={(e) => setAccountType(e.target.value as AccountType)}
-                className={inputClass}
-              >
-                <option value="demo">Demo</option>
-                <option value="real">Real</option>
-              </select>
-            </Campo>
-
-            <Campo etiqueta="Fase">
-              <select
-                value={phase}
-                onChange={(e) => setPhase(e.target.value as AccountPhase)}
-                className={inputClass}
-              >
-                <option value="no_aplica">No aplica</option>
-                <option value="fase_1">Fase 1</option>
-                <option value="fase_2">Fase 2</option>
-                <option value="financiada">Financiada</option>
-              </select>
-            </Campo>
+          <div>
+            <span className="mb-1.5 block text-xs font-medium text-kb-text-secondary">
+              ¿Qué camino recorre esta cuenta hasta estar fondeada?
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              {(Object.entries(CHALLENGE_TYPE_LABELS) as [AccountChallengeType, string][]).map(
+                ([valor, etiqueta]) => (
+                  <button
+                    key={valor}
+                    type="button"
+                    onClick={() => setChallengeType(valor)}
+                    className={`rounded-lg border px-3 py-2.5 text-left text-xs font-medium transition-colors ${
+                      challengeType === valor
+                        ? "border-kb-accent bg-kb-accent/10 text-kb-accent"
+                        : "border-kb-border text-kb-text-secondary hover:border-kb-text-secondary"
+                    }`}
+                  >
+                    {etiqueta}
+                  </button>
+                )
+              )}
+            </div>
+            <p className="mt-1.5 text-[11px] text-kb-text-muted">
+              {challengeType === "capital_propio" && "Sin fases — es tu propia plata, arranca sin objetivos de challenge."}
+              {challengeType === "instantanea" && "Ya nace como cuenta financiada, sin pasos previos."}
+              {challengeType === "una_fase" && "Arranca en Fase 1. Al lograr el objetivo, se marca directo como Financiada (sin Fase 2)."}
+              {challengeType === "dos_fases" && "Arranca en Fase 1. Al lograr el objetivo pasa a Fase 2, y luego a Financiada."}
+            </p>
           </div>
+
+          <Campo etiqueta="Tipo de cuenta">
+            <select
+              value={accountType}
+              onChange={(e) => setAccountType(e.target.value as AccountType)}
+              className={inputClass}
+            >
+              <option value="demo">Demo</option>
+              <option value="real">Real</option>
+            </select>
+          </Campo>
 
           <Campo etiqueta="Balance inicial" ayuda="El capital con el que arrancó la cuenta">
             <input
@@ -4243,6 +5892,22 @@ function ModalNuevaCuenta({
               className={inputClass}
             />
           </Campo>
+
+          {necesitaObjetivo && (
+            <Campo
+              etiqueta="Objetivo de la Fase 1 (%)"
+              ayuda="Ej. 8 para un objetivo de 8% de ganancia. La app va a avisarte solo cuando lo alcances."
+            >
+              <input
+                type="number"
+                step="any"
+                value={phaseTargetPercent}
+                onChange={(e) => setPhaseTargetPercent(e.target.value)}
+                placeholder="Ej. 8"
+                className={inputClass}
+              />
+            </Campo>
+          )}
 
           <div className="rounded-lg border border-kb-border-soft bg-kb-bg p-3">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-kb-accent">
@@ -4662,94 +6327,6 @@ function GraficoPnL({ trades }: { trades: Trade[] }) {
 }
 
 // =====================================================================
-// RESUMEN DE RENDIMIENTO POR ESTRATEGIA
-// =====================================================================
-
-function ResumenPorEstrategia({
-  trades,
-  estrategias,
-}: {
-  trades: Trade[];
-  estrategias: Strategy[];
-}) {
-  const filas = useMemo(() => {
-    const cerrados = trades.filter((t) => t.status === "closed" && t.realized_pnl !== null);
-
-    const grupos = new Map<string, { pnl: number; total: number; ganadores: number }>();
-    grupos.set("sin_estrategia", { pnl: 0, total: 0, ganadores: 0 });
-    estrategias.forEach((e) => grupos.set(e.id, { pnl: 0, total: 0, ganadores: 0 }));
-
-    cerrados.forEach((t) => {
-      const clave = t.strategy_id ?? "sin_estrategia";
-      const actual = grupos.get(clave) ?? { pnl: 0, total: 0, ganadores: 0 };
-      actual.pnl += t.realized_pnl ?? 0;
-      actual.total += 1;
-      if ((t.realized_pnl ?? 0) > 0) actual.ganadores += 1;
-      grupos.set(clave, actual);
-    });
-
-    return Array.from(grupos.entries())
-      .map(([clave, datos]) => ({
-        nombre:
-          clave === "sin_estrategia"
-            ? "Sin estrategia"
-            : estrategias.find((e) => e.id === clave)?.name ?? "—",
-        ...datos,
-        winRate: datos.total > 0 ? (datos.ganadores / datos.total) * 100 : 0,
-      }))
-      .filter((f) => f.total > 0)
-      .sort((a, b) => b.pnl - a.pnl);
-  }, [trades, estrategias]);
-
-  return (
-    <section className="rounded-xl border border-kb-border bg-kb-surface">
-      <div className="border-b border-kb-border-soft px-5 py-4">
-        <h2 className="font-display text-lg font-semibold">Rendimiento por estrategia</h2>
-      </div>
-
-      {filas.length === 0 ? (
-        <p className="px-5 py-10 text-center text-sm text-kb-text-secondary">
-          Cierra operaciones con una estrategia asignada para ver tu rendimiento por setup.
-        </p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-kb-border-soft text-xs text-kb-text-secondary">
-                <th className="px-5 py-3 font-medium">Estrategia</th>
-                <th className="px-5 py-3 font-medium">Operaciones</th>
-                <th className="px-5 py-3 font-medium">Win rate</th>
-                <th className="px-5 py-3 font-medium">P&amp;L total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filas.map((f) => (
-                <tr key={f.nombre} className="border-b border-kb-border-soft">
-                  <td className="px-5 py-3 font-medium">{f.nombre}</td>
-                  <td className="px-5 py-3 font-mono text-kb-text-secondary">{f.total}</td>
-                  <td className="px-5 py-3 font-mono">
-                    <span className={f.winRate >= 50 ? "text-kb-gain" : "text-kb-loss"}>
-                      {f.winRate.toFixed(0)}%
-                    </span>
-                  </td>
-                  <td
-                    className={`px-5 py-3 font-mono font-semibold ${
-                      f.pnl >= 0 ? "text-kb-gain" : "text-kb-loss"
-                    }`}
-                  >
-                    {formatCurrency(f.pnl)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
-// =====================================================================
 // PANEL DE MÉTRICAS PRINCIPAL — donut de win rate + P&L + barra de
 // ganancia/pérdida promedio + extremos (estilo TradeLog)
 // =====================================================================
@@ -5119,6 +6696,43 @@ function ImagenPrivada({
   return <img src={url} alt={alt} className={className} />;
 }
 
+/**
+ * Miniatura clickeable de una captura de pantalla subida como evidencia
+ * de un trade (bucket privado "trade-evidence"). Al hacer clic abre la
+ * imagen en tamaño completo en una pestaña nueva.
+ */
+function GaleriaImagenEvidencia({ ruta }: { ruta: string }) {
+  const [urlFirmada, setUrlFirmada] = useState<string | null>(null);
+
+  useEffect(() => {
+    let activo = true;
+    async function cargar() {
+      const rutaLimpia = extraerRutaStorage("trade-evidence", ruta);
+      const { data } = await supabase.storage.from("trade-evidence").createSignedUrl(rutaLimpia, 3600);
+      if (activo) setUrlFirmada(data?.signedUrl ?? null);
+    }
+    cargar();
+    return () => {
+      activo = false;
+    };
+  }, [ruta]);
+
+  if (!urlFirmada) {
+    return <SkeletonBloque className="h-24 w-full rounded-lg" />;
+  }
+
+  return (
+    <a href={urlFirmada} target="_blank" rel="noopener noreferrer" className="block">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={urlFirmada}
+        alt="Captura de evidencia"
+        className="h-24 w-full rounded-lg border border-kb-border-soft object-cover transition-opacity hover:opacity-80"
+      />
+    </a>
+  );
+}
+
 function MetricCard({
   etiqueta,
   valor,
@@ -5164,38 +6778,26 @@ type CeldaDia = { fecha: Date; clave: string } | null;
 
 function CalendarioRendimiento({
   trades,
-  estrategias,
-  accountId,
-  tieneCuentas,
   diaSeleccionado,
   onSeleccionarDia,
-  onTradeActualizado,
+  onAbrirDia,
 }: {
   trades: Trade[];
-  estrategias: Strategy[];
-  accountId: string | null;
-  tieneCuentas: boolean;
   diaSeleccionado: string;
   onSeleccionarDia: (clave: string) => void;
-  onTradeActualizado: () => void;
+  onAbrirDia: (clave: string, tradesDelDia: Trade[]) => void;
 }) {
   const [mesActual, setMesActual] = useState(() => {
     const hoy = new Date();
     return { year: hoy.getFullYear(), month: hoy.getMonth() };
   });
-  const [diaConVarios, setDiaConVarios] = useState<{ clave: string; trades: Trade[] } | null>(null);
-  const [tradeSeleccionado, setTradeSeleccionado] = useState<Trade | null>(null);
-  const [diaParaCrear, setDiaParaCrear] = useState<string | null>(null);
 
   const resumenPorDia = useMemo(() => {
     const mapa = new Map<string, ResumenDia>();
     trades
       .filter((t) => t.status === "closed" && t.realized_pnl !== null)
       .forEach((t) => {
-        const fecha = new Date(t.entry_time);
-        const clave = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(
-          fecha.getDate()
-        ).padStart(2, "0")}`;
+        const clave = fechaKeyLocal(t.entry_time);
         const previo = mapa.get(clave) ?? { pnl: 0, cantidadTrades: 0 };
         mapa.set(clave, {
           pnl: previo.pnl + (t.realized_pnl ?? 0),
@@ -5205,11 +6807,15 @@ function CalendarioRendimiento({
     return mapa;
   }, [trades]);
 
+  // BUGFIX: se usa fechaKeyLocal() en vez de entry_time.slice(0, 10) para
+  // que coincida exactamente con las claves de resumenPorDia (arriba) y
+  // con las celdas del calendario, evitando el desfase de un día que se
+  // producía en usuarios con huso horario negativo (ej. GMT-3).
   const diasConPendiente = useMemo(() => {
     const set = new Set<string>();
     trades
       .filter((t) => t.status === "open")
-      .forEach((t) => set.add(t.entry_time.slice(0, 10)));
+      .forEach((t) => set.add(fechaKeyLocal(t.entry_time)));
     return set;
   }, [trades]);
 
@@ -5217,14 +6823,16 @@ function CalendarioRendimiento({
     const { year, month } = mesActual;
     let pnl = 0;
     let diasOperados = 0;
+    let diasGanadores = 0;
     resumenPorDia.forEach((resumen, clave) => {
       const [y, m] = clave.split("-").map(Number);
       if (y === year && m === month + 1) {
         pnl += resumen.pnl;
         diasOperados += 1;
+        if (resumen.pnl > 0) diasGanadores += 1;
       }
     });
-    return { pnl, diasOperados };
+    return { pnl, diasOperados, diasGanadores };
   }, [resumenPorDia, mesActual]);
 
   const semanas = useMemo(() => {
@@ -5254,278 +6862,166 @@ function CalendarioRendimiento({
     });
   }
 
-  // Si el día ya tiene operaciones registradas, mostramos el resumen en vez
-  // de mandar directo al formulario de registro. Con 1 sola operación se
-  // abre su detalle; con varias, primero hay que elegir cuál.
+  // Al hacer clic en un día, le avisamos al Dashboard qué operaciones
+  // tenía ese día (si las tenía) para que decida qué "apartado" completo
+  // mostrar: elegir entre varias, ver el detalle de una sola, o abrir el
+  // formulario de registro si el día está vacío. Ya no se abre ninguna
+  // ventana flotante desde acá.
   function manejarClickDia(clave: string) {
-    // Incluye tanto operaciones cerradas como pendientes de ese día, para
-    // poder finalizar una pendiente con un clic desde el calendario.
-    const tradesDelDia = trades.filter((t) => t.entry_time.slice(0, 10) === clave);
-    if (tradesDelDia.length === 0) {
-      onSeleccionarDia(clave);
-      setDiaParaCrear(clave);
-    } else {
-      setDiaConVarios({ clave, trades: tradesDelDia });
-    }
+    const tradesDelDia = trades.filter((t) => fechaKeyLocal(t.entry_time) === clave);
+    onSeleccionarDia(clave);
+    onAbrirDia(clave, tradesDelDia);
   }
 
   return (
-    <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h2 className="font-display text-lg font-semibold">
-            {MESES[mesActual.month]} {mesActual.year}
-          </h2>
-          <div className="flex gap-2">
-            <button
-              onClick={() => cambiarMes(-1)}
-              aria-label="Mes anterior"
-              className="rounded-lg border border-kb-border px-2.5 py-1 text-sm text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
-            >
-              ‹
-            </button>
-            <button
-              onClick={() => cambiarMes(1)}
-              aria-label="Mes siguiente"
-              className="rounded-lg border border-kb-border px-2.5 py-1 text-sm text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
-            >
-              ›
-            </button>
+    <div className="space-y-4">
+      <div>
+        <h1 className="font-display text-xl font-bold text-kb-text">Calendario de trading</h1>
+        <p className="mt-0.5 text-sm text-kb-text-secondary">Tu resultado día por día, semana por semana.</p>
+      </div>
+
+      <section className="grid gap-4 sm:grid-cols-3">
+        <MetricCard
+          etiqueta="Cierre del mes"
+          valor={resumenDelMes.diasOperados > 0 ? formatCurrency(resumenDelMes.pnl) : "—"}
+          tono={resumenDelMes.diasOperados > 0 ? (resumenDelMes.pnl >= 0 ? "gain" : "loss") : undefined}
+        />
+        <MetricCard etiqueta="Días operados" valor={String(resumenDelMes.diasOperados)} />
+        <MetricCard
+          etiqueta="Días en verde"
+          valor={`${resumenDelMes.diasGanadores} / ${resumenDelMes.diasOperados}`}
+          tono={resumenDelMes.diasGanadores > 0 ? "gain" : undefined}
+        />
+      </section>
+
+      <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <h2 className="font-display text-lg font-semibold">
+              {MESES[mesActual.month]} {mesActual.year}
+            </h2>
+            <div className="flex gap-2">
+              <button
+                onClick={() => cambiarMes(-1)}
+                aria-label="Mes anterior"
+                className="rounded-lg border border-kb-border px-2.5 py-1 text-sm text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+              >
+                ‹
+              </button>
+              <button
+                onClick={() => cambiarMes(1)}
+                aria-label="Mes siguiente"
+                className="rounded-lg border border-kb-border px-2.5 py-1 text-sm text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+              >
+                ›
+              </button>
+            </div>
           </div>
         </div>
 
-        {resumenDelMes.diasOperados > 0 && (
-          <div className="flex items-center gap-4 text-sm">
-            <span className="text-kb-text-secondary">
-              {resumenDelMes.diasOperados} día{resumenDelMes.diasOperados === 1 ? "" : "s"} operado
-              {resumenDelMes.diasOperados === 1 ? "" : "s"}
-            </span>
-            <span
-              className={`font-mono font-semibold ${
-                resumenDelMes.pnl >= 0 ? "text-kb-gain" : "text-kb-loss"
-              }`}
-            >
-              {resumenDelMes.pnl >= 0 ? "+" : ""}
-              {formatCurrency(resumenDelMes.pnl)}
-            </span>
-          </div>
-        )}
-      </div>
+        <div className="grid grid-cols-[repeat(7,1fr)_auto] gap-2 text-center text-xs text-kb-text-muted mb-2">
+          {DIAS_SEMANA.map((d) => (
+            <span key={d}>{d}</span>
+          ))}
+          <span className="w-20">Semana</span>
+        </div>
 
-      <div className="grid grid-cols-[repeat(7,1fr)_auto] gap-2 text-center text-xs text-kb-text-muted mb-2">
-        {DIAS_SEMANA.map((d) => (
-          <span key={d}>{d}</span>
-        ))}
-        <span className="w-20">Semana</span>
-      </div>
+        <div className="space-y-2">
+          {semanas.map((semana, filaIdx) => {
+            const totalSemana = semana.reduce((acc, celda) => {
+              if (!celda) return acc;
+              const resumen = resumenPorDia.get(celda.clave);
+              return acc + (resumen?.pnl ?? 0);
+            }, 0);
+            const semanaTuvoOperaciones = semana.some(
+              (celda) => celda && resumenPorDia.has(celda.clave)
+            );
 
-      <div className="space-y-2">
-        {semanas.map((semana, filaIdx) => {
-          const totalSemana = semana.reduce((acc, celda) => {
-            if (!celda) return acc;
-            const resumen = resumenPorDia.get(celda.clave);
-            return acc + (resumen?.pnl ?? 0);
-          }, 0);
-          const semanaTuvoOperaciones = semana.some(
-            (celda) => celda && resumenPorDia.has(celda.clave)
-          );
+            return (
+              <div key={filaIdx} className="grid grid-cols-[repeat(7,1fr)_auto] gap-2">
+                {semana.map((celda, i) => {
+                  if (!celda) return <div key={`vacio-${filaIdx}-${i}`} />;
 
-          return (
-            <div key={filaIdx} className="grid grid-cols-[repeat(7,1fr)_auto] gap-2">
-              {semana.map((celda, i) => {
-                if (!celda) return <div key={`vacio-${filaIdx}-${i}`} />;
+                  const resumen = resumenPorDia.get(celda.clave);
+                  const tienePendiente = diasConPendiente.has(celda.clave);
+                  const esHoy = celda.clave === todayKey();
+                  const seleccionado = diaSeleccionado === celda.clave;
 
-                const resumen = resumenPorDia.get(celda.clave);
-                const tienePendiente = diasConPendiente.has(celda.clave);
-                const esHoy = celda.clave === todayKey();
-                const seleccionado = diaSeleccionado === celda.clave;
+                  let estiloCelda = "border-kb-border-soft bg-kb-bg text-kb-text-secondary";
+                  if (resumen) {
+                    estiloCelda =
+                      resumen.pnl >= 0
+                        ? "border-kb-gain/40 bg-kb-gain/15 text-kb-gain"
+                        : "border-kb-loss/40 bg-kb-loss/15 text-kb-loss";
+                  } else if (tienePendiente) {
+                    estiloCelda = "border-kb-accent/40 bg-kb-accent/10 text-kb-accent";
+                  }
 
-                let estiloCelda = "border-kb-border-soft bg-kb-bg text-kb-text-secondary";
-                if (resumen) {
-                  estiloCelda =
-                    resumen.pnl >= 0
-                      ? "border-kb-gain/30 bg-kb-gain/10 text-kb-gain"
-                      : "border-kb-loss/30 bg-kb-loss/10 text-kb-loss";
-                } else if (tienePendiente) {
-                  estiloCelda = "border-kb-accent/40 bg-kb-accent/10 text-kb-accent";
-                }
-
-                return (
-                  <button
-                    key={celda.clave}
-                    type="button"
-                    onClick={() => manejarClickDia(celda.clave)}
-                    className={`relative h-16 rounded-lg border p-1.5 text-left transition-colors cursor-pointer hover:brightness-125 sm:h-20 ${estiloCelda} ${
-                      seleccionado ? "ring-2 ring-kb-accent" : ""
-                    } ${esHoy ? "outline outline-1 outline-kb-accent/50" : ""}`}
-                  >
-                    {tienePendiente && <span className="absolute right-1 top-1 text-xs">🕐</span>}
-                    <span className="block text-[11px] font-medium">{celda.fecha.getDate()}</span>
-                    {resumen && (
-                      <span className="mt-1 block font-mono text-[10px] font-semibold leading-tight">
-                        {resumen.pnl >= 0 ? "+" : ""}
-                        {formatCurrency(resumen.pnl)}
-                      </span>
-                    )}
-                    {resumen && resumen.cantidadTrades > 1 && (
-                      <span className="mt-0.5 block text-[9px] text-kb-text-muted">
-                        {resumen.cantidadTrades} ops
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-
-              <div
-                className={`flex h-16 w-20 flex-col items-center justify-center rounded-lg border text-center sm:h-20 ${
-                  !semanaTuvoOperaciones
-                    ? "border-kb-border-soft bg-kb-bg/40"
-                    : totalSemana >= 0
-                    ? "border-kb-gain/20 bg-kb-gain/5"
-                    : "border-kb-loss/20 bg-kb-loss/5"
-                }`}
-              >
-                {semanaTuvoOperaciones ? (
-                  <span
-                    className={`font-mono text-xs font-semibold ${
-                      totalSemana >= 0 ? "text-kb-gain" : "text-kb-loss"
-                    }`}
-                  >
-                    {totalSemana >= 0 ? "+" : ""}
-                    {formatCurrency(totalSemana)}
-                  </span>
-                ) : (
-                  <span className="text-xs text-kb-text-muted">—</span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <p className="mt-4 text-center text-xs text-kb-text-secondary">
-        Haz clic en un día para registrar o revisar operaciones de esa fecha.
-      </p>
-
-      {resumenPorDia.size === 0 && (
-        <p className="mt-2 text-center text-sm text-kb-text-secondary">
-          Cierra operaciones para ver tu rendimiento diario reflejado aquí.
-        </p>
-      )}
-
-      {diaConVarios && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-          <div className="w-full max-w-sm rounded-2xl border border-kb-border bg-kb-surface p-6 shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="font-display text-lg font-bold">
-                {new Date(diaConVarios.clave + "T00:00:00").toLocaleDateString("es-ES", {
-                  day: "numeric",
-                  month: "long",
+                  return (
+                    <button
+                      key={celda.clave}
+                      type="button"
+                      onClick={() => manejarClickDia(celda.clave)}
+                      className={`relative flex h-20 flex-col justify-between rounded-xl border p-2 text-left transition-colors cursor-pointer hover:brightness-125 sm:h-24 ${estiloCelda} ${
+                        seleccionado ? "ring-2 ring-kb-accent" : ""
+                      } ${esHoy ? "outline outline-2 outline-kb-accent/60" : ""}`}
+                    >
+                      {tienePendiente && <span className="absolute right-1.5 top-1.5 text-xs">🕐</span>}
+                      <span className="block text-xs font-semibold">{celda.fecha.getDate()}</span>
+                      {resumen && (
+                        <div>
+                          <span className="block font-mono text-sm font-bold leading-tight">
+                            {resumen.pnl >= 0 ? "+" : ""}
+                            {formatCurrency(resumen.pnl)}
+                          </span>
+                          <span className="block text-[10px] opacity-80">
+                            {resumen.cantidadTrades} op{resumen.cantidadTrades === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                      )}
+                    </button>
+                  );
                 })}
-              </h3>
-              <button
-                onClick={() => setDiaConVarios(null)}
-                className="text-kb-text-muted hover:text-kb-text transition"
-                aria-label="Cerrar"
-              >
-                ✕
-              </button>
-            </div>
-            <p className="mb-3 text-xs text-kb-text-secondary">
-              Este día tenés {diaConVarios.trades.length} operación{diaConVarios.trades.length === 1 ? "" : "es"} registrada{diaConVarios.trades.length === 1 ? "" : "s"}.
-            </p>
-            <div className="space-y-2">
-              {diaConVarios.trades.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => {
-                    setTradeSeleccionado(t);
-                    setDiaConVarios(null);
-                  }}
-                  className="flex w-full items-center justify-between rounded-lg border border-kb-border-soft bg-kb-bg px-3 py-2.5 text-left hover:border-kb-accent transition-colors"
+
+                <div
+                  className={`flex h-20 w-20 flex-col items-center justify-center rounded-xl border text-center sm:h-24 ${
+                    !semanaTuvoOperaciones
+                      ? "border-kb-border-soft bg-kb-bg/40"
+                      : totalSemana >= 0
+                      ? "border-kb-gain/30 bg-kb-gain/10"
+                      : "border-kb-loss/30 bg-kb-loss/10"
+                  }`}
                 >
-                  <span className="flex items-center gap-2">
+                  <p className="text-[9px] uppercase tracking-wide text-kb-text-muted">Total</p>
+                  {semanaTuvoOperaciones ? (
                     <span
-                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                        t.side === "long" ? "bg-kb-gain/10 text-kb-gain" : "bg-kb-loss/10 text-kb-loss"
+                      className={`font-mono text-sm font-bold ${
+                        totalSemana >= 0 ? "text-kb-gain" : "text-kb-loss"
                       }`}
                     >
-                      {t.side === "long" ? "Long" : "Short"}
+                      {totalSemana >= 0 ? "+" : ""}
+                      {formatCurrency(totalSemana)}
                     </span>
-                    <span className="font-mono text-sm font-semibold">{t.symbol}</span>
-                  </span>
-                  <span
-                    className={`font-mono text-sm font-semibold ${
-                      (t.realized_pnl ?? 0) >= 0 ? "text-kb-gain" : "text-kb-loss"
-                    }`}
-                  >
-                    {t.realized_pnl === null ? "—" : formatCurrency(t.realized_pnl)}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => {
-                setDiaParaCrear(diaConVarios.clave);
-                setDiaConVarios(null);
-              }}
-              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-kb-accent/40 px-3 py-2.5 text-sm font-medium text-kb-accent hover:bg-kb-accent/10 transition-colors"
-            >
-              + Agregar otra operación
-            </button>
-          </div>
+                  ) : (
+                    <span className="text-xs text-kb-text-muted">—</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
-      )}
 
-      {tradeSeleccionado && (
-        <ModalDetalleTrade
-          trade={tradeSeleccionado}
-          estrategias={estrategias}
-          onClose={() => setTradeSeleccionado(null)}
-          onActualizado={() => {
-            setTradeSeleccionado(null);
-            onTradeActualizado();
-          }}
-          onEliminado={() => {
-            setTradeSeleccionado(null);
-            onTradeActualizado();
-          }}
-        />
-      )}
+        <p className="mt-4 text-center text-xs text-kb-text-secondary">
+          Haz clic en un día para registrar o revisar operaciones de esa fecha.
+        </p>
 
-      {diaParaCrear && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8 overflow-y-auto">
-          <div className="w-full max-h-[85vh] max-w-2xl overflow-y-auto rounded-2xl border border-kb-border bg-kb-surface p-6 shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="font-display text-lg font-bold">
-                Registrar operación —{" "}
-                {new Date(diaParaCrear + "T00:00:00").toLocaleDateString("es-ES", {
-                  day: "numeric",
-                  month: "long",
-                })}
-              </h3>
-              <button
-                onClick={() => setDiaParaCrear(null)}
-                className="text-kb-text-muted hover:text-kb-text transition"
-                aria-label="Cerrar"
-              >
-                ✕
-              </button>
-            </div>
-            <FormularioTrade
-              accountId={accountId}
-              tieneCuentas={tieneCuentas}
-              diaParaRegistrar={diaParaCrear}
-              estrategiasDisponibles={estrategias}
-              onTradeCreado={() => {
-                setDiaParaCrear(null);
-                onTradeActualizado();
-              }}
-            />
-          </div>
-        </div>
-      )}
-    </section>
+        {resumenPorDia.size === 0 && (
+          <p className="mt-2 text-center text-sm text-kb-text-secondary">
+            Cierra operaciones para ver tu rendimiento diario reflejado aquí.
+          </p>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -5562,6 +7058,8 @@ function FormularioTrade({
   const [entryTime, setEntryTime] = useState("");
   const [exitTime, setExitTime] = useState("");
   const [tradingviewLinks, setTradingviewLinks] = useState<string[]>([""]);
+  const [imagenesEvidencia, setImagenesEvidencia] = useState<File[]>([]);
+  const [subiendoImagenes, setSubiendoImagenes] = useState(false);
   const [notes, setNotes] = useState("");
   const [strategyId, setStrategyId] = useState<string>("");
   const [emotion, setEmotion] = useState<EmotionType | "">("");
@@ -5641,6 +7139,26 @@ function FormularioTrade({
 
     setEnviando(true);
 
+    // Subimos las imágenes de evidencia primero (si hay), para guardar
+    // sus rutas junto con el resto de la operación. El bucket es privado;
+    // solo guardamos la ruta, la URL de acceso se genera al mostrarla.
+    let rutasImagenes: string[] = [];
+    if (imagenesEvidencia.length > 0) {
+      setSubiendoImagenes(true);
+      const subidas = await Promise.all(
+        imagenesEvidencia.map(async (archivo) => {
+          const nombreLimpio = archivo.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+          const ruta = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${nombreLimpio}`;
+          const { error: uploadError } = await supabase.storage
+            .from("trade-evidence")
+            .upload(ruta, archivo);
+          return uploadError ? null : ruta;
+        })
+      );
+      rutasImagenes = subidas.filter((r): r is string => r !== null);
+      setSubiendoImagenes(false);
+    }
+
     const horaActual = new Date().toTimeString().slice(0, 5);
     const horaEntradaFinal = entryTime === "" ? horaActual : entryTime;
     const horaSalidaFinal = exitTime === "" ? horaActual : exitTime;
@@ -5667,6 +7185,7 @@ function FormularioTrade({
         pips: yaSeCerro ? pipsNumero : null,
         session: session === "" ? null : session,
         tradingview_links: tradingviewLinks.map((l) => l.trim()).filter((l) => l !== ""),
+        evidence_images: rutasImagenes,
         notes: notes.trim() === "" ? null : notes.trim(),
         strategy_id: strategyId === "" ? null : strategyId,
         emotion: emotion === "" ? null : emotion,
@@ -5698,6 +7217,7 @@ function FormularioTrade({
     setEntryTime("");
     setExitTime("");
     setTradingviewLinks([""]);
+    setImagenesEvidencia([]);
     setNotes("");
     setResultType("tp");
     setStrategyId("");
@@ -5993,6 +7513,49 @@ function FormularioTrade({
               + Agregar otro link
             </button>
           </div>
+
+          <div className="mt-4">
+            <span className="mb-1 block text-xs font-medium text-kb-text-secondary">
+              Capturas de pantalla (opcional)
+            </span>
+            <span className="mb-2 block text-[11px] text-kb-text-muted">
+              Subí directamente una o varias imágenes del gráfico como evidencia — no hace
+              falta que dependas de un link externo.
+            </span>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => {
+                const archivos = Array.from(e.target.files ?? []);
+                setImagenesEvidencia((prev) => [...prev, ...archivos]);
+                e.target.value = "";
+              }}
+              className={`${inputClass} py-1.5`}
+            />
+            {imagenesEvidencia.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {imagenesEvidencia.map((archivo, i) => (
+                  <span
+                    key={i}
+                    className="flex items-center gap-1.5 rounded-lg border border-kb-border-soft bg-kb-bg px-2.5 py-1.5 text-xs text-kb-text-secondary"
+                  >
+                    📷 {archivo.name.length > 20 ? archivo.name.slice(0, 20) + "…" : archivo.name}
+                    <button
+                      type="button"
+                      onClick={() => setImagenesEvidencia((prev) => prev.filter((_, idx) => idx !== i))}
+                      className="text-kb-text-muted hover:text-kb-loss transition-colors"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {subiendoImagenes && (
+              <p className="mt-2 text-xs text-kb-accent">Subiendo imágenes…</p>
+            )}
+          </div>
         </div>
 
         {/* ---------- Sección 4: resultado y estrategia ---------- */}
@@ -6184,16 +7747,46 @@ function ModalDetalleTrade({
   onClose,
   onActualizado,
   onEliminado,
+  variante = "modal",
 }: {
   trade: Trade;
   estrategias: Strategy[];
   onClose: () => void;
   onActualizado: () => void;
   onEliminado: () => void;
+  /** "modal" = ventana flotante de siempre. "pagina" = se renderiza como
+   * contenido normal a página completa, sin fondo oscuro ni superposición
+   * — se usa cuando se accede desde el calendario para no interrumpir
+   * con una ventana flotante. */
+  variante?: "modal" | "pagina";
 }) {
-  const [modo, setModo] = useState<"ver" | "editar" | "cerrar">("ver");
+  const [modo, setModo] = useState<"ver" | "editar" | "cerrar" | "cerrar_parcial">("ver");
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(false);
   const [procesando, setProcesando] = useState(false);
+
+  // ---- Cierres parciales (escalado de salida) ----
+  const [exits, setExits] = useState<TradeExit[]>([]);
+  const [cargandoExits, setCargandoExits] = useState(true);
+
+  async function cargarExits() {
+    setCargandoExits(true);
+    const { data } = await supabase
+      .from("trade_exits")
+      .select("*")
+      .eq("trade_id", trade.id)
+      .order("exit_time", { ascending: true });
+    setExits((data as TradeExit[]) ?? []);
+    setCargandoExits(false);
+  }
+
+  useEffect(() => {
+    cargarExits();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trade.id]);
+
+  const cantidadCerradaParcial = exits.reduce((acc, e) => acc + e.quantity, 0);
+  const cantidadRestante = Math.max(trade.quantity - cantidadCerradaParcial, 0);
+  const tieneParciales = exits.length > 0;
 
   async function eliminar() {
     setProcesando(true);
@@ -6206,11 +7799,18 @@ function ModalDetalleTrade({
   const estrategiaNombre = estrategias.find((e) => e.id === trade.strategy_id)?.name ?? "Sin estrategia";
   const estaPendiente = trade.status === "open";
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8 overflow-y-auto">
-      <div className="w-full max-h-[85vh] max-w-lg overflow-y-auto rounded-2xl border border-kb-border bg-kb-surface p-6 shadow-2xl">
+  const contenido = (
+    <>
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
+            {variante === "pagina" && (
+              <button
+                onClick={onClose}
+                className="mr-1 rounded-lg border border-kb-border px-2 py-1 text-xs text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+              >
+                ← Volver
+              </button>
+            )}
             <h2 className="font-display text-xl font-bold">{trade.symbol}</h2>
             <span
               className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -6225,16 +7825,30 @@ function ModalDetalleTrade({
               </span>
             )}
           </div>
-          <button onClick={onClose} className="text-kb-text-muted hover:text-kb-text transition" aria-label="Cerrar">
-            ✕
-          </button>
+          {variante === "modal" && (
+            <button onClick={onClose} className="text-kb-text-muted hover:text-kb-text transition" aria-label="Cerrar">
+              ✕
+            </button>
+          )}
         </div>
 
         {modo === "cerrar" ? (
           <FormularioCerrarTrade
             trade={trade}
+            pnlParcialesPrevios={exits.reduce((acc, e) => acc + e.pnl, 0)}
             onCancelar={() => setModo("ver")}
             onCerrado={onActualizado}
+          />
+        ) : modo === "cerrar_parcial" ? (
+          <FormularioCierreParcial
+            trade={trade}
+            cantidadRestante={cantidadRestante}
+            onCancelar={() => setModo("ver")}
+            onParcialGuardado={async () => {
+              await cargarExits();
+              setModo("ver");
+            }}
+            onCerradoCompleto={onActualizado}
           />
         ) : modo === "ver" && estaPendiente ? (
           <div className="space-y-4">
@@ -6243,6 +7857,41 @@ function ModalDetalleTrade({
                 Esta operación todavía está abierta — registrala como cerrada cuando termine.
               </p>
             </div>
+
+            {!cargandoExits && tieneParciales && (
+              <div className="rounded-lg border border-kb-border-soft bg-kb-bg p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-xs font-semibold text-kb-text">
+                    Cerrado parcialmente: {cantidadCerradaParcial} de {trade.quantity}
+                  </p>
+                  <p className="text-xs font-mono text-kb-text-secondary">
+                    {((cantidadCerradaParcial / trade.quantity) * 100).toFixed(0)}%
+                  </p>
+                </div>
+                <div className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-kb-border">
+                  <div
+                    className="h-full bg-kb-accent"
+                    style={{ width: `${Math.min((cantidadCerradaParcial / trade.quantity) * 100, 100)}%` }}
+                  />
+                </div>
+                <ul className="space-y-1.5">
+                  {exits.map((e) => (
+                    <li key={e.id} className="flex items-center justify-between text-xs">
+                      <span className="text-kb-text-secondary">
+                        {e.quantity} @ {formatPrice(e.exit_price)} · {formatDate(e.exit_time)}
+                      </span>
+                      <span className={`font-mono font-semibold ${e.pnl >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
+                        {formatCurrency(e.pnl)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-[11px] text-kb-text-muted">
+                  Quedan {cantidadRestante} sin cerrar. El trade pasa a "cerrado" y entra en tus
+                  métricas recién cuando se cierre el 100% de la posición.
+                </p>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3 text-sm">
               <DatoDetalle etiqueta="Instrumento" valor={INSTRUMENT_LABELS[trade.instrument_type]} />
@@ -6275,7 +7924,13 @@ function ModalDetalleTrade({
                 onClick={() => setModo("cerrar")}
                 className="flex-1 rounded-lg bg-kb-accent py-2.5 text-sm font-semibold text-kb-bg hover:brightness-110 transition"
               >
-                ✅ Cerrar operación
+                ✅ Cerrar {tieneParciales ? "el resto" : "operación"}
+              </button>
+              <button
+                onClick={() => setModo("cerrar_parcial")}
+                className="flex-1 rounded-lg border border-kb-accent/40 py-2.5 text-sm font-medium text-kb-accent hover:bg-kb-accent/10 transition-colors"
+              >
+                📐 Cerrar parcial
               </button>
               <button
                 onClick={() => setConfirmandoEliminar(true)}
@@ -6339,7 +7994,7 @@ function ModalDetalleTrade({
             {trade.tradingview_links && trade.tradingview_links.length > 0 && (
               <div>
                 <p className="mb-1 text-xs font-medium text-kb-text-secondary">
-                  Evidencia {trade.tradingview_links.length > 1 ? `(${trade.tradingview_links.length} temporalidades)` : ""}
+                  Links {trade.tradingview_links.length > 1 ? `(${trade.tradingview_links.length} temporalidades)` : ""}
                 </p>
                 <div className="flex flex-wrap gap-3">
                   {trade.tradingview_links.map((link, i) => (
@@ -6352,6 +8007,19 @@ function ModalDetalleTrade({
                     >
                       Ver gráfico {trade.tradingview_links.length > 1 ? `#${i + 1}` : ""} →
                     </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {trade.evidence_images && trade.evidence_images.length > 0 && (
+              <div>
+                <p className="mb-1 text-xs font-medium text-kb-text-secondary">
+                  Capturas ({trade.evidence_images.length})
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {trade.evidence_images.map((ruta, i) => (
+                    <GaleriaImagenEvidencia key={i} ruta={ruta} />
                   ))}
                 </div>
               </div>
@@ -6406,6 +8074,17 @@ function ModalDetalleTrade({
             </div>
           </div>
         )}
+    </>
+  );
+
+  if (variante === "pagina") {
+    return <div className="rounded-2xl border border-kb-border bg-kb-surface p-6">{contenido}</div>;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8 overflow-y-auto">
+      <div className="w-full max-h-[85vh] max-w-lg overflow-y-auto rounded-2xl border border-kb-border bg-kb-surface p-6 shadow-2xl">
+        {contenido}
       </div>
     </div>
   );
@@ -6418,10 +8097,12 @@ function ModalDetalleTrade({
 
 function FormularioCerrarTrade({
   trade,
+  pnlParcialesPrevios = 0,
   onCancelar,
   onCerrado,
 }: {
   trade: Trade;
+  pnlParcialesPrevios?: number;
   onCancelar: () => void;
   onCerrado: () => void;
 }) {
@@ -6455,7 +8136,10 @@ function FormularioCerrarTrade({
           exit_price: precioSalida,
           pips: pips.trim() === "" ? null : parseFloat(pips),
           fees: comisiones,
-          realized_pnl: Math.round((pnlNumero - comisiones) * 100) / 100,
+          // El P&L final suma lo que ya se había asegurado en cierres
+          // parciales anteriores (si los hubo) más el resultado de este
+          // último tramo, y recién ahí se resta la comisión total.
+          realized_pnl: Math.round((pnlParcialesPrevios + pnlNumero - comisiones) * 100) / 100,
           result_type: resultType,
           exit_time: new Date().toISOString(),
         })
@@ -6477,6 +8161,13 @@ function FormularioCerrarTrade({
       <p className="text-sm text-kb-text-secondary">
         Elegí cómo terminó tu operación de <span className="font-semibold text-kb-text">{trade.symbol}</span>.
       </p>
+
+      {pnlParcialesPrevios !== 0 && (
+        <p className="rounded-lg border border-kb-accent/30 bg-kb-accent/10 px-3 py-2 text-xs text-kb-accent">
+          Ya tenés {formatCurrency(pnlParcialesPrevios)} asegurados de cierres parciales
+          anteriores — se van a sumar automáticamente al P&amp;L que pongas abajo.
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <button
@@ -6550,6 +8241,213 @@ function FormularioCerrarTrade({
   );
 }
 
+// =====================================================================
+// FORMULARIO: cerrar solo una PORCIÓN de una posición abierta (escalado
+// de salida). Guarda el registro en "trade_exits" y, si con este cierre
+// se completa el 100% de la cantidad original, finaliza el trade
+// completo (status "closed", con el P&L total sumado de todos los
+// tramos y el precio de salida promediado por cantidad).
+// =====================================================================
+
+function FormularioCierreParcial({
+  trade,
+  cantidadRestante,
+  onCancelar,
+  onParcialGuardado,
+  onCerradoCompleto,
+}: {
+  trade: Trade;
+  cantidadRestante: number;
+  onCancelar: () => void;
+  onParcialGuardado: () => void;
+  onCerradoCompleto: () => void;
+}) {
+  const [cantidad, setCantidad] = useState(String(cantidadRestante));
+  const [exitPrice, setExitPrice] = useState("");
+  const [pnlManual, setPnlManual] = useState("");
+  const [notas, setNotas] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    const cantidadNumero = parseFloat(cantidad);
+    const precioSalida = parseFloat(exitPrice);
+    const pnlNumero = parseFloat(pnlManual);
+
+    if (Number.isNaN(cantidadNumero) || cantidadNumero <= 0) {
+      setError("La cantidad a cerrar debe ser un número mayor a cero.");
+      return;
+    }
+    if (cantidadNumero > cantidadRestante + 0.0000001) {
+      setError(`No podés cerrar más de lo que queda abierto (${cantidadRestante}).`);
+      return;
+    }
+    if (Number.isNaN(precioSalida) || Number.isNaN(pnlNumero)) {
+      setError("Precio de salida y P&L de este tramo son obligatorios y deben ser números.");
+      return;
+    }
+
+    setEnviando(true);
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) {
+      setEnviando(false);
+      setError("Tu sesión expiró. Vuelve a iniciar sesión.");
+      return;
+    }
+
+    const ahora = new Date().toISOString();
+    const { error: insertError } = await conReintento(() =>
+      supabase.from("trade_exits").insert({
+        trade_id: trade.id,
+        user_id: userId,
+        quantity: cantidadNumero,
+        exit_price: precioSalida,
+        pnl: pnlNumero,
+        exit_time: ahora,
+        notes: notas.trim() === "" ? null : notas.trim(),
+      })
+    );
+
+    if (insertError) {
+      setEnviando(false);
+      setError(
+        `No se pudo guardar el cierre parcial (lo intentamos dos veces). Detalle: ${insertError.message}`
+      );
+      return;
+    }
+
+    const cantidadRestanteDespues = cantidadRestante - cantidadNumero;
+
+    // Si con este tramo se cierra el 100% de la posición, finalizamos el
+    // trade: traemos todos sus cierres parciales (incluido este que
+    // acabamos de insertar), promediamos el precio de salida ponderado
+    // por cantidad, y sumamos todos los P&L para el resultado final.
+    if (cantidadRestanteDespues <= 0.0000001) {
+      const { data: todosLosExits } = await supabase
+        .from("trade_exits")
+        .select("*")
+        .eq("trade_id", trade.id);
+
+      const exitsFinal = (todosLosExits as TradeExit[]) ?? [];
+      const cantidadTotal = exitsFinal.reduce((acc, ex) => acc + ex.quantity, 0);
+      const precioPromedio =
+        cantidadTotal > 0
+          ? exitsFinal.reduce((acc, ex) => acc + ex.exit_price * ex.quantity, 0) / cantidadTotal
+          : precioSalida;
+      const pnlTotal = exitsFinal.reduce((acc, ex) => acc + ex.pnl, 0);
+      const ultimoExitTime = exitsFinal.reduce(
+        (acc, ex) => (new Date(ex.exit_time).getTime() > new Date(acc).getTime() ? ex.exit_time : acc),
+        ahora
+      );
+
+      const { error: updateError } = await supabase
+        .from("trades")
+        .update({
+          status: "closed",
+          exit_price: Math.round(precioPromedio * 100000) / 100000,
+          realized_pnl: Math.round((pnlTotal - (trade.fees ?? 0)) * 100) / 100,
+          result_type: "manual",
+          exit_time: ultimoExitTime,
+        })
+        .eq("id", trade.id);
+
+      setEnviando(false);
+
+      if (updateError) {
+        setError(`El cierre parcial se guardó, pero no se pudo finalizar el trade: ${updateError.message}`);
+        return;
+      }
+      onCerradoCompleto();
+      return;
+    }
+
+    setEnviando(false);
+    onParcialGuardado();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <p className="text-sm text-kb-text-secondary">
+        Cerrá una parte de <span className="font-semibold text-kb-text">{trade.symbol}</span> —
+        quedan <span className="font-semibold text-kb-text">{cantidadRestante}</span> sin cerrar
+        todavía.
+      </p>
+
+      <Campo etiqueta="Cantidad a cerrar ahora" ayuda={`Máximo: ${cantidadRestante}`}>
+        <input
+          required
+          type="number"
+          step="any"
+          max={cantidadRestante}
+          value={cantidad}
+          onChange={(e) => setCantidad(e.target.value)}
+          className={inputClass}
+        />
+      </Campo>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Campo etiqueta="Precio de salida de este tramo">
+          <input
+            required
+            type="number"
+            step="any"
+            value={exitPrice}
+            onChange={(e) => setExitPrice(e.target.value)}
+            className={inputClass}
+          />
+        </Campo>
+        <Campo etiqueta="P&L de este tramo">
+          <input
+            required
+            type="number"
+            step="any"
+            value={pnlManual}
+            onChange={(e) => setPnlManual(e.target.value)}
+            placeholder="Ej. 120 o -40"
+            className={inputClass}
+          />
+        </Campo>
+      </div>
+
+      <Campo etiqueta="Notas (opcional)" ayuda="Ej. 'Aseguré breakeven', 'Primer target 1:1'">
+        <input value={notas} onChange={(e) => setNotas(e.target.value)} className={inputClass} />
+      </Campo>
+
+      {cantidadRestante - (parseFloat(cantidad) || 0) <= 0.0000001 && (
+        <p className="rounded-lg border border-kb-gain/30 bg-kb-gain/10 px-3 py-2 text-xs text-kb-gain">
+          Con esta cantidad cerrás el 100% de la posición — el trade va a quedar marcado como
+          cerrado y va a entrar en tus métricas.
+        </p>
+      )}
+
+      {error && (
+        <p className="rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">{error}</p>
+      )}
+
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={onCancelar}
+          className="flex-1 rounded-lg border border-kb-border py-2.5 text-sm font-medium text-kb-text-secondary hover:text-kb-text transition-colors"
+        >
+          Cancelar
+        </button>
+        <button
+          type="submit"
+          disabled={enviando}
+          className="flex-1 rounded-lg bg-kb-accent py-2.5 text-sm font-semibold text-kb-bg hover:brightness-110 transition disabled:opacity-60"
+        >
+          {enviando ? "Guardando…" : "Registrar cierre parcial"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function DatoDetalle({ etiqueta, valor }: { etiqueta: string; valor: string }) {
   return (
     <div>
@@ -6594,6 +8492,9 @@ function FormularioEdicionTrade({
   const [tradingviewLinks, setTradingviewLinks] = useState<string[]>(
     trade.tradingview_links && trade.tradingview_links.length > 0 ? trade.tradingview_links : [""]
   );
+  const [imagenesExistentes, setImagenesExistentes] = useState<string[]>(trade.evidence_images ?? []);
+  const [imagenesNuevas, setImagenesNuevas] = useState<File[]>([]);
+  const [subiendoImagenes, setSubiendoImagenes] = useState(false);
   const [notes, setNotes] = useState(trade.notes ?? "");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -6614,6 +8515,31 @@ function FormularioEdicionTrade({
     }
 
     setEnviando(true);
+
+    // Subimos las imágenes nuevas que se hayan agregado en esta edición y
+    // las combinamos con las que ya tenía el trade (menos las que se
+    // hayan quitado desde imagenesExistentes).
+    let rutasNuevas: string[] = [];
+    if (imagenesNuevas.length > 0) {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData.user?.id;
+      if (userId) {
+        setSubiendoImagenes(true);
+        const subidas = await Promise.all(
+          imagenesNuevas.map(async (archivo) => {
+            const nombreLimpio = archivo.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+            const ruta = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${nombreLimpio}`;
+            const { error: uploadError } = await supabase.storage
+              .from("trade-evidence")
+              .upload(ruta, archivo);
+            return uploadError ? null : ruta;
+          })
+        );
+        rutasNuevas = subidas.filter((r): r is string => r !== null);
+        setSubiendoImagenes(false);
+      }
+    }
+
     const { error: updateError } = await supabase
       .from("trades")
       .update({
@@ -6633,6 +8559,7 @@ function FormularioEdicionTrade({
         emotion: emotion === "" ? null : emotion,
         mistake,
         tradingview_links: tradingviewLinks.map((l) => l.trim()).filter((l) => l !== ""),
+        evidence_images: [...imagenesExistentes, ...rutasNuevas],
         notes: notes.trim() === "" ? null : notes.trim(),
       })
       .eq("id", trade.id);
@@ -6757,6 +8684,63 @@ function FormularioEdicionTrade({
         >
           + Agregar otro link
         </button>
+      </div>
+
+      <div>
+        <span className="mb-1 block text-xs font-medium text-kb-text-secondary">Capturas de pantalla</span>
+        {imagenesExistentes.length > 0 && (
+          <div className="mb-2 grid grid-cols-4 gap-2">
+            {imagenesExistentes.map((ruta, i) => (
+              <div key={ruta} className="relative">
+                <ImagenPrivada
+                  bucket="trade-evidence"
+                  path={ruta}
+                  alt="Captura de evidencia"
+                  className="h-16 w-full rounded-lg border border-kb-border-soft object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => setImagenesExistentes((prev) => prev.filter((_, idx) => idx !== i))}
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-kb-loss text-[10px] text-white"
+                  aria-label="Quitar imagen"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={(e) => {
+            const archivos = Array.from(e.target.files ?? []);
+            setImagenesNuevas((prev) => [...prev, ...archivos]);
+            e.target.value = "";
+          }}
+          className={`${inputClass} py-1.5`}
+        />
+        {imagenesNuevas.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {imagenesNuevas.map((archivo, i) => (
+              <span
+                key={i}
+                className="flex items-center gap-1.5 rounded-lg border border-kb-border-soft bg-kb-bg px-2.5 py-1.5 text-xs text-kb-text-secondary"
+              >
+                📷 {archivo.name.length > 20 ? archivo.name.slice(0, 20) + "…" : archivo.name}
+                <button
+                  type="button"
+                  onClick={() => setImagenesNuevas((prev) => prev.filter((_, idx) => idx !== i))}
+                  className="text-kb-text-muted hover:text-kb-loss transition-colors"
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {subiendoImagenes && <p className="mt-2 text-xs text-kb-accent">Subiendo imágenes…</p>}
       </div>
 
       <Campo etiqueta="Notas">
