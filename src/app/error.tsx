@@ -25,6 +25,15 @@ export default function ErrorPage({
         No se pudo cargar esta parte de la app. Tus datos están a salvo — probá recargar la
         página o volver al Dashboard.
       </p>
+
+      {/* Solo visible en desarrollo (npm run dev) — en producción no se
+          muestra, para no exponer detalles técnicos a los usuarios. */}
+      {process.env.NODE_ENV === "development" && (
+        <p className="mt-4 max-w-sm overflow-x-auto rounded-lg border border-kb-loss/30 bg-kb-loss/10 p-2 text-left font-mono text-[11px] text-kb-loss">
+          {error.message}
+        </p>
+      )}
+
       <div className="mt-6 flex gap-3">
         <button
           onClick={() => reset()}

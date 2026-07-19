@@ -25,7 +25,7 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KTrader — Tu diario de trading",
+  title: "Kebotrader — Tu diario de trading",
   description:
     "Registra, analiza y mejora cada una de tus operaciones en un solo lugar. KeboTrader es tu diario de trading privado y oscuro.",
 };

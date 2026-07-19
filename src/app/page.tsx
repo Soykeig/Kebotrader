@@ -236,27 +236,79 @@ function LandingConAuth() {
         <TickerTape />
       </div>
 
-      <section className="mx-auto max-w-6xl px-6 py-20 text-center">
-        <p className="mb-4 inline-block rounded-full border border-kb-border px-3 py-1 text-xs font-mono text-kb-text-secondary">
-          Gratis · Privado · Sin tarjeta de crédito
-        </p>
-        <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.05]">
-          Cada operación cuenta
-          <br />
-          <span className="text-kb-accent">una historia.</span>
-        </h1>
-        <p className="mx-auto mt-6 max-w-xl text-base sm:text-lg text-kb-text-secondary">
-          KeboTrader es tu diario de trading. Registra cada operación, calcula
-          tu rendimiento al instante y descubre los patrones que de verdad
-          mueven tu cuenta.
-        </p>
-        <div className="mt-8 flex justify-center gap-3">
-          <button
-            onClick={() => setMostrarAuth(true)}
-            className="rounded-lg bg-kb-accent px-6 py-3 text-sm font-semibold text-kb-bg hover:brightness-110 transition"
-          >
-            Crear mi diario gratis
-          </button>
+      {/* ---------- Hero con fondo de "hoja de diario" ---------- */}
+      <section className="relative overflow-hidden border-b border-kb-border-soft">
+        {/* Grilla de fondo, como el papel cuadriculado de un cuaderno de trading */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.15]"
+          style={{
+            backgroundImage:
+              "linear-gradient(var(--kb-border) 1px, transparent 1px), linear-gradient(90deg, var(--kb-border) 1px, transparent 1px)",
+            backgroundSize: "40px 40px",
+            maskImage: "radial-gradient(ellipse 80% 60% at 50% 20%, black 40%, transparent 90%)",
+            WebkitMaskImage: "radial-gradient(ellipse 80% 60% at 50% 20%, black 40%, transparent 90%)",
+          }}
+        />
+        {/* Curva de equity decorativa, como la que vas a ver de verdad adentro de la app */}
+        <svg
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-40 w-full opacity-40"
+          viewBox="0 0 1200 200"
+          preserveAspectRatio="none"
+        >
+          <defs>
+            <linearGradient id="heroCurva" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--kb-gain)" stopOpacity="0.35" />
+              <stop offset="100%" stopColor="var(--kb-gain)" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <path
+            d="M0,170 C100,150 150,110 240,120 C330,130 380,60 470,70 C560,80 610,140 700,130 C790,120 840,40 930,50 C1020,60 1080,90 1200,20 L1200,200 L0,200 Z"
+            fill="url(#heroCurva)"
+          />
+          <path
+            d="M0,170 C100,150 150,110 240,120 C330,130 380,60 470,70 C560,80 610,140 700,130 C790,120 840,40 930,50 C1020,60 1080,90 1200,20"
+            fill="none"
+            stroke="var(--kb-gain)"
+            strokeWidth="2"
+          />
+        </svg>
+
+        <div className="relative mx-auto max-w-6xl px-6 py-20 text-center">
+          <p className="mb-4 inline-block rounded-full border border-kb-border px-3 py-1 text-xs font-mono text-kb-text-secondary">
+            Gratis · Privado · Sin tarjeta de crédito
+          </p>
+          <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.05]">
+            Cada operación cuenta
+            <br />
+            <span className="text-kb-accent">una historia.</span>
+          </h1>
+          <p className="mx-auto mt-6 max-w-xl text-base sm:text-lg text-kb-text-secondary">
+            KeboTrader es tu diario de trading. Registra cada operación, calcula
+            tu rendimiento al instante y descubre los patrones que de verdad
+            mueven tu cuenta.
+          </p>
+          <div className="mt-8 flex justify-center gap-3">
+            <button
+              onClick={() => setMostrarAuth(true)}
+              className="rounded-lg bg-kb-accent px-6 py-3 text-sm font-semibold text-kb-bg hover:brightness-110 transition"
+            >
+              Crear mi diario gratis
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ---------- Cómo funciona ---------- */}
+      <section className="mx-auto max-w-6xl px-6 py-16 border-b border-kb-border-soft">
+        <div className="mb-10 text-center">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-kb-accent">Así de simple</p>
+          <h2 className="mt-1 font-display text-2xl sm:text-3xl font-bold">Cómo funciona tu diario</h2>
+        </div>
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <PasoComoFunciona numero="1" icono="📅" titulo="Registrás tu operación" texto="Un clic en el calendario y cargás símbolo, precios y cómo te sentiste al operar." />
+          <PasoComoFunciona numero="2" icono="⚡" titulo="El P&L se calcula solo" texto="Nada de planillas de Excel — tu resultado neto aparece al instante, comisiones incluidas." />
+          <PasoComoFunciona numero="3" icono="📊" titulo="Ves tus patrones reales" texto="Win rate, expectancy, en qué sesión rendís mejor y qué errores te cuestan más." />
+          <PasoComoFunciona numero="4" icono="🎯" titulo="Repetís lo que funciona" texto="Con datos reales en vez de intuición, ajustás tu estrategia con cada operación que cargás." />
         </div>
       </section>
 
@@ -283,6 +335,29 @@ function LandingConAuth() {
 
       {mostrarAuth && <ModalAuth onClose={() => setMostrarAuth(false)} />}
     </main>
+  );
+}
+
+function PasoComoFunciona({
+  numero,
+  icono,
+  titulo,
+  texto,
+}: {
+  numero: string;
+  icono: string;
+  titulo: string;
+  texto: string;
+}) {
+  return (
+    <div className="relative rounded-xl border border-kb-border bg-kb-surface p-5">
+      <span className="absolute right-4 top-4 font-mono text-3xl font-bold text-kb-border-soft">
+        {numero}
+      </span>
+      <span className="text-2xl">{icono}</span>
+      <h3 className="mt-3 font-display text-base font-semibold">{titulo}</h3>
+      <p className="mt-1.5 text-sm text-kb-text-secondary">{texto}</p>
+    </div>
   );
 }
 
@@ -333,7 +408,7 @@ function TickerTape() {
 // =====================================================================
 
 function ModalAuth({ onClose }: { onClose: () => void }) {
-  const [modo, setModo] = useState<"login" | "registro">("login");
+  const [modo, setModo] = useState<"login" | "registro" | "recuperar">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [cargando, setCargando] = useState(false);
@@ -356,6 +431,14 @@ function ModalAuth({ onClose }: { onClose: () => void }) {
         setMensaje(
           "¡Cuenta creada! Revisa tu correo para confirmar tu registro antes de iniciar sesión."
         );
+      } else if (modo === "recuperar") {
+        const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/restablecer-contrasena`,
+        });
+        if (recoveryError) throw recoveryError;
+        setMensaje(
+          "Si ese correo tiene una cuenta, te mandamos un link para restablecer tu contraseña. Revisá también la carpeta de spam."
+        );
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
@@ -377,7 +460,7 @@ function ModalAuth({ onClose }: { onClose: () => void }) {
       <div className="w-full max-w-sm rounded-2xl border border-kb-border bg-kb-surface p-7 shadow-2xl">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="font-display text-xl font-bold">
-            {modo === "login" ? "Iniciar sesión" : "Crear cuenta"}
+            {modo === "login" ? "Iniciar sesión" : modo === "registro" ? "Crear cuenta" : "Recuperar contraseña"}
           </h2>
           <button
             onClick={onClose}
@@ -402,20 +485,37 @@ function ModalAuth({ onClose }: { onClose: () => void }) {
               placeholder="tu@correo.com"
             />
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-kb-text-secondary">
-              Contraseña
-            </label>
-            <input
-              type="password"
-              required
-              minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text outline-none focus:border-kb-accent"
-              placeholder="Mínimo 6 caracteres"
-            />
-          </div>
+
+          {modo !== "recuperar" && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-kb-text-secondary">
+                Contraseña
+              </label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text outline-none focus:border-kb-accent"
+                placeholder="Mínimo 6 caracteres"
+              />
+            </div>
+          )}
+
+          {modo === "login" && (
+            <button
+              type="button"
+              onClick={() => {
+                setModo("recuperar");
+                setError(null);
+                setMensaje(null);
+              }}
+              className="block text-xs text-kb-text-secondary hover:text-kb-accent transition-colors"
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
+          )}
 
           {error && (
             <p className="rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
@@ -437,22 +537,39 @@ function ModalAuth({ onClose }: { onClose: () => void }) {
               ? "Procesando…"
               : modo === "login"
               ? "Entrar"
-              : "Registrarme"}
+              : modo === "registro"
+              ? "Registrarme"
+              : "Enviar link de recuperación"}
           </button>
         </form>
 
         <p className="mt-5 text-center text-xs text-kb-text-secondary">
-          {modo === "login" ? "¿No tienes cuenta todavía? " : "¿Ya tienes una cuenta? "}
-          <button
-            onClick={() => {
-              setModo(modo === "login" ? "registro" : "login");
-              setError(null);
-              setMensaje(null);
-            }}
-            className="font-semibold text-kb-accent hover:underline"
-          >
-            {modo === "login" ? "Regístrate" : "Inicia sesión"}
-          </button>
+          {modo === "recuperar" ? (
+            <button
+              onClick={() => {
+                setModo("login");
+                setError(null);
+                setMensaje(null);
+              }}
+              className="font-semibold text-kb-accent hover:underline"
+            >
+              ← Volver a iniciar sesión
+            </button>
+          ) : (
+            <>
+              {modo === "login" ? "¿No tienes cuenta todavía? " : "¿Ya tienes una cuenta? "}
+              <button
+                onClick={() => {
+                  setModo(modo === "login" ? "registro" : "login");
+                  setError(null);
+                  setMensaje(null);
+                }}
+                className="font-semibold text-kb-accent hover:underline"
+              >
+                {modo === "login" ? "Regístrate" : "Inicia sesión"}
+              </button>
+            </>
+          )}
         </p>
       </div>
     </div>
@@ -1516,6 +1633,42 @@ function InicioView({
   const alertaRiesgo =
     cuenta?.account_type === "real" && (porcentajeDiario >= 80 || porcentajeTotal >= 80);
 
+  // ---- Notificación del navegador cuando se cruza el umbral de riesgo ----
+  // Solo se dispara si el usuario ya le dio permiso al navegador (ver el
+  // botón "Activar alertas" más abajo), y como mucho una vez por cuenta
+  // por día — para no spamear con la misma alerta en cada re-render.
+  const [permisoNotificaciones, setPermisoNotificaciones] = useState<NotificationPermission | null>(null);
+  const notificadoRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      setPermisoNotificaciones(Notification.permission);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!alertaRiesgo || !cuenta) return;
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+
+    const clave = `${cuenta.id}-${todayKey()}`;
+    if (notificadoRef.current === clave) return;
+    notificadoRef.current = clave;
+
+    const porcentajeMayor = Math.max(porcentajeDiario, porcentajeTotal);
+    const tipoLimite = porcentajeDiario >= porcentajeTotal ? "diaria" : "total";
+    new Notification("⚠️ Cerca del límite de pérdida", {
+      body: `${cuenta.name}: llevás ${porcentajeMayor.toFixed(0)}% de tu límite de pérdida ${tipoLimite}. Cuidado con seguir operando.`,
+      icon: "/logo-ktrader.png",
+    });
+  }, [alertaRiesgo, cuenta, porcentajeDiario, porcentajeTotal]);
+
+  async function activarNotificaciones() {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    const permiso = await Notification.requestPermission();
+    setPermisoNotificaciones(permiso);
+  }
+
   const ultimasOperaciones = useMemo(
     () =>
       [...trades]
@@ -1552,7 +1705,7 @@ function InicioView({
       {cuenta && (
         <>
           {alertaRiesgo && (
-            <div className="flex items-center gap-2 rounded-xl border border-kb-loss/40 bg-kb-loss/10 px-4 py-2.5">
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-kb-loss/40 bg-kb-loss/10 px-4 py-2.5">
               <span className="text-base">⚠️</span>
               <p className="text-sm font-medium text-kb-loss">
                 Estás usando{" "}
@@ -1561,6 +1714,14 @@ function InicioView({
                   : `${porcentajeTotal.toFixed(0)}% de tu límite de pérdida total`}
                 . Cuidado con seguir operando hoy.
               </p>
+              {permisoNotificaciones !== "granted" && permisoNotificaciones !== null && (
+                <button
+                  onClick={activarNotificaciones}
+                  className="ml-auto shrink-0 rounded-lg border border-kb-loss/40 px-2.5 py-1 text-xs font-medium text-kb-loss hover:bg-kb-loss/10 transition-colors"
+                >
+                  🔔 Avisarme en el navegador
+                </button>
+              )}
             </div>
           )}
 
@@ -1731,55 +1892,77 @@ function InicioView({
         </section>
       )}
 
-      {!cuenta && !modoTodas && cuentas.length === 0 && (
-        <section className="rounded-xl border border-dashed border-kb-accent/40 bg-kb-accent/5 p-6">
-          <div className="mx-auto max-w-md text-center">
-            <p className="text-2xl">👋</p>
-            <h2 className="mt-2 font-display text-lg font-semibold text-kb-text">
-              ¡Bienvenido a KeboTrader!
-            </h2>
-            <p className="mt-1 text-sm text-kb-text-secondary">
-              Te faltan 3 pasos rápidos para tener tu diario andando.
-            </p>
-          </div>
+      {/* BUGFIX: antes esta condición incluía "!modoTodas", pero con 0
+          cuentas el estado por defecto de cuentaActivaId es "todas" — o
+          sea que modoTodas siempre es true en ese momento, y la condición
+          contradictoria hacía que este bloque de bienvenida NUNCA se
+          mostrara en la práctica, ni para usuarios nuevos. */}
+      {cuentas.length === 0 && (() => {
+        const pasoCuentaListo = cuentas.length > 0;
+        const pasoTradeListo = trades.length > 0;
+        const pasosListos = [pasoCuentaListo, pasoTradeListo].filter(Boolean).length;
+        return (
+          <section className="rounded-xl border border-dashed border-kb-accent/40 bg-kb-accent/5 p-6">
+            <div className="mx-auto max-w-md text-center">
+              <p className="text-2xl">👋</p>
+              <h2 className="mt-2 font-display text-lg font-semibold text-kb-text">
+                ¡Bienvenido a KeboTrader!
+              </h2>
+              <p className="mt-1 text-sm text-kb-text-secondary">
+                {pasosListos === 0
+                  ? "Te faltan unos pasos rápidos para tener tu diario andando."
+                  : `Vas ${pasosListos} de 2 — ¡seguí así!`}
+              </p>
+              <div className="mx-auto mt-3 h-1.5 max-w-xs overflow-hidden rounded-full bg-kb-border">
+                <div
+                  className="h-full rounded-full bg-kb-gain transition-all"
+                  style={{ width: `${(pasosListos / 2) * 100}%` }}
+                />
+              </div>
+            </div>
 
-          <div className="mx-auto mt-5 max-w-md space-y-3 text-left">
-            <div className="flex items-start gap-3 rounded-lg border border-kb-border-soft bg-kb-surface px-3 py-2.5">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-kb-accent/15 text-xs font-bold text-kb-accent">
-                1
-              </span>
-              <div>
-                <p className="text-sm font-medium text-kb-text">Creá tu primera cuenta</p>
-                <p className="text-xs text-kb-text-secondary">
-                  Usá el botón &quot;+ Nueva cuenta&quot; de arriba — puede ser demo o real.
-                </p>
+            <div className="mx-auto mt-5 max-w-md space-y-3 text-left">
+              <div className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 ${pasoCuentaListo ? "border-kb-gain/30 bg-kb-gain/5" : "border-kb-border-soft bg-kb-surface"}`}>
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${pasoCuentaListo ? "bg-kb-gain text-kb-bg" : "bg-kb-accent/15 text-kb-accent"}`}>
+                  {pasoCuentaListo ? "✓" : "1"}
+                </span>
+                <div>
+                  <p className={`text-sm font-medium ${pasoCuentaListo ? "text-kb-text-muted line-through" : "text-kb-text"}`}>
+                    Creá tu primera cuenta
+                  </p>
+                  <p className="text-xs text-kb-text-secondary">
+                    Usá el botón &quot;+ Nueva cuenta&quot; de arriba — puede ser demo o real.
+                  </p>
+                </div>
+              </div>
+              <div className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 ${pasoTradeListo ? "border-kb-gain/30 bg-kb-gain/5" : "border-kb-border-soft bg-kb-surface"}`}>
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${pasoTradeListo ? "bg-kb-gain text-kb-bg" : "bg-kb-accent/15 text-kb-accent"}`}>
+                  {pasoTradeListo ? "✓" : "2"}
+                </span>
+                <div>
+                  <p className={`text-sm font-medium ${pasoTradeListo ? "text-kb-text-muted line-through" : "text-kb-text"}`}>
+                    Registrá tu primera operación
+                  </p>
+                  <p className="text-xs text-kb-text-secondary">
+                    Andá al Calendario y hacé clic en un día para cargarla.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 rounded-lg border border-kb-border-soft bg-kb-surface px-3 py-2.5 opacity-70">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-kb-accent/15 text-xs font-bold text-kb-accent">
+                  3
+                </span>
+                <div>
+                  <p className="text-sm font-medium text-kb-text">Explorá tus Métricas</p>
+                  <p className="text-xs text-kb-text-secondary">
+                    Con un par de operaciones cargadas vas a empezar a ver patrones útiles. (Opcional, cuando quieras)
+                  </p>
+                </div>
               </div>
             </div>
-            <div className="flex items-start gap-3 rounded-lg border border-kb-border-soft bg-kb-surface px-3 py-2.5">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-kb-accent/15 text-xs font-bold text-kb-accent">
-                2
-              </span>
-              <div>
-                <p className="text-sm font-medium text-kb-text">Registrá tu primera operación</p>
-                <p className="text-xs text-kb-text-secondary">
-                  Andá al Calendario y hacé clic en un día para cargarla.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3 rounded-lg border border-kb-border-soft bg-kb-surface px-3 py-2.5">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-kb-accent/15 text-xs font-bold text-kb-accent">
-                3
-              </span>
-              <div>
-                <p className="text-sm font-medium text-kb-text">Explorá tus Reportes</p>
-                <p className="text-xs text-kb-text-secondary">
-                  Con un par de operaciones cargadas vas a empezar a ver patrones útiles.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
+          </section>
+        );
+      })()}
 
       {/* ---------- Checklist pre-trading del día ---------- */}
       <ChecklistDiarioWidget
@@ -3148,6 +3331,21 @@ function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: S
         </div>
       </div>
 
+      {/* ---------- Secciones que dependen del rango de tiempo elegido ---------- */}
+      {cerrados.length === 0 ? (
+        <section className="rounded-xl border border-dashed border-kb-border-soft bg-kb-surface/60 p-8 text-center">
+          <p className="text-sm text-kb-text-secondary">
+            No registraste operaciones en el período <span className="font-semibold text-kb-text">{RANGOS_TIEMPO.find((r) => r.id === rango)?.etiqueta}</span>.
+          </p>
+          <button
+            onClick={() => setRango("todo")}
+            className="mt-3 text-xs font-medium text-kb-gain hover:underline"
+          >
+            Ver todo el historial en cambio →
+          </button>
+        </section>
+      ) : (
+        <>
       {/* ---------- Fila de KPIs principales ---------- */}
       <section className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <MetricCard
@@ -3244,6 +3442,8 @@ function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: S
           </div>
         )}
       </section>
+        </>
+      )}
 
       {/* ---------- Rendimiento mensual ---------- */}
       <section className="rounded-xl border border-kb-border bg-kb-surface">
@@ -3892,6 +4092,12 @@ function LogrosView({
   }
 
   async function eliminar(logro: Achievement) {
+    // Borramos primero el archivo del bucket (si tenía uno adjunto), para
+    // no dejar certificados huérfanos ocupando espacio de Storage.
+    if (logro.file_url) {
+      const ruta = extraerRutaStorage("achievements", logro.file_url);
+      await supabase.storage.from("achievements").remove([ruta]);
+    }
     await supabase.from("achievements").delete().eq("id", logro.id);
     onCambio();
   }
@@ -4175,6 +4381,7 @@ function PerfilView({ session }: { session: Session }) {
   async function subirFoto(archivo: File) {
     setSubiendoFoto(true);
     setErrorPerfil(null);
+    const fotoAnterior = avatarUrl;
     const extension = archivo.name.split(".").pop();
     const ruta = `${session.user.id}/avatar-${Date.now()}.${extension}`;
     const { error: uploadError } = await supabase.storage.from("avatars").upload(ruta, archivo, {
@@ -4188,6 +4395,14 @@ function PerfilView({ session }: { session: Session }) {
     }
     // Guardamos solo la ruta; la URL de acceso se genera al mostrarla.
     setAvatarUrl(ruta);
+
+    // Borramos la foto anterior del Storage — si no, cada vez que alguien
+    // cambia de foto de perfil, la vieja queda ocupando espacio para
+    // siempre sin que nada la use más.
+    if (fotoAnterior) {
+      const rutaAnterior = extraerRutaStorage("avatars", fotoAnterior);
+      await supabase.storage.from("avatars").remove([rutaAnterior]);
+    }
   }
 
   async function guardarPerfil(e: FormEvent) {
@@ -5231,6 +5446,20 @@ function TarjetaCuenta({
     // — apuntando a una cuenta que ya no existía, y que por eso seguían
     // apareciendo en el Dashboard. Ahora, si cualquiera de estos pasos
     // falla, se detiene todo el proceso y se avisa en vez de continuar.
+    // Antes de borrar los trades en bloque, traemos sus imágenes de
+    // evidencia para borrarlas del Storage también — si no, quedan
+    // ocupando espacio para siempre, apuntando a trades que ya no existen.
+    const { data: tradesConImagenes } = await supabase
+      .from("trades")
+      .select("evidence_images")
+      .eq("account_id", cuenta.id);
+    const todasLasRutas = ((tradesConImagenes as { evidence_images: string[] }[]) ?? [])
+      .flatMap((t) => t.evidence_images ?? [])
+      .map((r) => extraerRutaStorage("trade-evidence", r));
+    if (todasLasRutas.length > 0) {
+      await supabase.storage.from("trade-evidence").remove(todasLasRutas);
+    }
+
     const borradoTrades = await supabase.from("trades").delete().eq("account_id", cuenta.id);
     if (borradoTrades.error) {
       setProcesando(false);
@@ -7790,6 +8019,12 @@ function ModalDetalleTrade({
 
   async function eliminar() {
     setProcesando(true);
+    // Borramos primero las imágenes de evidencia del bucket, para que no
+    // queden ocupando espacio de Storage sin ningún trade que las use.
+    if (trade.evidence_images && trade.evidence_images.length > 0) {
+      const rutas = trade.evidence_images.map((r) => extraerRutaStorage("trade-evidence", r));
+      await supabase.storage.from("trade-evidence").remove(rutas);
+    }
     const { error } = await supabase.from("trades").delete().eq("id", trade.id);
     setProcesando(false);
     if (!error) onEliminado();
@@ -8569,6 +8804,18 @@ function FormularioEdicionTrade({
       setError("No se pudo guardar los cambios. Intenta de nuevo.");
       return;
     }
+
+    // Si el usuario sacó alguna imagen existente durante la edición, la
+    // borramos del Storage también — si no, queda ocupando espacio sin
+    // que ningún trade la referencie más.
+    const imagenesEliminadas = (trade.evidence_images ?? []).filter(
+      (r) => !imagenesExistentes.includes(r)
+    );
+    if (imagenesEliminadas.length > 0) {
+      const rutas = imagenesEliminadas.map((r) => extraerRutaStorage("trade-evidence", r));
+      await supabase.storage.from("trade-evidence").remove(rutas);
+    }
+
     onGuardado();
   }
 
