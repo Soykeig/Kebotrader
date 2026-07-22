@@ -47,6 +47,41 @@ function formatCurrency(value: number): string {
 }
 
 /**
+ * Anima un número desde su valor anterior hasta el nuevo, en vez de
+ * "saltar" de golpe. Se usa en los números más importantes (balance,
+ * P&L, puntaje) para que la app se sienta viva cuando algo cambia, en
+ * vez de estática. La duración es corta (500ms) para que no se sienta
+ * lenta al navegar entre vistas.
+ */
+function useNumeroAnimado(valorFinal: number, duracionMs = 500): number {
+  const [valorMostrado, setValorMostrado] = useState(valorFinal);
+  const valorAnteriorRef = useRef(valorFinal);
+
+  useEffect(() => {
+    const desde = valorAnteriorRef.current;
+    const hasta = valorFinal;
+    if (desde === hasta) return;
+
+    const inicio = performance.now();
+    let frameId: number;
+
+    function tick(ahora: number) {
+      const progreso = Math.min((ahora - inicio) / duracionMs, 1);
+      // easeOutCubic: arranca rápido y frena suave al final, se siente más natural que lineal.
+      const suavizado = 1 - Math.pow(1 - progreso, 3);
+      setValorMostrado(desde + (hasta - desde) * suavizado);
+      if (progreso < 1) frameId = requestAnimationFrame(tick);
+      else valorAnteriorRef.current = hasta;
+    }
+
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
+  }, [valorFinal, duracionMs]);
+
+  return valorMostrado;
+}
+
+/**
  * Formatea un precio de mercado (cotización), no una cifra de dinero.
  * Sin símbolo de moneda y con más decimales, ya que en forex el precio
  * de entrada/salida (ej. 1.14500) necesita esa precisión para ser útil.
@@ -192,9 +227,33 @@ const INSTRUMENT_LABELS: Record<InstrumentType, string> = {
 // Componente principal
 // =====================================================================
 
+/** Maneja el tema oscuro/claro de toda la app: lo guarda en localStorage y lo aplica como clase en <html>, para que todas las variables de color de globals.css cambien solas. */
+function useTema() {
+  const [tema, setTema] = useState<"oscuro" | "claro">("oscuro");
+
+  useEffect(() => {
+    const guardado = typeof window !== "undefined" ? window.localStorage.getItem("kebotrader_tema") : null;
+    const inicial = guardado === "claro" ? "claro" : "oscuro";
+    setTema(inicial);
+    document.documentElement.classList.toggle("light", inicial === "claro");
+  }, []);
+
+  function alternarTema() {
+    setTema((prev) => {
+      const nuevo = prev === "oscuro" ? "claro" : "oscuro";
+      document.documentElement.classList.toggle("light", nuevo === "claro");
+      window.localStorage.setItem("kebotrader_tema", nuevo);
+      return nuevo;
+    });
+  }
+
+  return { tema, alternarTema };
+}
+
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const { tema, alternarTema } = useTema();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -222,14 +281,24 @@ export default function Home() {
     );
   }
 
-  return session ? <Dashboard session={session} /> : <LandingConAuth />;
+  return session ? (
+    <Dashboard session={session} tema={tema} alternarTema={alternarTema} />
+  ) : (
+    <LandingConAuth tema={tema} alternarTema={alternarTema} />
+  );
 }
 
 // =====================================================================
 // LANDING PAGE + AUTENTICACIÓN (usuario no logueado)
 // =====================================================================
 
-function LandingConAuth() {
+function LandingConAuth({
+  tema,
+  alternarTema,
+}: {
+  tema: "oscuro" | "claro";
+  alternarTema: () => void;
+}) {
   const [mostrarAuth, setMostrarAuth] = useState(false);
 
   return (
@@ -245,12 +314,21 @@ function LandingConAuth() {
               Kebo<span className="text-kb-gain">Trader</span>
             </span>
           </div>
-          <button
-            onClick={() => setMostrarAuth(true)}
-            className="rounded-lg border border-kb-border px-4 py-2 text-sm font-medium text-kb-text hover:border-kb-accent hover:text-kb-accent transition-colors"
-          >
-            Iniciar sesión
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={alternarTema}
+              aria-label="Cambiar tema"
+              className="rounded-lg border border-kb-border p-2 text-sm text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+            >
+              {tema === "oscuro" ? "☀️" : "🌙"}
+            </button>
+            <button
+              onClick={() => setMostrarAuth(true)}
+              className="rounded-lg border border-kb-border px-4 py-2 text-sm font-medium text-kb-text hover:border-kb-accent hover:text-kb-accent transition-colors"
+            >
+              Iniciar sesión
+            </button>
+          </div>
         </div>
       </header>
 
@@ -433,6 +511,7 @@ function ModalAuth({ onClose }: { onClose: () => void }) {
   const [modo, setModo] = useState<"login" | "registro" | "recuperar">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [nombre, setNombre] = useState("");
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
@@ -449,8 +528,14 @@ function ModalAuth({ onClose }: { onClose: () => void }) {
         const { error: signUpError } = await supabase.auth.signUp({
           email,
           password,
+          // El nombre se guarda en los metadatos de la cuenta — esto
+          // funciona aunque todavía no haya sesión activa (antes de
+          // confirmar el correo). La primera vez que inicie sesión de
+          // verdad, el Dashboard lo copia a la tabla "profiles".
+          options: { data: { display_name: nombre.trim() } },
         });
         if (signUpError) throw signUpError;
+
         setMensaje(
           "¡Cuenta creada! Revisa tu correo para confirmar tu registro antes de iniciar sesión."
         );
@@ -498,6 +583,21 @@ function ModalAuth({ onClose }: { onClose: () => void }) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {modo === "registro" && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-kb-text-secondary">
+                ¿Cómo te llamás?
+              </label>
+              <input
+                required
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text outline-none focus:border-kb-accent"
+                placeholder="Ej. Juan Pérez"
+              />
+            </div>
+          )}
+
           <div>
             <label className="mb-1 block text-xs font-medium text-kb-text-secondary">
               Correo electrónico
@@ -644,6 +744,117 @@ interface NavGrupo {
   items: NavItem[];
 }
 
+/**
+ * Set de íconos SVG propio para el menú de navegación — trazo fino
+ * consistente (2px, sin relleno), en vez de emojis. Es la parte de la
+ * app que más tiempo está a la vista, así que es donde más se nota
+ * mezclar un estilo de emoji con otro más "producto serio".
+ */
+function IconoNav({ id, className = "h-[18px] w-[18px]" }: { id: Vista; className?: string }) {
+  const props = {
+    className,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+  switch (id) {
+    case "inicio":
+      return (
+        <svg {...props}>
+          <rect x="3" y="3" width="7" height="9" rx="1.5" />
+          <rect x="14" y="3" width="7" height="5" rx="1.5" />
+          <rect x="14" y="12" width="7" height="9" rx="1.5" />
+          <rect x="3" y="16" width="7" height="5" rx="1.5" />
+        </svg>
+      );
+    case "historial":
+      return (
+        <svg {...props}>
+          <polyline points="3,17 9,11 13,15 21,6" />
+          <polyline points="15,6 21,6 21,12" />
+        </svg>
+      );
+    case "calendario":
+      return (
+        <svg {...props}>
+          <rect x="3" y="5" width="18" height="16" rx="2" />
+          <line x1="3" y1="10" x2="21" y2="10" />
+          <line x1="8" y1="3" x2="8" y2="7" />
+          <line x1="16" y1="3" x2="16" y2="7" />
+        </svg>
+      );
+    case "reportes":
+      return (
+        <svg {...props}>
+          <line x1="5" y1="21" x2="5" y2="11" />
+          <line x1="12" y1="21" x2="12" y2="5" />
+          <line x1="19" y1="21" x2="19" y2="14" />
+        </svg>
+      );
+    case "estrategias":
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="8.5" />
+          <circle cx="12" cy="12" r="4.5" />
+          <circle cx="12" cy="12" r="0.8" fill="currentColor" />
+        </svg>
+      );
+    case "configuracion":
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="8" r="3.5" />
+          <path d="M4.5 20c0-4 3.5-6.5 7.5-6.5s7.5 2.5 7.5 6.5" />
+        </svg>
+      );
+    case "roi":
+      return (
+        <svg {...props}>
+          <line x1="12" y1="2.5" x2="12" y2="21.5" />
+          <path d="M17 6.5c0-1.8-2.2-3-5-3s-5 1.3-5 3 2.2 2.7 5 3 5 1.2 5 3-2.2 3-5 3-5-1.2-5-3" />
+        </svg>
+      );
+    case "retiros":
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="9" />
+          <polyline points="12,7 12,12 16,14" />
+        </svg>
+      );
+    case "logros":
+      return (
+        <svg {...props}>
+          <path d="M7 4h10v5a5 5 0 0 1-10 0V4Z" />
+          <path d="M7 6H4.5A1.5 1.5 0 0 0 3 7.5C3 9.5 4.5 11 7 11" />
+          <path d="M17 6h2.5A1.5 1.5 0 0 1 21 7.5c0 2-1.5 3.5-4 3.5" />
+          <line x1="12" y1="14.2" x2="12" y2="17.5" />
+          <path d="M8.5 20.5h7" />
+          <line x1="12" y1="17.5" x2="12" y2="20.5" />
+        </svg>
+      );
+    case "importar":
+      return (
+        <svg {...props}>
+          <path d="M12 16V4" />
+          <polyline points="7,8.5 12,3.5 17,8.5" />
+          <path d="M4 15v3.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V15" />
+        </svg>
+      );
+    case "perfil":
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
+
 const NAV_GRUPOS: NavGrupo[] = [
   {
     titulo: "General",
@@ -651,7 +862,7 @@ const NAV_GRUPOS: NavGrupo[] = [
       { id: "inicio", etiqueta: "Dashboard", icono: "📊" },
       { id: "historial", etiqueta: "Trades", icono: "📈" },
       { id: "calendario", etiqueta: "Calendario", icono: "📅" },
-      { id: "reportes", etiqueta: "Métricas", icono: "📉" },
+      { id: "reportes", etiqueta: "Estadísticas", icono: "📉" },
     ],
   },
   {
@@ -805,9 +1016,54 @@ function SelectorCuentaSidebar({
 // DASHBOARD (usuario logueado)
 // =====================================================================
 
-function Dashboard({ session }: { session: Session }) {
+function Dashboard({
+  session,
+  tema,
+  alternarTema,
+}: {
+  session: Session;
+  tema: "oscuro" | "claro";
+  alternarTema: () => void;
+}) {
   const [vista, setVista] = useState<Vista>("inicio");
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
+
+  // Nombre real del perfil (si lo cargaste en Perfil, o si lo pusiste al
+  // registrarte) — se usa en el saludo del Dashboard y en el sidebar,
+  // en vez de siempre derivarlo del email.
+  const [nombrePerfil, setNombrePerfil] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function cargarNombrePerfil() {
+      const { data } = await supabase
+        .from("profiles")
+        .select("display_name")
+        .eq("id", session.user.id)
+        .maybeSingle();
+      const nombreGuardado = (data as { display_name: string | null } | null)?.display_name;
+
+      if (nombreGuardado && nombreGuardado.trim() !== "") {
+        setNombrePerfil(nombreGuardado.trim());
+        return;
+      }
+
+      // Si todavía no hay nombre en "profiles", pero sí quedó guardado
+      // en los metadatos al registrarse (ver ModalAuth), lo usamos y
+      // aprovechamos para copiarlo a "profiles" — ahora sí hay sesión
+      // válida para escribir, así que en el próximo login ya lo lee
+      // directo de ahí.
+      const nombreDeMetadatos = session.user.user_metadata?.display_name as string | undefined;
+      if (nombreDeMetadatos && nombreDeMetadatos.trim() !== "") {
+        setNombrePerfil(nombreDeMetadatos.trim());
+        await supabase
+          .from("profiles")
+          .upsert({ id: session.user.id, display_name: nombreDeMetadatos.trim() });
+      }
+    }
+    cargarNombrePerfil();
+  }, [session.user.id]);
+
+  const nombreParaMostrar = nombrePerfil ?? nombreDesdeEmail(session.user.email);
 
   const [cuentas, setCuentas] = useState<Account[]>([]);
   const [cuentaActivaId, setCuentaActivaId] = useState<CuentaSeleccion>("todas");
@@ -1246,11 +1502,11 @@ function Dashboard({ session }: { session: Session }) {
                         }`}
                       >
                         <span
-                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm transition-colors ${
+                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${
                             activo ? "bg-kb-gain text-kb-bg" : "bg-kb-surface text-kb-text-secondary"
                           }`}
                         >
-                          {item.icono}
+                          <IconoNav id={item.id} />
                         </span>
                         <span className={activo ? "text-kb-gain" : ""}>{item.etiqueta}</span>
                       </button>
@@ -1269,11 +1525,26 @@ function Dashboard({ session }: { session: Session }) {
               </div>
               <div className="min-w-0">
                 <p className="truncate text-xs font-medium text-kb-text">
-                  {nombreDesdeEmail(session.user.email)}
+                  {nombreParaMostrar}
                 </p>
                 <p className="truncate text-[10px] text-kb-text-muted">{session.user.email}</p>
               </div>
             </div>
+            <button
+              onClick={alternarTema}
+              className="mb-2 flex w-full items-center justify-between rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                {tema === "oscuro" ? "🌙" : "☀️"} Tema {tema === "oscuro" ? "oscuro" : "claro"}
+              </span>
+              <span className={`relative h-4 w-8 rounded-full transition-colors ${tema === "claro" ? "bg-kb-gain" : "bg-kb-border"}`}>
+                <span
+                  className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${
+                    tema === "claro" ? "translate-x-4" : "translate-x-0.5"
+                  }`}
+                />
+              </span>
+            </button>
             <button
               onClick={handleLogout}
               className="w-full rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary hover:border-kb-loss hover:text-kb-loss transition-colors"
@@ -1313,10 +1584,16 @@ function Dashboard({ session }: { session: Session }) {
                       : "text-kb-text-secondary hover:bg-kb-surface"
                   }`}
                 >
-                  <span className="block text-base">{item.icono}</span>
+                  <span className="mb-0.5 flex justify-center"><IconoNav id={item.id} className="h-5 w-5" /></span>
                   {item.etiqueta}
                 </button>
               ))}
+              <button
+                onClick={alternarTema}
+                className="col-span-3 mb-2 flex items-center justify-center gap-2 rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary"
+              >
+                {tema === "oscuro" ? "🌙 Tema oscuro" : "☀️ Tema claro"}
+              </button>
               <button
                 onClick={handleLogout}
                 className="col-span-3 rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary"
@@ -1396,6 +1673,7 @@ function Dashboard({ session }: { session: Session }) {
             {vistaDia ? (
               <VistaDiaCalendario
                 vistaDia={vistaDia}
+                trades={tradesDeLaCuenta}
                 estrategias={estrategias}
                 accountId={cuentaActivaId === "todas" ? null : cuentaActivaId}
                 tieneCuentas={cuentas.length > 0}
@@ -1420,7 +1698,7 @@ function Dashboard({ session }: { session: Session }) {
                 metricas={metricas}
                 cuentas={cuentas}
                 modoTodas={modoTodas}
-                nombreUsuario={nombreDesdeEmail(session.user.email)}
+                nombreUsuario={nombreParaMostrar}
                 totalRetirado={totalRetirado}
                 retiros={retirosDeLaCuenta}
                 retiradoPorCuenta={retiradoPorCuenta}
@@ -1432,12 +1710,6 @@ function Dashboard({ session }: { session: Session }) {
                 onIrARoi={() => irA("roi")}
                 accountId={cuentaActivaId === "todas" ? null : cuentaActivaId}
                 tieneCuentas={cuentas.length > 0}
-                checklistItems={checklistItems}
-                checklistCompletados={checklistCompletados}
-                cargandoChecklist={cargandoChecklist}
-                onToggleChecklist={alternarItemChecklist}
-                onAgregarChecklistItem={agregarItemChecklist}
-                onEliminarChecklistItem={eliminarItemChecklist}
                 onAbrirDia={manejarAbrirDia}
                 onAvanzarFase={avanzarFase}
               />
@@ -1469,7 +1741,7 @@ function Dashboard({ session }: { session: Session }) {
             )}
 
             {vista === "roi" && (
-              <RoiCuentasView cuentas={cuentas} pnlPorCuenta={pnlPorCuenta} retiradoPorCuenta={retiradoPorCuenta} />
+              <RoiCuentasView cuentas={cuentas} trades={trades} pnlPorCuenta={pnlPorCuenta} retiradoPorCuenta={retiradoPorCuenta} />
             )}
 
             {vista === "retiros" && (
@@ -1500,7 +1772,9 @@ function Dashboard({ session }: { session: Session }) {
               />
             )}
 
-            {vista === "perfil" && <PerfilView session={session} />}
+            {vista === "perfil" && (
+              <PerfilView session={session} onNombreActualizado={setNombrePerfil} />
+            )}
 
             {vista === "configuracion" && (
               <ConfiguracionView
@@ -1582,12 +1856,6 @@ function InicioView({
   onIrARoi,
   accountId,
   tieneCuentas,
-  checklistItems,
-  checklistCompletados,
-  cargandoChecklist,
-  onToggleChecklist,
-  onAgregarChecklistItem,
-  onEliminarChecklistItem,
   onAbrirDia,
   onAvanzarFase,
 }: {
@@ -1608,12 +1876,6 @@ function InicioView({
   onIrARoi: () => void;
   accountId: string | null;
   tieneCuentas: boolean;
-  checklistItems: ChecklistItem[];
-  checklistCompletados: Set<string>;
-  cargandoChecklist: boolean;
-  onToggleChecklist: (itemId: string) => void;
-  onAgregarChecklistItem: (texto: string) => void;
-  onEliminarChecklistItem: (itemId: string) => void;
   onAbrirDia: (clave: string, tradesDelDia: Trade[]) => void;
   onAvanzarFase: (
     accountId: string,
@@ -1623,6 +1885,7 @@ function InicioView({
   ) => void;
 }) {
   const balanceActual = cuenta ? cuenta.starting_balance + metricas.totalPnL - totalRetirado : 0;
+  const balanceAnimado = useNumeroAnimado(balanceActual);
   const progreso =
     cuenta && cuenta.starting_balance > 0 ? (metricas.totalPnL / cuenta.starting_balance) * 100 : 0;
 
@@ -1788,7 +2051,7 @@ function InicioView({
               </div>
               <div className="text-right">
                 <p className="text-[11px] leading-none text-kb-text-secondary">Balance actual</p>
-                <p className="mt-0.5 font-mono text-lg font-semibold leading-tight">{formatCurrency(balanceActual)}</p>
+                <p className="mt-0.5 font-mono text-lg font-semibold leading-tight">{formatCurrency(balanceAnimado)}</p>
                 <p className={`font-mono text-[11px] ${progreso >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
                   {progreso >= 0 ? "+" : ""}
                   {progreso.toFixed(2)}% desde el inicio
@@ -1985,7 +2248,7 @@ function InicioView({
                   3
                 </span>
                 <div>
-                  <p className="text-sm font-medium text-kb-text">Explorá tus Métricas</p>
+                  <p className="text-sm font-medium text-kb-text">Explorá tus Estadísticas</p>
                   <p className="text-xs text-kb-text-secondary">
                     Con un par de operaciones cargadas vas a empezar a ver patrones útiles. (Opcional, cuando quieras)
                   </p>
@@ -1996,15 +2259,14 @@ function InicioView({
         );
       })()}
 
-      {/* ---------- Checklist pre-trading del día ---------- */}
-      <ChecklistDiarioWidget
-        items={checklistItems}
-        completados={checklistCompletados}
-        cargando={cargandoChecklist}
-        onToggle={onToggleChecklist}
-        onAgregar={onAgregarChecklistItem}
-        onEliminar={onEliminarChecklistItem}
-      />
+      {/* ---------- Consejo del día ---------- */}
+      <ConsejoDelDiaWidget />
+
+      {/* ---------- Puntaje KeboTrader + comparación mensual ---------- */}
+      <section className="grid gap-4 sm:grid-cols-2">
+        <KeboScoreWidget trades={trades} />
+        <ComparacionMensualWidget trades={trades} />
+      </section>
 
       {/* ---------- Panel de métricas principal (donut + barra + extremos) ---------- */}
       <PanelMetricasPrincipal metricas={metricas} etiquetaRacha={etiquetaRacha} />
@@ -2137,6 +2399,7 @@ type EstadoVistaDia =
 
 function VistaDiaCalendario({
   vistaDia,
+  trades,
   estrategias,
   accountId,
   tieneCuentas,
@@ -2147,6 +2410,7 @@ function VistaDiaCalendario({
   onTradeActualizado,
 }: {
   vistaDia: EstadoVistaDia;
+  trades: Trade[];
   estrategias: Strategy[];
   accountId: string | null;
   tieneCuentas: boolean;
@@ -2201,6 +2465,7 @@ function VistaDiaCalendario({
           tieneCuentas={tieneCuentas}
           diaParaRegistrar={vistaDia.dia}
           estrategiasDisponibles={estrategias}
+          tradesRecientes={trades}
           onTradeCreado={onTradeCreado}
         />
       </div>
@@ -3356,7 +3621,7 @@ function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: S
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-display text-xl font-bold text-kb-text">Métricas</h1>
+          <h1 className="font-display text-xl font-bold text-kb-text">Estadísticas</h1>
           <p className="mt-0.5 text-sm text-kb-text-secondary">
             {cerrados.length} operación{cerrados.length === 1 ? "" : "es"} en el período seleccionado
           </p>
@@ -3708,10 +3973,12 @@ function ReporteBarras({
 
 function RoiCuentasView({
   cuentas,
+  trades,
   pnlPorCuenta,
   retiradoPorCuenta,
 }: {
   cuentas: Account[];
+  trades: Trade[];
   pnlPorCuenta: Map<string, number>;
   retiradoPorCuenta: Map<string, number>;
 }) {
@@ -3835,7 +4102,212 @@ function RoiCuentasView({
           </table>
         </div>
       </section>
+
+      <ReportesFiscalesSection trades={trades} cuentas={cuentas} />
     </div>
+  );
+}
+
+// =====================================================================
+// REPORTES FISCALES — resumen anual de ganancias/pérdidas, por cuenta y
+// total, para llevarle a un contador. La app da los NÚMEROS; cómo
+// declararlos depende de las leyes de cada país, así que no reemplaza
+// el asesoramiento de un contador o abogado impositivo.
+// =====================================================================
+
+function ReportesFiscalesSection({ trades, cuentas }: { trades: Trade[]; cuentas: Account[] }) {
+  const [abierto, setAbierto] = useState(false);
+
+  const añosDisponibles = useMemo(() => {
+    const set = new Set<number>();
+    trades
+      .filter((t) => t.status === "closed" && t.realized_pnl !== null)
+      .forEach((t) => set.add(new Date(t.entry_time).getFullYear()));
+    return Array.from(set).sort((a, b) => b - a);
+  }, [trades]);
+
+  const [añoElegido, setAñoElegido] = useState<number>(() => new Date().getFullYear());
+
+  const filasPorCuenta = useMemo(() => {
+    return cuentas
+      .map((c) => {
+        const cerrados = trades.filter(
+          (t) =>
+            t.account_id === c.id &&
+            t.status === "closed" &&
+            t.realized_pnl !== null &&
+            new Date(t.entry_time).getFullYear() === añoElegido
+        );
+        const gananciaBruta = cerrados
+          .filter((t) => (t.realized_pnl ?? 0) > 0)
+          .reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0);
+        const perdidaBruta = Math.abs(
+          cerrados.filter((t) => (t.realized_pnl ?? 0) < 0).reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0)
+        );
+        const neto = gananciaBruta - perdidaBruta;
+        const comisiones = cerrados.reduce((acc, t) => acc + (t.fees ?? 0), 0);
+        return { cuenta: c, ops: cerrados.length, gananciaBruta, perdidaBruta, neto, comisiones };
+      })
+      .filter((f) => f.ops > 0);
+  }, [trades, cuentas, añoElegido]);
+
+  const totalAño = useMemo(() => {
+    return filasPorCuenta.reduce(
+      (acc, f) => ({
+        gananciaBruta: acc.gananciaBruta + f.gananciaBruta,
+        perdidaBruta: acc.perdidaBruta + f.perdidaBruta,
+        neto: acc.neto + f.neto,
+        comisiones: acc.comisiones + f.comisiones,
+        ops: acc.ops + f.ops,
+      }),
+      { gananciaBruta: 0, perdidaBruta: 0, neto: 0, comisiones: 0, ops: 0 }
+    );
+  }, [filasPorCuenta]);
+
+  function exportarCSV() {
+    const columnas = ["Cuenta", "Operaciones", "Ganancia bruta", "Pérdida bruta", "Comisiones", "Neto"];
+    const filas = filasPorCuenta.map((f) =>
+      [f.cuenta.name, f.ops, f.gananciaBruta.toFixed(2), f.perdidaBruta.toFixed(2), f.comisiones.toFixed(2), f.neto.toFixed(2)]
+        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+        .join(",")
+    );
+    const totalFila = [
+      "TOTAL",
+      totalAño.ops,
+      totalAño.gananciaBruta.toFixed(2),
+      totalAño.perdidaBruta.toFixed(2),
+      totalAño.comisiones.toFixed(2),
+      totalAño.neto.toFixed(2),
+    ].join(",");
+    const csv = [columnas.join(","), ...filas, totalFila].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `kebotrader-reporte-fiscal-${añoElegido}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function imprimir() {
+    window.print();
+  }
+
+  return (
+    <section className="rounded-xl border border-kb-border bg-kb-surface">
+      <button
+        onClick={() => setAbierto((v) => !v)}
+        className="flex w-full items-center justify-between px-5 py-4 text-left"
+      >
+        <div>
+          <h2 className="font-display text-lg font-semibold">📄 Reportes fiscales</h2>
+          <p className="text-xs text-kb-text-secondary">
+            Resumen anual de ganancias y pérdidas, listo para llevarle a tu contador
+          </p>
+        </div>
+        <span className={`text-kb-text-muted transition-transform ${abierto ? "rotate-180" : ""}`}>⌄</span>
+      </button>
+
+      {abierto && (
+        <div className="border-t border-kb-border-soft px-5 py-5">
+          <div className="mb-4 rounded-lg border border-kb-accent/30 bg-kb-accent/10 p-3">
+            <p className="text-xs text-kb-accent">
+              <span className="font-semibold">Cómo usar esto:</span> acá te armamos los{" "}
+              <span className="font-semibold">números limpios</span> — cuánto ganaste, cuánto
+              perdiste y el neto de cada año, desglosado por cuenta. Cómo declarar esas
+              ganancias (qué formulario, qué categoría, qué % se paga) depende de las leyes
+              de cada país, y ahí es donde entra tu contador — nosotros no damos asesoría
+              impositiva, solo te ahorramos el trabajo de sumar todo a mano.
+            </p>
+          </div>
+
+          {añosDisponibles.length === 0 ? (
+            <p className="py-6 text-center text-sm text-kb-text-secondary">
+              Todavía no tenés operaciones cerradas para generar un reporte.
+            </p>
+          ) : (
+            <>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <Campo etiqueta="Año">
+                  <select
+                    value={añoElegido}
+                    onChange={(e) => setAñoElegido(Number(e.target.value))}
+                    className={inputClass}
+                  >
+                    {añosDisponibles.map((a) => (
+                      <option key={a} value={a}>{a}</option>
+                    ))}
+                  </select>
+                </Campo>
+                <div className="flex gap-2">
+                  <button
+                    onClick={exportarCSV}
+                    className="rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+                  >
+                    📥 Exportar CSV
+                  </button>
+                  <button
+                    onClick={imprimir}
+                    className="rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+                  >
+                    🖨️ Imprimir / PDF
+                  </button>
+                </div>
+              </div>
+
+              {filasPorCuenta.length === 0 ? (
+                <p className="py-6 text-center text-sm text-kb-text-secondary">
+                  No hay operaciones cerradas en {añoElegido}.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-kb-border-soft text-xs text-kb-text-secondary">
+                        <th className="px-3 py-2.5 font-medium">Cuenta</th>
+                        <th className="px-3 py-2.5 font-medium">Ops</th>
+                        <th className="px-3 py-2.5 font-medium">Ganancia bruta</th>
+                        <th className="px-3 py-2.5 font-medium">Pérdida bruta</th>
+                        <th className="px-3 py-2.5 font-medium">Comisiones</th>
+                        <th className="px-3 py-2.5 text-right font-medium">Neto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filasPorCuenta.map((f) => (
+                        <tr key={f.cuenta.id} className="border-b border-kb-border-soft">
+                          <td className="px-3 py-2.5 font-medium text-kb-text">{f.cuenta.name}</td>
+                          <td className="px-3 py-2.5 font-mono text-kb-text-secondary">{f.ops}</td>
+                          <td className="px-3 py-2.5 font-mono text-kb-gain">{formatCurrency(f.gananciaBruta)}</td>
+                          <td className="px-3 py-2.5 font-mono text-kb-loss">{formatCurrency(f.perdidaBruta)}</td>
+                          <td className="px-3 py-2.5 font-mono text-kb-text-secondary">{formatCurrency(f.comisiones)}</td>
+                          <td className={`px-3 py-2.5 text-right font-mono font-semibold ${f.neto >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
+                            {formatCurrency(f.neto)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-kb-border-soft">
+                        <td className="px-3 py-3 font-bold text-kb-text">Total {añoElegido}</td>
+                        <td className="px-3 py-3 font-mono font-bold text-kb-text-secondary">{totalAño.ops}</td>
+                        <td className="px-3 py-3 font-mono font-bold text-kb-gain">{formatCurrency(totalAño.gananciaBruta)}</td>
+                        <td className="px-3 py-3 font-mono font-bold text-kb-loss">{formatCurrency(totalAño.perdidaBruta)}</td>
+                        <td className="px-3 py-3 font-mono font-bold text-kb-text-secondary">{formatCurrency(totalAño.comisiones)}</td>
+                        <td className={`px-3 py-3 text-right font-mono font-bold ${totalAño.neto >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
+                          {formatCurrency(totalAño.neto)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -4384,7 +4856,13 @@ function TarjetaLogro({
   );
 }
 
-function PerfilView({ session }: { session: Session }) {
+function PerfilView({
+  session,
+  onNombreActualizado,
+}: {
+  session: Session;
+  onNombreActualizado?: (nombre: string) => void;
+}) {
   const [perfil, setPerfil] = useState<Profile | null>(null);
   const [cargandoPerfil, setCargandoPerfil] = useState(true);
 
@@ -4405,6 +4883,13 @@ function PerfilView({ session }: { session: Session }) {
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // ---- Perfil público (solo lectura, compartible por link) ----
+  const [publicEnabled, setPublicEnabled] = useState(false);
+  const [publicToken, setPublicToken] = useState<string | null>(null);
+  const [guardandoPublico, setGuardandoPublico] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+  const [errorPublico, setErrorPublico] = useState<string | null>(null);
+
   useEffect(() => {
     async function cargarPerfil() {
       setCargandoPerfil(true);
@@ -4417,10 +4902,55 @@ function PerfilView({ session }: { session: Session }) {
       setTradingStyle(p?.trading_style ?? "");
       setStartedYear(p?.started_year !== null && p?.started_year !== undefined ? String(p.started_year) : "");
       setLocation(p?.location ?? "");
+      setPublicEnabled(p?.public_enabled ?? false);
+      setPublicToken(p?.public_token ?? null);
       setCargandoPerfil(false);
     }
     cargarPerfil();
   }, [session.user.id]);
+
+  async function alternarPerfilPublico(activar: boolean) {
+    setGuardandoPublico(true);
+    setErrorPublico(null);
+    // Si todavía no tiene token (primera vez que activa), generamos uno.
+    let token = publicToken;
+    if (activar && !token) {
+      token = crypto.randomUUID();
+    }
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .upsert({ id: session.user.id, public_enabled: activar, public_token: token });
+    setGuardandoPublico(false);
+    if (!updateError) {
+      setPublicEnabled(activar);
+      setPublicToken(token);
+    } else {
+      setErrorPublico(
+        `No se pudo guardar (${updateError.message}). Si nunca corriste el SQL de "public_enabled"/"public_token" en Supabase, es por eso.`
+      );
+    }
+  }
+
+  async function regenerarLink() {
+    if (!window.confirm("Esto invalida el link anterior al instante — quien lo tenga guardado ya no va a poder verlo. ¿Continuar?")) {
+      return;
+    }
+    setGuardandoPublico(true);
+    const nuevoToken = crypto.randomUUID();
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .upsert({ id: session.user.id, public_enabled: publicEnabled, public_token: nuevoToken });
+    setGuardandoPublico(false);
+    if (!updateError) setPublicToken(nuevoToken);
+  }
+
+  function copiarLink() {
+    if (!publicToken) return;
+    const url = `${window.location.origin}/p/${publicToken}`;
+    navigator.clipboard.writeText(url);
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2000);
+  }
 
   async function subirFoto(archivo: File) {
     setSubiendoFoto(true);
@@ -4472,6 +5002,7 @@ function PerfilView({ session }: { session: Session }) {
       return;
     }
     setMensajePerfil("Perfil actualizado ✅");
+    if (displayName.trim() !== "") onNombreActualizado?.(displayName.trim());
   }
 
   async function cambiarPassword(e: FormEvent) {
@@ -4632,6 +5163,71 @@ function PerfilView({ session }: { session: Session }) {
             {guardandoPerfil ? "Guardando…" : "Guardar perfil"}
           </button>
         </form>
+      </section>
+
+      <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-display text-lg font-semibold">🔗 Página pública</h2>
+            <p className="mt-0.5 text-sm text-kb-text-secondary">
+              Compartí un resumen de solo lectura de tu rendimiento, sin login y sin que
+              nadie pueda editar nada. Separado de tu perfil privado.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => alternarPerfilPublico(!publicEnabled)}
+            disabled={guardandoPublico || cargandoPerfil}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-60 ${
+              publicEnabled ? "bg-kb-gain" : "bg-kb-border"
+            }`}
+            aria-label="Activar o desactivar página pública"
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                publicEnabled ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+
+        {errorPublico && (
+          <p className="mt-3 rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
+            {errorPublico}
+          </p>
+        )}
+
+        {publicEnabled && publicToken && (
+          <div className="mt-4 rounded-lg border border-kb-gain/30 bg-kb-gain/5 p-3">
+            <p className="mb-2 text-xs font-medium text-kb-gain">✅ Tu página pública está activa</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <code className="flex-1 min-w-0 truncate rounded-lg border border-kb-border-soft bg-kb-bg px-3 py-2 text-xs text-kb-text-secondary">
+                {typeof window !== "undefined" ? window.location.origin : ""}/p/{publicToken}
+              </code>
+              <button
+                onClick={copiarLink}
+                className="shrink-0 rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+              >
+                {copiado ? "✓ Copiado" : "Copiar link"}
+              </button>
+              <a
+                href={`/p/${publicToken}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+              >
+                Ver página →
+              </a>
+            </div>
+            <button
+              onClick={regenerarLink}
+              disabled={guardandoPublico}
+              className="mt-2 text-[11px] text-kb-text-muted hover:text-kb-loss transition-colors"
+            >
+              Regenerar link (invalida el actual)
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
@@ -6705,6 +7301,317 @@ function DonutWinRate({ winRate, totalTrades }: { winRate: number; totalTrades: 
 // CHECKLIST DIARIO PRE-TRADING — refuerza disciplina antes de operar
 // =====================================================================
 
+// =====================================================================
+// CONSEJO DEL DÍA — un mensaje distinto cada día (psicología de trading,
+// disciplina, gestión de riesgo, y algunos versículos sobre la
+// paciencia). Rota según la fecha, así que todos ven el mismo mensaje
+// el mismo día y no se repite hasta que da toda la vuelta a la lista.
+// =====================================================================
+
+interface ConsejoDia {
+  texto: string;
+  fuente: string;
+  categoria: "psicologia" | "biblico";
+}
+
+const BANCO_DE_CONSEJOS: ConsejoDia[] = [
+  { texto: "La paciencia no es esperar sin hacer nada — es sostener tu plan aunque el mercado te tiente a romperlo.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Un trade perdedor que respetó tu plan es una victoria. Uno ganador que rompió tus reglas es una trampa.", fuente: "Disciplina", categoria: "psicologia" },
+  { texto: "El mercado no te debe nada hoy. Tu única obligación es seguir tu proceso, no perseguir un resultado.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "El miedo a perderte una operación (FOMO) siempre sale más caro que la operación que te perdiste.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "No existe la racha ganadora infinita. Protegé el capital primero; las ganancias vienen solas después.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "Cada vez que revisás el gráfico cada 30 segundos, no estás operando — estás ansioso.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "La paciencia produce firmeza; y la firmeza, resultado perfecto, para que seáis perfectos y cabales, sin que os falte cosa alguna.", fuente: "Santiago 1:4", categoria: "biblico" },
+  { texto: "El resultado de una sola operación no define quién sos como trader — tu proceso repetido sí.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Vengarte del mercado después de una pérdida es la forma más rápida de convertir una pérdida chica en una grande.", fuente: "Disciplina", categoria: "psicologia" },
+  { texto: "Mejor es el sufrido que el valiente; y el que domina su espíritu, que el que toma una ciudad.", fuente: "Proverbios 16:32", categoria: "biblico" },
+  { texto: "Si tu stop loss te incomoda antes de entrar, el problema no es el stop — es el tamaño de tu posición.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "No sabés cuál trade va a ser el ganador. Por eso seguís el mismo proceso en todos, sin excepciones.", fuente: "Disciplina", categoria: "psicologia" },
+  { texto: "No nos cansemos, pues, de hacer bien; porque a su tiempo segaremos, si no desmayamos.", fuente: "Gálatas 6:9", categoria: "biblico" },
+  { texto: "Cerrar una operación por aburrimiento no es una estrategia de salida — es impaciencia disfrazada.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Tu peor día de trading nunca debería poder borrar tu mejor mes.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "Y no solo esto, sino que también nos gloriamos en las tribulaciones, sabiendo que la tribulación produce paciencia.", fuente: "Romanos 5:3", categoria: "biblico" },
+  { texto: "Escribir por qué entraste a un trade, antes de entrar, es la diferencia entre un plan y una corazonada.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "No hay una sola operación tan importante como para justificar romper tu regla de riesgo.", fuente: "Disciplina", categoria: "psicologia" },
+  { texto: "Todo tiene su tiempo, y todo lo que se quiere debajo del cielo tiene su hora.", fuente: "Eclesiastés 3:1", categoria: "biblico" },
+  { texto: "Copiar la operación de otro trader sin entender el motivo no es aprender — es apostar con otro nombre.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Un mal día no arruina un buen sistema. Un buen día no arregla uno malo.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "Guarda silencio ante Jehová, y espera en él. No te alteres con motivo del que prospera en su camino.", fuente: "Salmos 37:7", categoria: "biblico" },
+  { texto: "El overtrading casi nunca es sobre el mercado. Es sobre no saber estar quieto con vos mismo.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Tu edge no está en predecir el mercado. Está en gestionar bien lo que no podés predecir.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "Bienaventurado el varón que soporta la tentación; porque cuando haya resistido la prueba, recibirá la corona de vida.", fuente: "Santiago 1:12", categoria: "biblico" },
+  { texto: "Si necesitás recuperar rápido lo que perdiste, ya estás operando con la emoción equivocada.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "El trading rentable es aburrido la mayoría de los días. Si buscás emoción, buscá otro hobby.", fuente: "Disciplina", categoria: "psicologia" },
+  { texto: "Mas los que esperan a Jehová tendrán nuevas fuerzas; levantarán alas como las águilas; correrán, y no se cansarán.", fuente: "Isaías 40:31", categoria: "biblico" },
+  { texto: "Nadie tiene un año perfecto. Los traders que duran son los que sobreviven a los meses malos sin volarse la cuenta.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "La confianza real no viene de ganar el último trade — viene de saber que tu proceso es sólido, gane o pierda.", fuente: "Psicología de trading", categoria: "psicologia" },
+
+  // ---- Tanda 2: para que el ciclo no se repita cada 30 días ----
+  { texto: "Operar más no es lo mismo que operar mejor. La calidad de tus entradas importa más que la cantidad.", fuente: "Disciplina", categoria: "psicologia" },
+  { texto: "El trading no premia a quien tiene razón más seguido. Premia a quien pierde poco cuando se equivoca.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "Si tenés que revisar tu cuenta cada 5 minutos, tu tamaño de posición es más grande de lo que tu psicología aguanta.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Todo lo puedo en Cristo que me fortalece.", fuente: "Filipenses 4:13", categoria: "biblico" },
+  { texto: "Un journal que solo lees cuando ganás no te sirve. El valor está en revisar también los días malos.", fuente: "Disciplina", categoria: "psicologia" },
+  { texto: "El mercado te va a dar miles de oportunidades más. Nunca es la última chance — solo se siente así.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Encomienda a Jehová tu camino, y confía en él; y él hará.", fuente: "Salmos 37:5", categoria: "biblico" },
+  { texto: "Cambiar de estrategia después de 3 pérdidas seguidas casi siempre es impaciencia, no análisis.", fuente: "Disciplina", categoria: "psicologia" },
+  { texto: "Tu diario de trading no es para justificarte — es para encontrar el patrón que te está costando plata.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Nadie construyó una cuenta sólida en una semana. Pensá en meses, no en operaciones sueltas.", fuente: "Motivación", categoria: "psicologia" },
+  { texto: "Panal de miel son los dichos suaves; suavidad al alma y medicina para los huesos.", fuente: "Proverbios 16:24", categoria: "biblico" },
+  { texto: "Si necesitás que el próximo trade salga bien para sentirte tranquilo, ya perdiste el control emocional.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Operar cansado, enojado o distraído cuesta más caro que no operar ese día.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "El hombre sabio teme, y se aparta del mal; mas el insensato se muestra insolente y confiado.", fuente: "Proverbios 14:16", categoria: "biblico" },
+  { texto: "No sos tu peor trade. Tampoco sos tu mejor trade. Sos el promedio de cientos de decisiones repetidas.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Bajar el tamaño de tu posición cuando estás en racha perdedora no es debilidad — es supervivencia.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "El que confía en su propio corazón es necio; mas el que camina en sabiduría será librado.", fuente: "Proverbios 28:26", categoria: "biblico" },
+  { texto: "Cada operación es un experimento con tu sistema, no una prueba de tu valor personal.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "El día que dejes de sentir algo al perder, revisá si te importa demasiado poco — no si te volviste 'profesional'.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Sed sobrios, y velad; porque vuestro adversario el diablo, como león rugiente, anda alrededor buscando a quién devorar.", fuente: "1 Pedro 5:8", categoria: "biblico" },
+  { texto: "El apalancamiento no crea ventaja — solo agranda lo que ya estaba mal en tu plan.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "Antes de abrir el gráfico hoy, preguntate: ¿estoy buscando una oportunidad, o estoy buscando acción?", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Encomienda a Jehová tus obras, y tus pensamientos serán afirmados.", fuente: "Proverbios 16:3", categoria: "biblico" },
+  { texto: "Ganar plata rápido casi nunca coincide con ganar plata de forma sostenible. Elegí una de las dos.", fuente: "Motivación", categoria: "psicologia" },
+  { texto: "Tu peor enemigo en el trading no es el mercado — es la versión de vos que quiere razón ya mismo.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "La disciplina que mantenés cuando nadie te está mirando es la que realmente define tus resultados.", fuente: "Disciplina", categoria: "psicologia" },
+  { texto: "El corazón del hombre piensa su camino; mas Jehová endereza sus pasos.", fuente: "Proverbios 16:9", categoria: "biblico" },
+  { texto: "Un plan de trading que nunca revisás no es un plan — es un recuerdo de lo que pensabas hace meses.", fuente: "Disciplina", categoria: "psicologia" },
+  { texto: "El tamaño de tu ganancia no importa si no podés explicar por qué ganaste.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Gozaos en la esperanza; sufridos en la tribulación; constantes en la oración.", fuente: "Romanos 12:12", categoria: "biblico" },
+  { texto: "Si operás para probarle algo a alguien, ya elegiste al público equivocado — el mercado no te está mirando.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Cerrar en breakeven después de estar en ganancia no es fracaso — es respetar tu plan de salida.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "Practica la justicia, ama la misericordia, y humíllate ante tu Dios.", fuente: "Miqueas 6:8", categoria: "biblico" },
+  { texto: "El burnout de trading existe. Un día sin operar puede ser la decisión más rentable de la semana.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "No compares tu curva de equity con la de otro trader — no conocés su capital, su riesgo real ni sus pérdidas ocultas.", fuente: "Motivación", categoria: "psicologia" },
+  { texto: "Someteos, pues, a Dios; resistid al diablo, y huirá de vosotros.", fuente: "Santiago 4:7", categoria: "biblico" },
+  { texto: "La mejor operación de la semana puede ser la que decidiste no tomar.", fuente: "Disciplina", categoria: "psicologia" },
+  { texto: "Si tu razón para entrar fue 'se ve que va para arriba', esa no es una razón — es una esperanza.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Regocijaos en la esperanza, sed pacientes en la tribulación.", fuente: "Romanos 12:12", categoria: "biblico" },
+  { texto: "Tu stop loss no es un insulto a tu análisis. Es el precio de estar equivocado sin que duela demasiado.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "Cuantas más pantallas mires al mismo tiempo, menos control real tenés sobre lo que estás haciendo.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Danos hoy nuestro pan cotidiano — no el de todo el mes en un solo día.", fuente: "Mateo 6:11 (adaptado al trading)", categoria: "biblico" },
+  { texto: "Los traders que sobreviven diez años no son los más brillantes — son los más consistentes.", fuente: "Motivación", categoria: "psicologia" },
+  { texto: "Cada vez que rompés tu regla de riesgo y sale bien, reforzás el hábito que algún día te va a explotar la cuenta.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "El principio de la sabiduría es el temor de Jehová; buen entendimiento tienen todos los que practican sus mandamientos.", fuente: "Salmos 111:10", categoria: "biblico" },
+  { texto: "No necesitás tener razón sobre el mercado. Necesitás tener razón sobre cuándo estar equivocado te sale barato.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "El aburrimiento entre operaciones es una señal de que tu sistema funciona, no de que algo falta.", fuente: "Disciplina", categoria: "psicologia" },
+  { texto: "Andad, pues, como es digno de la vocación con que fuisteis llamados, con toda humildad y mansedumbre, soportándoos con paciencia los unos a los otros en amor.", fuente: "Efesios 4:1-2", categoria: "biblico" },
+  { texto: "Una racha ganadora no te hace mejor trader. Solo te hace un trader con suerte reciente hasta que se demuestre lo contrario.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "El mejor momento para revisar tu plan de riesgo es después de una racha ganadora, no después de una perdedora.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "No os conforméis a este siglo, sino transformaos por medio de la renovación de vuestro entendimiento.", fuente: "Romanos 12:2", categoria: "biblico" },
+  { texto: "El objetivo de hoy no es ganar plata. Es ejecutar tu plan sin importar el resultado.", fuente: "Disciplina", categoria: "psicologia" },
+  { texto: "Cuando dudes entre entrar o esperar, esperar casi siempre es la decisión más profesional.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Mejor es lo poco con justicia, que la muchedumbre de frutos sin derecho.", fuente: "Proverbios 16:8", categoria: "biblico" },
+  { texto: "Nadie te va a aplaudir por respetar tu stop loss. Pero es lo que te va a permitir seguir operando el año que viene.", fuente: "Gestión de riesgo", categoria: "psicologia" },
+  { texto: "El trading solitario necesita autodisciplina extra, porque nadie más te va a frenar cuando estés por romper tu regla.", fuente: "Psicología de trading", categoria: "psicologia" },
+  { texto: "Velad y orad, para que no entréis en tentación; el espíritu a la verdad está dispuesto, pero la carne es débil.", fuente: "Mateo 26:41", categoria: "biblico" },
+  { texto: "Un buen trader pierde bien. Un trader excelente además aprende algo específico de cada pérdida.", fuente: "Motivación", categoria: "psicologia" },
+];
+
+/** Elige el consejo del día según la fecha (mismo día = mismo consejo para todos, y no se repite hasta dar toda la vuelta a la lista). */
+function consejoDeHoy(): ConsejoDia {
+  const hoy = new Date();
+  const inicioDeAño = new Date(hoy.getFullYear(), 0, 0);
+  const diferenciaMs = hoy.getTime() - inicioDeAño.getTime();
+  const diaDelAño = Math.floor(diferenciaMs / (1000 * 60 * 60 * 24));
+  return BANCO_DE_CONSEJOS[diaDelAño % BANCO_DE_CONSEJOS.length];
+}
+
+function ConsejoDelDiaWidget() {
+  const [consejo, setConsejo] = useState<ConsejoDia | null>(null);
+
+  useEffect(() => {
+    setConsejo(consejoDeHoy());
+  }, []);
+
+  if (!consejo) {
+    return (
+      <section className="rounded-xl border border-kb-border bg-kb-surface p-4">
+        <SkeletonBloque className="h-4 w-40 mb-3" />
+        <SkeletonBloque className="h-10 w-full" />
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-xl border border-kb-border bg-gradient-to-br from-kb-accent/10 via-kb-surface to-kb-surface p-4">
+      <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-kb-accent">
+        {consejo.categoria === "biblico" ? "📖" : "💭"} Consejo del día
+      </p>
+      <p className="font-display text-sm leading-relaxed text-kb-text">
+        &quot;{consejo.texto}&quot;
+      </p>
+      <p className="mt-2 text-[11px] text-kb-text-muted">— {consejo.fuente}</p>
+    </section>
+  );
+}
+
+// =====================================================================
+// PUNTAJE KEBOTRADER — un solo número (0-100) que resume tu salud de
+// trading, inspirado en lo que journals como TradeZella/TraderSync
+// llaman "trading score". A diferencia de un widget de noticias
+// externo, esto se calcula 100% con tus propios datos — no depende de
+// ningún servicio de terceros, así que nunca se rompe ni tarda en
+// cargar, y es información que de verdad podés accionar.
+//
+// Se arma con 4 componentes en partes iguales (25% cada uno):
+//  · Win rate (con techo en 60% — no hace falta más para un puntaje pleno)
+//  · Profit factor (con techo en 2.0)
+//  · Disciplina (% de trades sin un error registrado)
+//  · Consistencia (qué tan chico fue tu peor drawdown en % desde el pico)
+// =====================================================================
+
+interface DesgloseKeboScore {
+  etiqueta: string;
+  puntaje: number;
+}
+
+function calcularKeboScore(trades: Trade[]): { puntaje: number; desglose: DesgloseKeboScore[] } | null {
+  const cerrados = trades.filter((t) => t.status === "closed" && t.realized_pnl !== null);
+  if (cerrados.length < 5) return null;
+
+  const ganadores = cerrados.filter((t) => (t.realized_pnl ?? 0) > 0);
+  const winRate = ganadores.length / cerrados.length;
+  const gananciaTotal = ganadores.reduce((a, t) => a + (t.realized_pnl ?? 0), 0);
+  const perdidaTotal = Math.abs(
+    cerrados.filter((t) => (t.realized_pnl ?? 0) < 0).reduce((a, t) => a + (t.realized_pnl ?? 0), 0)
+  );
+  const profitFactor = perdidaTotal > 0 ? gananciaTotal / perdidaTotal : gananciaTotal > 0 ? 2 : 0;
+
+  const sinError = cerrados.filter((t) => !t.mistake || t.mistake === "ninguno").length;
+  const puntajeDisciplina = (sinError / cerrados.length) * 100;
+
+  const ordenados = [...cerrados].sort((a, b) => new Date(a.entry_time).getTime() - new Date(b.entry_time).getTime());
+  let acumulado = 0;
+  let pico = 0;
+  let peorCaidaPorcentaje = 0;
+  ordenados.forEach((t) => {
+    acumulado += t.realized_pnl ?? 0;
+    pico = Math.max(pico, acumulado);
+    if (pico > 0) peorCaidaPorcentaje = Math.max(peorCaidaPorcentaje, ((pico - acumulado) / pico) * 100);
+  });
+
+  const puntajeWinRate = Math.min(winRate / 0.6, 1) * 100;
+  const puntajePF = Math.min(profitFactor / 2, 1) * 100;
+  const puntajeConsistencia = Math.max(0, 100 - peorCaidaPorcentaje * 2);
+
+  const puntaje = Math.round((puntajeWinRate + puntajePF + puntajeDisciplina + puntajeConsistencia) / 4);
+
+  return {
+    puntaje,
+    desglose: [
+      { etiqueta: "Win rate", puntaje: Math.round(puntajeWinRate) },
+      { etiqueta: "Profit factor", puntaje: Math.round(puntajePF) },
+      { etiqueta: "Disciplina", puntaje: Math.round(puntajeDisciplina) },
+      { etiqueta: "Consistencia", puntaje: Math.round(puntajeConsistencia) },
+    ],
+  };
+}
+
+function KeboScoreWidget({ trades }: { trades: Trade[] }) {
+  const resultado = useMemo(() => calcularKeboScore(trades), [trades]);
+  const puntajeAnimado = useNumeroAnimado(resultado?.puntaje ?? 0);
+
+  const colorPuntaje = (p: number) => (p >= 70 ? "text-kb-gain" : p >= 40 ? "text-kb-accent" : "text-kb-loss");
+  const colorBarra = (p: number) => (p >= 70 ? "bg-kb-gain" : p >= 40 ? "bg-kb-accent" : "bg-kb-loss");
+
+  return (
+    <section className="rounded-xl border border-kb-border bg-kb-surface p-4">
+      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-kb-text-secondary">
+        🎯 Puntaje KeboTrader
+      </p>
+
+      {!resultado ? (
+        <p className="py-4 text-center text-xs text-kb-text-secondary">
+          Cerrá al menos 5 operaciones para desbloquear tu puntaje.
+        </p>
+      ) : (
+        <>
+          <div className="flex items-center gap-4">
+            <p className={`font-mono text-4xl font-bold ${colorPuntaje(resultado.puntaje)}`}>
+              {Math.round(puntajeAnimado)}
+              <span className="text-base text-kb-text-muted">/100</span>
+            </p>
+            <div className="flex-1 space-y-1.5">
+              {resultado.desglose.map((d) => (
+                <div key={d.etiqueta}>
+                  <div className="mb-0.5 flex items-center justify-between text-[10px] text-kb-text-muted">
+                    <span>{d.etiqueta}</span>
+                    <span>{d.puntaje}</span>
+                  </div>
+                  <div className="h-1 w-full overflow-hidden rounded-full bg-kb-border">
+                    <div className={`h-full ${colorBarra(d.puntaje)}`} style={{ width: `${d.puntaje}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <p className="mt-3 text-[10px] text-kb-text-muted">
+            Combina win rate, profit factor, disciplina (trades sin errores marcados) y qué tan
+            controlado fue tu peor drawdown. Se recalcula solo con cada operación nueva.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+// =====================================================================
+// COMPARACIÓN MENSUAL — este mes vs. el mes anterior, para ver de un
+// vistazo si estás mejorando o empeorando en el tiempo.
+// =====================================================================
+
+function ComparacionMensualWidget({ trades }: { trades: Trade[] }) {
+  const { actual, anterior } = useMemo(() => {
+    const ahora = new Date();
+    const mesActual = ahora.getMonth();
+    const añoActual = ahora.getFullYear();
+    const fechaMesAnterior = new Date(añoActual, mesActual - 1, 1);
+
+    let pnlActual = 0;
+    let pnlAnterior = 0;
+    trades
+      .filter((t) => t.status === "closed" && t.realized_pnl !== null)
+      .forEach((t) => {
+        const fecha = new Date(t.entry_time);
+        if (fecha.getFullYear() === añoActual && fecha.getMonth() === mesActual) {
+          pnlActual += t.realized_pnl ?? 0;
+        } else if (
+          fecha.getFullYear() === fechaMesAnterior.getFullYear() &&
+          fecha.getMonth() === fechaMesAnterior.getMonth()
+        ) {
+          pnlAnterior += t.realized_pnl ?? 0;
+        }
+      });
+    return { actual: pnlActual, anterior: pnlAnterior };
+  }, [trades]);
+
+  const diferencia = actual - anterior;
+  const mejorando = diferencia >= 0;
+
+  return (
+    <section className="rounded-xl border border-kb-border bg-kb-surface p-4">
+      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-kb-text-secondary">
+        📊 Este mes vs. el anterior
+      </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[10px] text-kb-text-muted">Este mes</p>
+          <p className={`font-mono text-lg font-bold ${actual >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
+            {formatCurrency(actual)}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] text-kb-text-muted">Mes anterior</p>
+          <p className="font-mono text-sm text-kb-text-secondary">{formatCurrency(anterior)}</p>
+        </div>
+      </div>
+      <p className={`mt-2.5 text-xs font-medium ${mejorando ? "text-kb-gain" : "text-kb-loss"}`}>
+        {mejorando ? "▲" : "▼"} {formatCurrency(Math.abs(diferencia))} {mejorando ? "mejor" : "peor"} que el mes pasado
+      </p>
+    </section>
+  );
+}
+
 function ChecklistDiarioWidget({
   items,
   completados,
@@ -7360,19 +8267,87 @@ function CalendarioRendimiento({
 // FORMULARIO: registrar nueva operación
 // =====================================================================
 
+/** Devuelve el valor más repetido de una lista (la "moda") — se usa para sugerir la sesión/estrategia que más usás, en vez de arrancar siempre en blanco. */
+function valorMasFrecuente<T>(valores: T[]): T | null {
+  if (valores.length === 0) return null;
+  const conteo = new Map<T, number>();
+  valores.forEach((v) => conteo.set(v, (conteo.get(v) ?? 0) + 1));
+  let mejor: T | null = null;
+  let mejorConteo = 0;
+  conteo.forEach((c, v) => {
+    if (c > mejorConteo) {
+      mejorConteo = c;
+      mejor = v;
+    }
+  });
+  return mejor;
+}
+
+interface PlantillaTrade {
+  nombre: string;
+  symbol: string;
+  instrumentType: InstrumentType;
+  side: TradeSide;
+  session: TradingSession | "";
+  strategyId: string;
+}
+
+const CLAVE_PLANTILLAS = "kebotrader_plantillas_trade";
+
+function cargarPlantillas(): PlantillaTrade[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const guardado = window.localStorage.getItem(CLAVE_PLANTILLAS);
+    return guardado ? JSON.parse(guardado) : [];
+  } catch {
+    return [];
+  }
+}
+
+function guardarPlantillas(plantillas: PlantillaTrade[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(CLAVE_PLANTILLAS, JSON.stringify(plantillas));
+}
+
 function FormularioTrade({
   accountId,
   tieneCuentas,
   diaParaRegistrar,
   estrategiasDisponibles,
+  tradesRecientes,
   onTradeCreado,
 }: {
   accountId: string | null;
   tieneCuentas: boolean;
   diaParaRegistrar: string;
   estrategiasDisponibles: Strategy[];
+  /** Trades ya cargados de esta cuenta — se usan para "Duplicar último
+   * trade", autocompletar símbolos ya usados, y sugerir la sesión y
+   * estrategia que más usás, para no arrancar siempre desde cero. */
+  tradesRecientes: Trade[];
   onTradeCreado: () => void;
 }) {
+  // ---- Datos derivados del historial, para hacer la carga más rápida ----
+  const ultimoTrade = useMemo(() => {
+    if (tradesRecientes.length === 0) return null;
+    return [...tradesRecientes].sort(
+      (a, b) => new Date(b.entry_time).getTime() - new Date(a.entry_time).getTime()
+    )[0];
+  }, [tradesRecientes]);
+
+  const sesionSugerida = useMemo(
+    () => valorMasFrecuente(tradesRecientes.map((t) => t.session).filter((s): s is TradingSession => s !== null)),
+    [tradesRecientes]
+  );
+  const estrategiaSugerida = useMemo(
+    () => valorMasFrecuente(tradesRecientes.map((t) => t.strategy_id).filter((s): s is string => s !== null)),
+    [tradesRecientes]
+  );
+  const simbolosUsados = useMemo(
+    () => Array.from(new Set(tradesRecientes.map((t) => t.symbol))).sort(),
+    [tradesRecientes]
+  );
+
   const [symbol, setSymbol] = useState("");
   const [instrumentType, setInstrumentType] = useState<InstrumentType>("stock");
   const [side, setSide] = useState<TradeSide>("long");
@@ -7385,18 +8360,72 @@ function FormularioTrade({
   const [fees, setFees] = useState("0");
   const [pnlManual, setPnlManual] = useState("");
   const [riskAmount, setRiskAmount] = useState("");
-  const [session, setSession] = useState<TradingSession | "">("");
+  // Arrancan con la sesión/estrategia que más usaste últimamente, en vez
+  // de "Sin especificar" — la idea es que la mayoría de las veces ni
+  // siquiera tengas que tocar estos dos campos.
+  const [session, setSession] = useState<TradingSession | "">(sesionSugerida ?? "");
   const [entryTime, setEntryTime] = useState("");
   const [exitTime, setExitTime] = useState("");
   const [tradingviewLinks, setTradingviewLinks] = useState<string[]>([""]);
   const [imagenesEvidencia, setImagenesEvidencia] = useState<File[]>([]);
   const [subiendoImagenes, setSubiendoImagenes] = useState(false);
   const [notes, setNotes] = useState("");
-  const [strategyId, setStrategyId] = useState<string>("");
+  const [strategyId, setStrategyId] = useState<string>(estrategiaSugerida ?? "");
   const [emotion, setEmotion] = useState<EmotionType | "">("");
   const [mistake, setMistake] = useState<MistakeType>("ninguno");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // ---- Plantillas rápidas (guardadas en este navegador) ----
+  const [plantillas, setPlantillas] = useState<PlantillaTrade[]>(() => cargarPlantillas());
+
+  function duplicarUltimoTrade() {
+    if (!ultimoTrade) return;
+    setSymbol(ultimoTrade.symbol);
+    setInstrumentType(ultimoTrade.instrument_type);
+    setSide(ultimoTrade.side);
+    if (ultimoTrade.session) setSession(ultimoTrade.session);
+    if (ultimoTrade.strategy_id) setStrategyId(ultimoTrade.strategy_id);
+    if (ultimoTrade.risk_amount !== null) setRiskAmount(String(ultimoTrade.risk_amount));
+  }
+
+  function aplicarPlantilla(p: PlantillaTrade) {
+    setSymbol(p.symbol);
+    setInstrumentType(p.instrumentType);
+    setSide(p.side);
+    setSession(p.session);
+    setStrategyId(p.strategyId);
+  }
+
+  function guardarComoPlantilla() {
+    const nombre = window.prompt("Nombre para esta plantilla (ej. \"Setup NQ apertura NY\"):");
+    if (!nombre || !nombre.trim()) return;
+    const nueva: PlantillaTrade = { nombre: nombre.trim(), symbol, instrumentType, side, session, strategyId };
+    const actualizadas = [...plantillas.filter((p) => p.nombre !== nueva.nombre), nueva];
+    setPlantillas(actualizadas);
+    guardarPlantillas(actualizadas);
+  }
+
+  function eliminarPlantilla(nombre: string) {
+    const actualizadas = plantillas.filter((p) => p.nombre !== nombre);
+    setPlantillas(actualizadas);
+    guardarPlantillas(actualizadas);
+  }
+
+  // Atajo de teclado: Ctrl+Enter guarda el formulario desde cualquier
+  // campo, sin tener que ir hasta el botón con el mouse.
+  useEffect(() => {
+    function manejarTecla(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        formRef.current?.requestSubmit();
+      }
+    }
+    window.addEventListener("keydown", manejarTecla);
+    return () => window.removeEventListener("keydown", manejarTecla);
+  }, []);
+
 
   const [estrategias, setEstrategias] = useState<Strategy[]>(estrategiasDisponibles);
   const [mostrarNuevaEstrategia, setMostrarNuevaEstrategia] = useState(false);
@@ -7605,7 +8634,44 @@ function FormularioTrade({
         </p>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      {(ultimoTrade || plantillas.length > 0) && (
+        <div className="mb-5 rounded-lg border border-kb-border-soft bg-kb-bg p-3">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-kb-text-secondary">
+            ⚡ Carga rápida
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {ultimoTrade && (
+              <button
+                type="button"
+                onClick={duplicarUltimoTrade}
+                className="rounded-full border border-kb-accent/40 bg-kb-accent/10 px-3 py-1.5 text-xs font-medium text-kb-accent hover:bg-kb-accent/20 transition-colors"
+              >
+                🔁 Duplicar último ({ultimoTrade.symbol})
+              </button>
+            )}
+            {plantillas.map((p) => (
+              <span
+                key={p.nombre}
+                className="group flex items-center gap-1 rounded-full border border-kb-border bg-kb-surface px-3 py-1.5 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+              >
+                <button type="button" onClick={() => aplicarPlantilla(p)}>
+                  ⭐ {p.nombre}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => eliminarPlantilla(p.nombre)}
+                  className="text-kb-text-muted opacity-0 hover:text-kb-loss group-hover:opacity-100 transition-opacity"
+                  aria-label={`Eliminar plantilla ${p.nombre}`}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
         {/* ---------- Sección 1: qué operaste ---------- */}
         <div>
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-kb-accent">
@@ -7615,11 +8681,17 @@ function FormularioTrade({
             <Campo etiqueta="Símbolo" ayuda="El ticker del activo, ej. AAPL, BTC, USDCAD">
               <input
                 required
+                list="simbolos-usados"
                 value={symbol}
                 onChange={(e) => setSymbol(e.target.value)}
                 placeholder="AAPL"
                 className={inputClass}
               />
+              <datalist id="simbolos-usados">
+                {simbolosUsados.map((s) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
             </Campo>
 
             <Campo etiqueta="Instrumento" ayuda="Qué tipo de activo es">
@@ -8029,7 +9101,7 @@ function FormularioTrade({
           </p>
         )}
 
-        <div>
+        <div className="flex flex-wrap items-center gap-3">
           <button
             type="submit"
             disabled={enviando}
@@ -8037,6 +9109,18 @@ function FormularioTrade({
           >
             {enviando ? "Guardando…" : "Guardar operación"}
           </button>
+          <button
+            type="button"
+            onClick={guardarComoPlantilla}
+            disabled={!symbol.trim()}
+            className="rounded-lg border border-kb-border px-4 py-2.5 text-sm font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors disabled:opacity-40"
+          >
+            ⭐ Guardar como plantilla
+          </button>
+          <span className="text-[11px] text-kb-text-muted">
+            Tip: <kbd className="rounded border border-kb-border-soft px-1 py-0.5 font-mono">Ctrl</kbd> +{" "}
+            <kbd className="rounded border border-kb-border-soft px-1 py-0.5 font-mono">Enter</kbd> guarda rápido
+          </span>
         </div>
       </form>
     </section>

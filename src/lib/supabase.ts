@@ -271,6 +271,12 @@ export interface Profile {
   started_year: number | null;
   location: string | null;
   updated_at: string;
+  /** Si está en true, cualquiera con el link puede ver una página de
+   * solo lectura con tu rendimiento — sin login y sin poder editar nada. */
+  public_enabled: boolean;
+  /** Token único que forma parte del link público (kebotrader.vercel.app/p/{token}).
+   * Regenerarlo invalida el link anterior al instante. */
+  public_token: string | null;
 }
 
 export interface ChecklistItem {

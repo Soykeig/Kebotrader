@@ -31,6 +31,59 @@
   --kb-loss: #f2546b;
 }
 
+/* =====================================================================
+   MODO CLARO — se activa agregando la clase "light" al <html> (lo hace
+   el hook useTema() en page.tsx). Reescribe las mismas variables, así
+   que TODA la app (Tailwind utilities + estilos inline con var(--kb-*))
+   cambia de golpe sin tener que tocar un solo componente.
+
+   Paleta pensada para mantener la misma identidad (ámbar/verde/rojo)
+   pero con mejor contraste sobre fondo claro — los tonos de acento,
+   ganancia y pérdida se oscurecieron un poco respecto al modo oscuro,
+   porque el mismo color que se ve bien sobre #0b0e14 se ve "lavado"
+   sobre blanco.
+   ===================================================================== */
+.light {
+  --color-kb-bg: #f5f6f9;
+  --color-kb-surface: #ffffff;
+  --color-kb-surface-raised: #ffffff;
+  --color-kb-border: #e1e4ea;
+  --color-kb-border-soft: #edeff3;
+
+  --color-kb-text: #14171f;
+  --color-kb-text-secondary: #5c6470;
+  --color-kb-text-muted: #8b93a3;
+
+  --color-kb-accent: #b8791f;
+  --color-kb-gain: #0e9c72;
+  --color-kb-loss: #d93454;
+}
+
+.light,
+.light :root {
+  --kb-bg: #f5f6f9;
+  --kb-surface: #ffffff;
+  --kb-surface-raised: #ffffff;
+  --kb-border: #e1e4ea;
+  --kb-border-soft: #edeff3;
+  --kb-text-primary: #14171f;
+  --kb-text-secondary: #5c6470;
+  --kb-text-muted: #8b93a3;
+  --kb-accent: #b8791f;
+  --kb-gain: #0e9c72;
+  --kb-loss: #d93454;
+}
+
+/* Sombra sutil en tarjetas — en claro se nota más (despega del fondo
+   blanco), en oscuro es más discreta (le da una capa de profundidad
+   sin verse forzada sobre un fondo ya oscuro). */
+.bg-kb-surface {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24), 0 1px 2px rgba(0, 0, 0, 0.14);
+}
+.light .bg-kb-surface {
+  box-shadow: 0 1px 3px rgba(20, 23, 31, 0.06), 0 1px 2px rgba(20, 23, 31, 0.04);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -40,6 +93,7 @@ body {
   background-color: var(--kb-bg);
   color: var(--kb-text-primary);
   font-family: var(--font-body), system-ui, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 h1, h2, h3, h4, .font-display {

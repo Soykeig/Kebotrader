@@ -37,6 +37,24 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" className="dark">
+      <head>
+        {/* Aplica el tema guardado (oscuro/claro) ANTES de que React
+            pinte nada — así se elimina el parpadeo de medio segundo
+            que se veía al cargar la página con el tema claro activado.
+            Es la misma clave que usa el hook useTema() en page.tsx. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                var tema = localStorage.getItem('kebotrader_tema');
+                if (tema === 'claro') {
+                  document.documentElement.classList.add('light');
+                }
+              } catch (e) {}
+            `,
+          }}
+        />
+      </head>
       <body
         className={`${display.variable} ${body.variable} ${mono.variable} antialiased`}
         suppressHydrationWarning
