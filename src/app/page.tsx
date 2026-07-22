@@ -140,6 +140,28 @@ function formatRMultiple(r: number | null): string {
   return `${r >= 0 ? "+" : ""}${r.toFixed(2)}R`;
 }
 
+/**
+ * Hace que cualquier modal se cierre al apretar la tecla Escape — antes
+ * había que buscar la "✕" o un botón "Cancelar" sí o sí. Se usa junto
+ * con onClick en el fondo oscuro (backdrop) para que también se cierre
+ * al hacer clic afuera de la tarjeta del modal.
+ */
+function useCerrarConEscape(onClose: () => void) {
+  useEffect(() => {
+    function manejarTecla(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", manejarTecla);
+    return () => window.removeEventListener("keydown", manejarTecla);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
+
+/** Cierra el modal al hacer clic en el fondo oscuro, pero no si el clic fue dentro de la tarjeta (evita que un clic dentro del modal lo cierre por error). */
+function manejarClickFondo(e: React.MouseEvent<HTMLDivElement>, onClose: () => void) {
+  if (e.target === e.currentTarget) onClose();
+}
+
 // =====================================================================
 // LOGO
 // =====================================================================
@@ -414,6 +436,7 @@ function ModalAuth({ onClose }: { onClose: () => void }) {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
+  useCerrarConEscape(onClose);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -456,7 +479,10 @@ function ModalAuth({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+      onClick={(e) => manejarClickFondo(e, onClose)}
+    >
       <div className="w-full max-w-sm rounded-2xl border border-kb-border bg-kb-surface p-7 shadow-2xl">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="font-display text-xl font-bold">
@@ -1167,6 +1193,12 @@ function Dashboard({ session }: { session: Session }) {
   function irA(v: Vista) {
     setVista(v);
     setMenuMovilAbierto(false);
+    // BUGFIX: si estabas viendo el detalle de un trade (o eligiendo cuál
+    // ver, o cargando uno nuevo) desde el calendario, esa vista tenía
+    // prioridad sobre el contenido normal — así que navegar desde el
+    // sidebar no te sacaba de ahí. Ahora, cualquier clic en el menú
+    // también cierra esa vista y te lleva a la sección elegida.
+    setVistaDia(null);
   }
 
   return (
@@ -2127,7 +2159,7 @@ function VistaDiaCalendario({
   if (vistaDia.tipo === "detalle") {
     const diaDeEsteTrade = fechaKeyLocal(vistaDia.trade.entry_time);
     return (
-      <div className="max-w-lg space-y-3">
+      <div className="mx-auto max-w-lg space-y-3">
         <ModalDetalleTrade
           trade={vistaDia.trade}
           estrategias={estrategias}
@@ -2153,7 +2185,7 @@ function VistaDiaCalendario({
       year: "numeric",
     });
     return (
-      <div className="max-w-2xl space-y-4">
+      <div className="mx-auto max-w-2xl space-y-4">
         <button
           onClick={onVolver}
           className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
@@ -2182,7 +2214,7 @@ function VistaDiaCalendario({
     year: "numeric",
   });
   return (
-    <div className="max-w-2xl space-y-4">
+    <div className="mx-auto max-w-2xl space-y-4">
       <button
         onClick={onVolver}
         className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
@@ -2390,7 +2422,10 @@ function RoiResumenPanel({
   invertido: number;
   retirado: number;
   roiPorcentaje: number;
-  onVerDetalle: () => void;
+  /** Si no se pasa, no se muestra el botón "Ver detalle" — se usa así
+   * en la propia vista de Rentabilidad, donde no tendría sentido un
+   * botón que te lleve a la página en la que ya estás parado. */
+  onVerDetalle?: () => void;
 }) {
   const maxBarra = Math.max(invertido, retirado, 1);
 
@@ -2398,9 +2433,11 @@ function RoiResumenPanel({
     <section className="rounded-xl border border-kb-border bg-kb-surface p-4">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-display text-sm font-semibold">Rentabilidad</h2>
-        <button onClick={onVerDetalle} className="text-xs font-medium text-kb-accent hover:underline">
-          Ver detalle →
-        </button>
+        {onVerDetalle && (
+          <button onClick={onVerDetalle} className="text-xs font-medium text-kb-accent hover:underline">
+            Ver detalle →
+          </button>
+        )}
       </div>
 
       <div className="mb-3 grid grid-cols-3 gap-2">
@@ -2749,6 +2786,7 @@ function ModalNuevaEstrategia({
   const [nombre, setNombre] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useCerrarConEscape(onClose);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -2776,7 +2814,10 @@ function ModalNuevaEstrategia({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+      onClick={(e) => manejarClickFondo(e, onClose)}
+    >
       <div className="w-full max-w-sm rounded-2xl border border-kb-border bg-kb-surface p-7 shadow-2xl">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="font-display text-xl font-bold">Nueva estrategia</h2>
@@ -2829,6 +2870,7 @@ function TarjetaEstrategia({
   const [mostrarFormRegla, setMostrarFormRegla] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(false);
+  useCerrarConEscape(() => setConfirmandoEliminar(false));
 
   async function guardarNombre() {
     const nombreLimpio = nombreEditado.trim();
@@ -3019,7 +3061,10 @@ function TarjetaEstrategia({
       </div>
 
       {confirmandoEliminar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+          onClick={(e) => manejarClickFondo(e, () => setConfirmandoEliminar(false))}
+        >
           <div className="w-full max-w-sm rounded-2xl border border-kb-border bg-kb-surface p-6 shadow-2xl">
             <h3 className="font-display text-lg font-bold text-kb-text">
               ¿Eliminar &quot;{estrategia.name}&quot;?
@@ -3727,7 +3772,6 @@ function RoiCuentasView({
         invertido={totales.invertido}
         retirado={totales.retirado}
         roiPorcentaje={totales.roi}
-        onVerDetalle={() => {}}
       />
 
       <section className="rounded-xl border border-kb-border bg-kb-surface">
@@ -5404,6 +5448,10 @@ function TarjetaCuenta({
   const [conteo, setConteo] = useState<{ trades: number; retiros: number } | null>(null);
   const [cargandoConteo, setCargandoConteo] = useState(false);
   const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
+  useCerrarConEscape(() => {
+    setConfirmandoEliminar(false);
+    setErrorEliminar(null);
+  });
 
   const cerrados = useMemo(
     () => trades.filter((t) => t.account_id === cuenta.id && t.status === "closed" && t.realized_pnl !== null),
@@ -5412,6 +5460,23 @@ function TarjetaCuenta({
   const ganadores = cerrados.filter((t) => (t.realized_pnl ?? 0) > 0).length;
   const winRate = cerrados.length > 0 ? (ganadores / cerrados.length) * 100 : null;
   const invertido = cuenta.purchase_cost ?? cuenta.starting_balance;
+
+  // ---- Progreso hacia el objetivo de la fase actual (mismo cálculo que
+  // en el Dashboard, para que también se vea acá sin tener que
+  // seleccionar la cuenta o abrir "Editar"). ----
+  const pnlDesdeInicioFase = useMemo(() => {
+    const inicioFase = new Date(cuenta.phase_started_at).getTime();
+    return cerrados
+      .filter((t) => new Date(t.entry_time).getTime() >= inicioFase)
+      .reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0);
+  }, [cerrados, cuenta.phase_started_at]);
+
+  const objetivoFaseMonto =
+    cuenta.phase_target_percent !== null ? (cuenta.starting_balance * cuenta.phase_target_percent) / 100 : null;
+  const progresoFasePorcentaje =
+    objetivoFaseMonto && objetivoFaseMonto > 0
+      ? Math.min((pnlDesdeInicioFase / objetivoFaseMonto) * 100, 100)
+      : 0;
 
   async function archivar() {
     setProcesando(true);
@@ -5560,6 +5625,23 @@ function TarjetaCuenta({
             {cuenta.max_total_loss ? `Límite total ${formatCurrency(cuenta.max_total_loss)}` : ""}
           </p>
         )}
+
+        {objetivoFaseMonto !== null && (cuenta.phase === "fase_1" || cuenta.phase === "fase_2") && (
+          <div className="mt-2.5 rounded-lg border border-kb-border-soft bg-kb-bg p-2.5">
+            <div className="mb-1 flex items-center justify-between text-[11px]">
+              <span className="text-kb-text-secondary">
+                Objetivo {PHASE_LABELS[cuenta.phase]}: {cuenta.phase_target_percent}% ({formatCurrency(objetivoFaseMonto)})
+              </span>
+              <span className="font-mono font-semibold text-kb-text">{progresoFasePorcentaje.toFixed(0)}%</span>
+            </div>
+            <div className="h-1 w-full overflow-hidden rounded-full bg-kb-border">
+              <div
+                className={`h-full rounded-full ${progresoFasePorcentaje >= 100 ? "bg-kb-gain" : "bg-kb-accent"}`}
+                style={{ width: `${progresoFasePorcentaje}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-3 divide-x divide-kb-border-soft border-t border-kb-border-soft">
@@ -5603,7 +5685,15 @@ function TarjetaCuenta({
       )}
 
       {confirmandoEliminar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+          onClick={(e) =>
+            manejarClickFondo(e, () => {
+              setConfirmandoEliminar(false);
+              setErrorEliminar(null);
+            })
+          }
+        >
           <div className="w-full max-w-sm rounded-2xl border border-kb-border bg-kb-surface p-6 shadow-2xl">
             <h3 className="font-display text-lg font-bold text-kb-text">
               ¿Eliminar &quot;{cuenta.name}&quot;?
@@ -5677,6 +5767,7 @@ function ModalEditarCuenta({
   const [accountType, setAccountType] = useState<AccountType>(cuenta.account_type);
   const [phase, setPhase] = useState<AccountPhase>(cuenta.phase);
   const [challengeType, setChallengeType] = useState<AccountChallengeType>(cuenta.challenge_type ?? "dos_fases");
+  useCerrarConEscape(onClose);
   const [startingBalance, setStartingBalance] = useState(String(cuenta.starting_balance));
   const [purchaseCost, setPurchaseCost] = useState(
     cuenta.purchase_cost !== null ? String(cuenta.purchase_cost) : ""
@@ -5735,7 +5826,10 @@ function ModalEditarCuenta({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8 overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8 overflow-y-auto"
+      onClick={(e) => manejarClickFondo(e, onClose)}
+    >
       <div className="w-full max-h-[85vh] max-w-md overflow-y-auto rounded-2xl border border-kb-border bg-kb-surface p-7 shadow-2xl">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="font-display text-xl font-bold">Editar cuenta</h2>
@@ -5963,6 +6057,7 @@ function ModalNuevaCuenta({
   const [phaseTargetPercent, setPhaseTargetPercent] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useCerrarConEscape(onClose);
 
   // La fase inicial queda determinada por el tipo de cuenta elegido, para
   // que quede todo configurado de una sola vez: capital propio no tiene
@@ -6023,7 +6118,10 @@ function ModalNuevaCuenta({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8 overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8 overflow-y-auto"
+      onClick={(e) => manejarClickFondo(e, onClose)}
+    >
       <div className="w-full max-h-[85vh] max-w-md overflow-y-auto rounded-2xl border border-kb-border bg-kb-surface p-7 shadow-2xl">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="font-display text-xl font-bold">Nueva cuenta</h2>
@@ -6224,6 +6322,7 @@ function ModalCuentasArchivadas({
   const [archivadas, setArchivadas] = useState<Account[]>([]);
   const [cargando, setCargando] = useState(true);
   const [reactivandoId, setReactivandoId] = useState<string | null>(null);
+  useCerrarConEscape(onClose);
 
   async function cargarArchivadas() {
     setCargando(true);
@@ -6257,7 +6356,10 @@ function ModalCuentasArchivadas({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8 overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8 overflow-y-auto"
+      onClick={(e) => manejarClickFondo(e, onClose)}
+    >
       <div className="w-full max-h-[85vh] max-w-md overflow-y-auto rounded-2xl border border-kb-border bg-kb-surface p-7 shadow-2xl">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="font-display text-xl font-bold">Cuentas archivadas</h2>
@@ -7990,8 +8092,11 @@ function ModalDetalleTrade({
   variante?: "modal" | "pagina";
 }) {
   const [modo, setModo] = useState<"ver" | "editar" | "cerrar" | "cerrar_parcial">("ver");
-  const [confirmandoEliminar, setConfirmandoEliminar] = useState(false);
-  const [procesando, setProcesando] = useState(false);
+  // Solo cerramos con Escape en la variante "modal" (ventana flotante).
+  // En la variante "pagina" no tiene sentido — ahí no hay nada flotando
+  // que cerrar, y podría confundir si el usuario aprieta Escape mientras
+  // escribe en un formulario.
+  useCerrarConEscape(variante === "modal" ? onClose : () => {});
 
   // ---- Cierres parciales (escalado de salida) ----
   const [exits, setExits] = useState<TradeExit[]>([]);
@@ -8016,19 +8121,6 @@ function ModalDetalleTrade({
   const cantidadCerradaParcial = exits.reduce((acc, e) => acc + e.quantity, 0);
   const cantidadRestante = Math.max(trade.quantity - cantidadCerradaParcial, 0);
   const tieneParciales = exits.length > 0;
-
-  async function eliminar() {
-    setProcesando(true);
-    // Borramos primero las imágenes de evidencia del bucket, para que no
-    // queden ocupando espacio de Storage sin ningún trade que las use.
-    if (trade.evidence_images && trade.evidence_images.length > 0) {
-      const rutas = trade.evidence_images.map((r) => extraerRutaStorage("trade-evidence", r));
-      await supabase.storage.from("trade-evidence").remove(rutas);
-    }
-    const { error } = await supabase.from("trades").delete().eq("id", trade.id);
-    setProcesando(false);
-    if (!error) onEliminado();
-  }
 
   const rMultiple = calcularRMultiple(trade.realized_pnl, trade.risk_amount);
   const estrategiaNombre = estrategias.find((e) => e.id === trade.strategy_id)?.name ?? "Sin estrategia";
@@ -8167,12 +8259,6 @@ function ModalDetalleTrade({
               >
                 📐 Cerrar parcial
               </button>
-              <button
-                onClick={() => setConfirmandoEliminar(true)}
-                className="rounded-lg border border-kb-loss/30 px-4 py-2.5 text-sm font-medium text-kb-loss hover:bg-kb-loss/10 transition-colors"
-              >
-                Eliminar
-              </button>
             </div>
           </div>
         ) : modo === "ver" ? (
@@ -8265,13 +8351,7 @@ function ModalDetalleTrade({
                 onClick={() => setModo("editar")}
                 className="flex-1 rounded-lg border border-kb-border py-2.5 text-sm font-medium text-kb-text hover:border-kb-accent hover:text-kb-accent transition-colors"
               >
-                Editar
-              </button>
-              <button
-                onClick={() => setConfirmandoEliminar(true)}
-                className="flex-1 rounded-lg border border-kb-loss/30 py-2.5 text-sm font-medium text-kb-loss hover:bg-kb-loss/10 transition-colors"
-              >
-                Eliminar
+                ✎ Editar operación
               </button>
             </div>
           </div>
@@ -8283,32 +8363,6 @@ function ModalDetalleTrade({
             onGuardado={onActualizado}
           />
         )}
-
-        {confirmandoEliminar && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-            <div className="w-full max-w-sm rounded-2xl border border-kb-border bg-kb-surface p-6 shadow-2xl">
-              <h3 className="font-display text-lg font-bold text-kb-text">¿Eliminar esta operación?</h3>
-              <p className="mt-2 text-sm text-kb-text-secondary">
-                Esta acción no se puede deshacer. La operación de {trade.symbol} se borrará por completo.
-              </p>
-              <div className="mt-5 flex gap-3">
-                <button
-                  onClick={() => setConfirmandoEliminar(false)}
-                  className="flex-1 rounded-lg border border-kb-border py-2 text-sm font-medium text-kb-text-secondary hover:text-kb-text transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={eliminar}
-                  disabled={procesando}
-                  className="flex-1 rounded-lg bg-kb-loss py-2 text-sm font-semibold text-white hover:brightness-110 transition disabled:opacity-60"
-                >
-                  {procesando ? "Eliminando…" : "Sí, eliminar"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
     </>
   );
 
@@ -8317,7 +8371,10 @@ function ModalDetalleTrade({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8 overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8 overflow-y-auto"
+      onClick={(e) => manejarClickFondo(e, onClose)}
+    >
       <div className="w-full max-h-[85vh] max-w-lg overflow-y-auto rounded-2xl border border-kb-border bg-kb-surface p-6 shadow-2xl">
         {contenido}
       </div>
