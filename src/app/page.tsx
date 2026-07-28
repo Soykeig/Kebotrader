@@ -1768,6 +1768,7 @@ function Dashboard({
               <ImportarView
                 cuentas={cuentas}
                 estrategias={estrategias}
+                cuentaActivaId={cuentaActivaId}
                 onImportado={cargarTrades}
               />
             )}
@@ -5392,10 +5393,12 @@ const CAMPOS_IMPORTACION: { campo: CampoDestino; etiqueta: string; requerido: bo
 function ImportarView({
   cuentas,
   estrategias,
+  cuentaActivaId,
   onImportado,
 }: {
   cuentas: Account[];
   estrategias: Strategy[];
+  cuentaActivaId: CuentaSeleccion;
   onImportado: () => void;
 }) {
   const [paso, setPaso] = useState<"subir" | "mapear" | "revisar" | "listo">("subir");
@@ -5403,9 +5406,17 @@ function ImportarView({
   const [encabezados, setEncabezados] = useState<string[]>([]);
   const [filasDatos, setFilasDatos] = useState<string[][]>([]);
   const [mapeo, setMapeo] = useState<Partial<Record<CampoDestino, number>>>({});
-  const [accountId, setAccountId] = useState("");
+  // Arranca ya con la cuenta que tenías activa en el sidebar, así no
+  // hay que elegirla dos veces — se puede cambiar igual si hace falta.
+  const [accountId, setAccountId] = useState(cuentaActivaId !== "todas" ? cuentaActivaId : "");
   const [strategyId, setStrategyId] = useState("");
   const [sideDefault, setSideDefault] = useState<TradeSide>("long");
+  // Muchos reportes de plataformas de futuros (como el "Position History"
+  // de Tradovate) no incluyen la comisión en el archivo — viene en un
+  // reporte aparte. En vez de pedir un segundo archivo, dejamos que el
+  // usuario cargue el costo por contrato UNA sola vez acá, y la app lo
+  // multiplica sola por la cantidad de cada operación al importar.
+  const [comisionPorContrato, setComisionPorContrato] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState<{ insertados: number; saltados: number } | null>(null);
@@ -5425,20 +5436,48 @@ function ImportarView({
       setFilasDatos(filas.slice(1));
       setNombreArchivo(archivo.name);
 
-      // Auto-mapeo básico: si alguna columna se llama parecido a lo que
+      // Auto-mapeo: si alguna columna se llama parecido a lo que
       // buscamos, la pre-seleccionamos (el usuario puede corregirla).
+      // Incluye nombres típicos de MT4/5, prop firms, y plataformas de
+      // futuros (Tradovate, NinjaTrader, Rithmic) como Contract, B/S,
+      // Avg Fill Price, Timestamp, etc.
       const autoMapeo: Partial<Record<CampoDestino, number>> = {};
       const alias: Record<CampoDestino, string[]> = {
-        symbol: ["symbol", "simbolo", "símbolo", "ticker", "instrument", "activo"],
-        side: ["side", "type", "tipo", "direction", "direccion"],
-        quantity: ["quantity", "cantidad", "lots", "lotes", "volume", "volumen", "size"],
-        entry_price: ["entry", "open price", "precio entrada", "precio apertura", "openprice"],
-        exit_price: ["exit", "close price", "precio salida", "precio cierre", "closeprice"],
-        entry_time: ["entry time", "open time", "fecha entrada", "fecha apertura", "opentime"],
-        exit_time: ["exit time", "close time", "fecha salida", "fecha cierre", "closetime"],
-        realized_pnl: ["profit", "pnl", "p&l", "ganancia", "resultado", "ganancia neta"],
+        symbol: ["symbol", "simbolo", "símbolo", "ticker", "instrument", "activo", "contract", "product"],
+        side: ["side", "direction", "direccion", "b/s", "buy/sell", "buysell", "action"],
+        quantity: [
+          "quantity", "cantidad", "lots", "lotes", "volume", "volumen", "qty",
+          "filled qty", "paired qty", "contracts",
+        ],
+        entry_price: [
+          "entry price", "open price", "precio entrada", "precio apertura", "openprice",
+          "avg fill price", "fill price", "avgfillprice", "buy price", "bought price",
+          "buyprice", "avg buy price",
+        ],
+        exit_price: [
+          "exit price", "close price", "precio salida", "precio cierre", "closeprice",
+          "sell price", "sold price", "sellprice", "avg sell price", "exit avg fill price",
+        ],
+        entry_time: [
+          // OJO: "timestamp" a secas NO va acá — varios reportes (como el
+          // de Tradovate) tienen una columna genérica "Timestamp" antes
+          // de la específica "Bought Timestamp", y si "timestamp" fuera
+          // alias, la genérica ganaba por aparecer primero en el archivo.
+          "entry time", "open time", "fecha entrada", "fecha apertura", "opentime",
+          "fill time", "filltime", "execution time", "order time",
+          "buy time", "bought timestamp", "buy timestamp",
+        ],
+        exit_time: [
+          "exit time", "close time", "fecha salida", "fecha cierre", "closetime",
+          "sell time", "sold timestamp", "sell timestamp",
+        ],
+        realized_pnl: [
+          "profit", "pnl", "p&l", "p/l", "ganancia", "resultado", "ganancia neta", "realized",
+          "net p/l", "net pnl", "realized p/l", "realized pnl", "gain/loss", "closed pnl",
+          "total p/l",
+        ],
         fees: ["commission", "comision", "comisión", "fee", "fees", "swap"],
-        notes: ["comment", "comentario", "notes", "notas"],
+        notes: ["comment", "comentario", "notes", "notas", "text"],
       };
       filas[0].forEach((encabezado, i) => {
         const normalizado = encabezado.trim().toLowerCase();
@@ -5502,7 +5541,15 @@ function ImportarView({
       const exitPrice = parsearNumeroCSV(obtener("exit_price"));
       const exitTime = parsearFechaCSV(obtener("exit_time"));
       const realizedPnl = parsearNumeroCSV(obtener("realized_pnl"));
-      const fees = parsearNumeroCSV(obtener("fees")) ?? 0;
+      // Si el archivo trae su propia columna de comisión, la usamos. Si
+      // no, y el usuario cargó un costo por contrato, la calculamos
+      // sola (cantidad × comisión por contrato) — así solo hace falta
+      // un archivo, sin tener que exportar ni subir un segundo reporte.
+      const feesDelArchivo = parsearNumeroCSV(obtener("fees"));
+      const comisionPorContratoNum = parseFloat(comisionPorContrato);
+      const fees =
+        feesDelArchivo ??
+        (!Number.isNaN(comisionPorContratoNum) ? Math.abs(quantity) * comisionPorContratoNum : 0);
       const notes = obtener("notes")?.trim() || null;
 
       const sideTexto = obtener("side")?.trim().toLowerCase();
@@ -5723,6 +5770,21 @@ function ImportarView({
                   <option value="short">Short (venta)</option>
                 </select>
               </Campo>
+              {mapeo.fees === undefined && (
+                <Campo
+                  etiqueta="Comisión por contrato/lote (opcional)"
+                  ayuda="Tu archivo no trae columna de comisión — si cargás un número acá, se multiplica sola por la cantidad de cada fila"
+                >
+                  <input
+                    type="number"
+                    step="any"
+                    value={comisionPorContrato}
+                    onChange={(e) => setComisionPorContrato(e.target.value)}
+                    placeholder="Ej. 1 (si tu bróker cobra $1 por contrato)"
+                    className={inputClass}
+                  />
+                </Campo>
+              )}
             </div>
 
             {error && (
