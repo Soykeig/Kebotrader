@@ -131,6 +131,11 @@ export interface Trade {
   notes: string | null;
   emotion: EmotionType | null;
   mistake: MistakeType | null;
+  /** Lista de errores marcados en este trade (podés tildar varios a la
+   * vez — un trade malo casi siempre tiene más de una causa junta). El
+   * campo "mistake" de arriba se mantiene por compatibilidad con trades
+   * viejos, cargados antes de que existiera esta lista. */
+  mistakes: MistakeType[] | null;
   risk_amount: number | null;
   tradingview_links: string[];
   evidence_images: string[];
@@ -261,6 +266,13 @@ export interface Achievement {
   achieved_date: string;
   created_at: string;
 }
+
+// NOTA: acá vivía el sistema de suscripción de pago (NivelAcceso,
+// calcularNivelAcceso, y los campos subscription_status/stripe_* en
+// Profile). Se pausó a pedido — queda anotado para retomarlo cuando
+// esté resuelto lo del CPF/MEI en Brasil. El código ya armado (con
+// Stripe manejando la prueba de 7 días con tarjeta) se conserva en el
+// historial de esta conversación, no hace falta rehacerlo de cero.
 
 export interface Profile {
   id: string;

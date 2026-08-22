@@ -20,7 +20,6 @@ import {
   type Achievement,
   type AchievementCategory,
   type Profile,
-  type ChecklistItem,
   type TradeExit,
   type PhaseHistoryEntry,
   type AccountChallengeType,
@@ -398,6 +397,112 @@ function LandingConAuth({
         </div>
       </section>
 
+      {/* ---------- Vistazo del interior — sin necesitar cuenta ---------- */}
+      <section className="mx-auto max-w-6xl px-6 py-16 border-b border-kb-border-soft">
+        <div className="mb-8 text-center">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-kb-accent">Sin registrarte</p>
+          <h2 className="mt-1 font-display text-2xl sm:text-3xl font-bold">Así se ve por dentro</h2>
+          <p className="mx-auto mt-2 max-w-lg text-sm text-kb-text-secondary">
+            Un vistazo real del Dashboard, con datos de ejemplo — así sabés exactamente qué vas a
+            encontrar antes de crear tu cuenta.
+          </p>
+        </div>
+
+        {/* "Marco de navegador" para que se sienta como una captura real de la app */}
+        <div className="mx-auto max-w-3xl overflow-hidden rounded-xl border border-kb-border shadow-2xl">
+          <div className="flex items-center gap-1.5 border-b border-kb-border-soft bg-kb-surface px-3 py-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-kb-loss/60" />
+            <span className="h-2.5 w-2.5 rounded-full bg-kb-accent/60" />
+            <span className="h-2.5 w-2.5 rounded-full bg-kb-gain/60" />
+            <span className="ml-3 rounded-md bg-kb-bg px-2 py-0.5 font-mono text-[10px] text-kb-text-muted">
+              kebotrader.vercel.app/dashboard
+            </span>
+          </div>
+
+          <div className="space-y-4 bg-kb-bg p-4 sm:p-6">
+            {/* Saludo */}
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-kb-accent">Sesión activa</p>
+              <p className="font-display text-lg font-bold text-kb-text">Hola, Trader</p>
+            </div>
+
+            {/* Fila: puntaje + comparación mensual, como en el Dashboard real */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-kb-border bg-kb-surface p-4">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-kb-text-secondary">
+                  🎯 Puntaje KeboTrader
+                </p>
+                <div className="flex items-center gap-3">
+                  <p className="font-mono text-3xl font-bold text-kb-gain">78<span className="text-sm text-kb-text-muted">/100</span></p>
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-1 w-full rounded-full bg-kb-border">
+                      <div className="h-full w-[70%] rounded-full bg-kb-gain" />
+                    </div>
+                    <div className="h-1 w-full rounded-full bg-kb-border">
+                      <div className="h-full w-[85%] rounded-full bg-kb-accent" />
+                    </div>
+                    <div className="h-1 w-full rounded-full bg-kb-border">
+                      <div className="h-full w-[60%] rounded-full bg-kb-gain" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-kb-border bg-kb-surface p-4">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-kb-text-secondary">
+                  📊 Este mes vs. el anterior
+                </p>
+                <p className="font-mono text-2xl font-bold text-kb-gain">+$1.240,00</p>
+                <p className="mt-1 text-[11px] font-medium text-kb-gain">▲ $380,00 mejor que el mes pasado</p>
+              </div>
+            </div>
+
+            {/* P&L total con medidor de arco */}
+            <div className="rounded-xl border border-kb-border bg-kb-surface p-4">
+              <div className="flex items-center gap-4">
+                <svg viewBox="0 0 168 96" className="w-[110px] shrink-0">
+                  <path d="M 24 88 A 60 60 0 0 1 144 88" fill="none" stroke="var(--kb-loss)" strokeWidth="12" strokeLinecap="round" opacity="0.3" />
+                  <path d="M 24 88 A 60 60 0 0 1 144 88" fill="none" stroke="var(--kb-gain)" strokeWidth="12" strokeLinecap="round" strokeDasharray="145 188" />
+                </svg>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-kb-text-secondary">P&amp;L total</p>
+                  <p className="font-mono text-2xl font-bold text-kb-gain">+$3.180,50</p>
+                  <p className="text-[11px] text-kb-text-muted">64.2% win rate · 47 trades</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Mini calendario */}
+            <div className="rounded-xl border border-kb-border bg-kb-surface p-4">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-kb-text-secondary">Calendario</p>
+              <div className="grid grid-cols-7 gap-1">
+                {[
+                  0, 0, 120, -40, 0, 260, 0,
+                  80, 0, -60, 310, 0, 0, 150,
+                  0, 90, -20, 0, 400, 0, 60,
+                ].map((v, i) => (
+                  <div
+                    key={i}
+                    className={`flex h-7 items-center justify-center rounded-md text-[9px] font-mono ${
+                      v === 0
+                        ? "bg-kb-bg text-kb-text-muted"
+                        : v > 0
+                        ? "bg-kb-gain/20 text-kb-gain"
+                        : "bg-kb-loss/20 text-kb-loss"
+                    }`}
+                  >
+                    {v !== 0 ? Math.abs(v) : ""}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p className="mt-4 text-center text-xs text-kb-text-muted">
+          * Datos de ejemplo, para que veas el diseño real — tu Dashboard va a mostrar tus propios números.
+        </p>
+      </section>
+
       {/* ---------- Cómo funciona ---------- */}
       <section className="mx-auto max-w-6xl px-6 py-16 border-b border-kb-border-soft">
         <div className="mb-10 text-center">
@@ -512,6 +617,7 @@ function ModalAuth({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [nombre, setNombre] = useState("");
+  const [codigoAcceso, setCodigoAcceso] = useState("");
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
@@ -525,6 +631,20 @@ function ModalAuth({ onClose }: { onClose: () => void }) {
 
     try {
       if (modo === "registro") {
+        // El registro está cerrado por ahora — solo entra quien tenga
+        // el código que vos le diste a mano. Se verifica en el
+        // servidor (no en el navegador) para que el código no quede
+        // visible en el código fuente de la página.
+        const respuestaCodigo = await fetch("/api/verificar-codigo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ codigo: codigoAcceso.trim() }),
+        });
+        const datosCodigo = await respuestaCodigo.json();
+        if (!datosCodigo.valido) {
+          throw new Error("Ese código de acceso no es válido. Pedile el correcto a quien te invitó.");
+        }
+
         const { error: signUpError } = await supabase.auth.signUp({
           email,
           password,
@@ -595,6 +715,24 @@ function ModalAuth({ onClose }: { onClose: () => void }) {
                 className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text outline-none focus:border-kb-accent"
                 placeholder="Ej. Juan Pérez"
               />
+            </div>
+          )}
+
+          {modo === "registro" && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-kb-text-secondary">
+                Código de acceso
+              </label>
+              <input
+                required
+                value={codigoAcceso}
+                onChange={(e) => setCodigoAcceso(e.target.value)}
+                className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text outline-none focus:border-kb-accent"
+                placeholder="Pedíselo a quien te invitó"
+              />
+              <p className="mt-1 text-[11px] text-kb-text-muted">
+                Por ahora el registro es solo por invitación.
+              </p>
             </div>
           )}
 
@@ -1016,6 +1154,12 @@ function SelectorCuentaSidebar({
 // DASHBOARD (usuario logueado)
 // =====================================================================
 
+// =====================================================================
+// PANTALLA: iniciar prueba con tarjeta — se muestra en vez de toda la
+// app hasta que el usuario complete el checkout de Stripe. No se puede
+// "saltear": es la puerta de entrada obligatoria a KeboTrader.
+// =====================================================================
+
 function Dashboard({
   session,
   tema,
@@ -1035,11 +1179,7 @@ function Dashboard({
 
   useEffect(() => {
     async function cargarNombrePerfil() {
-      const { data } = await supabase
-        .from("profiles")
-        .select("display_name")
-        .eq("id", session.user.id)
-        .maybeSingle();
+      const { data } = await supabase.from("profiles").select("display_name").eq("id", session.user.id).maybeSingle();
       const nombreGuardado = (data as { display_name: string | null } | null)?.display_name;
 
       if (nombreGuardado && nombreGuardado.trim() !== "") {
@@ -1055,9 +1195,7 @@ function Dashboard({
       const nombreDeMetadatos = session.user.user_metadata?.display_name as string | undefined;
       if (nombreDeMetadatos && nombreDeMetadatos.trim() !== "") {
         setNombrePerfil(nombreDeMetadatos.trim());
-        await supabase
-          .from("profiles")
-          .upsert({ id: session.user.id, display_name: nombreDeMetadatos.trim() });
+        await supabase.from("profiles").upsert({ id: session.user.id, display_name: nombreDeMetadatos.trim() });
       }
     }
     cargarNombrePerfil();
@@ -1103,10 +1241,6 @@ function Dashboard({
 
   const [logros, setLogros] = useState<Achievement[]>([]);
   const [cargandoLogros, setCargandoLogros] = useState(true);
-
-  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
-  const [checklistCompletados, setChecklistCompletados] = useState<Set<string>>(new Set());
-  const [cargandoChecklist, setCargandoChecklist] = useState(true);
 
   const [historialFases, setHistorialFases] = useState<PhaseHistoryEntry[]>([]);
 
@@ -1214,74 +1348,12 @@ function Dashboard({
     setCargandoLogros(false);
   }
 
-  async function cargarChecklist() {
-    setCargandoChecklist(true);
-    const { data: items } = await supabase
-      .from("checklist_items")
-      .select("*")
-      .order("sort_order", { ascending: true });
-    setChecklistItems((items as ChecklistItem[]) ?? []);
-
-    const { data: logs } = await supabase
-      .from("checklist_logs")
-      .select("item_id")
-      .eq("log_date", todayKey())
-      .eq("completed", true);
-    setChecklistCompletados(new Set((logs ?? []).map((l) => l.item_id as string)));
-    setCargandoChecklist(false);
-  }
-
-  async function alternarItemChecklist(itemId: string) {
-    const yaCompletado = checklistCompletados.has(itemId);
-    const { data: userData } = await supabase.auth.getUser();
-    const userId = userData.user?.id;
-    if (!userId) return;
-
-    if (yaCompletado) {
-      await supabase
-        .from("checklist_logs")
-        .delete()
-        .eq("item_id", itemId)
-        .eq("log_date", todayKey())
-        .eq("user_id", userId);
-      setChecklistCompletados((prev) => {
-        const nuevo = new Set(prev);
-        nuevo.delete(itemId);
-        return nuevo;
-      });
-    } else {
-      await supabase
-        .from("checklist_logs")
-        .upsert(
-          { user_id: userId, item_id: itemId, log_date: todayKey(), completed: true },
-          { onConflict: "item_id,log_date" }
-        );
-      setChecklistCompletados((prev) => new Set(prev).add(itemId));
-    }
-  }
-
-  async function agregarItemChecklist(texto: string) {
-    const { data: userData } = await supabase.auth.getUser();
-    const userId = userData.user?.id;
-    if (!userId) return;
-    await supabase
-      .from("checklist_items")
-      .insert({ user_id: userId, text: texto, sort_order: checklistItems.length });
-    cargarChecklist();
-  }
-
-  async function eliminarItemChecklist(itemId: string) {
-    await supabase.from("checklist_items").delete().eq("id", itemId);
-    cargarChecklist();
-  }
-
   useEffect(() => {
     cargarCuentas();
     cargarTrades();
     cargarEstrategiasDashboard();
     cargarRetiros();
     cargarLogros();
-    cargarChecklist();
     cargarHistorialFases();
   }, []);
 
@@ -1701,15 +1773,12 @@ function Dashboard({
                 nombreUsuario={nombreParaMostrar}
                 totalRetirado={totalRetirado}
                 retiros={retirosDeLaCuenta}
-                retiradoPorCuenta={retiradoPorCuenta}
                 diaParaRegistrar={diaParaRegistrar}
                 onSeleccionarDiaParaRegistrar={setDiaParaRegistrar}
                 onIrARegistrar={() => irA("historial")}
                 onIrACalendario={() => irA("calendario")}
                 onIrARetiros={() => irA("retiros")}
                 onIrARoi={() => irA("roi")}
-                accountId={cuentaActivaId === "todas" ? null : cuentaActivaId}
-                tieneCuentas={cuentas.length > 0}
                 onAbrirDia={manejarAbrirDia}
                 onAvanzarFase={avanzarFase}
               />
@@ -1848,15 +1917,12 @@ function InicioView({
   nombreUsuario,
   totalRetirado,
   retiros,
-  retiradoPorCuenta,
   diaParaRegistrar,
   onSeleccionarDiaParaRegistrar,
   onIrARegistrar,
   onIrACalendario,
   onIrARetiros,
   onIrARoi,
-  accountId,
-  tieneCuentas,
   onAbrirDia,
   onAvanzarFase,
 }: {
@@ -1868,15 +1934,12 @@ function InicioView({
   nombreUsuario: string;
   totalRetirado: number;
   retiros: Withdrawal[];
-  retiradoPorCuenta: Map<string, number>;
   diaParaRegistrar: string;
   onSeleccionarDiaParaRegistrar: (clave: string) => void;
   onIrARegistrar: () => void;
   onIrACalendario: () => void;
   onIrARetiros: () => void;
   onIrARoi: () => void;
-  accountId: string | null;
-  tieneCuentas: boolean;
   onAbrirDia: (clave: string, tradesDelDia: Trade[]) => void;
   onAvanzarFase: (
     accountId: string,
@@ -2283,8 +2346,6 @@ function InicioView({
           onSeleccionarDia={onSeleccionarDiaParaRegistrar}
           onVerCompleto={onIrACalendario}
           onAbrirDia={onAbrirDia}
-          accountId={accountId}
-          tieneCuentas={tieneCuentas}
         />
 
         <section className="rounded-xl border border-kb-border bg-kb-surface">
@@ -2431,7 +2492,6 @@ function VistaDiaCalendario({
           variante="pagina"
           onClose={onVolver}
           onActualizado={onTradeActualizado}
-          onEliminado={onTradeActualizado}
         />
         <button
           onClick={() => onAgregarOtra(diaDeEsteTrade)}
@@ -2544,16 +2604,12 @@ function MiniCalendario({
   onSeleccionarDia,
   onVerCompleto,
   onAbrirDia,
-  accountId,
-  tieneCuentas,
 }: {
   trades: Trade[];
   diaSeleccionado: string;
   onSeleccionarDia: (clave: string) => void;
   onVerCompleto: () => void;
   onAbrirDia: (clave: string, tradesDelDia: Trade[]) => void;
-  accountId: string | null;
-  tieneCuentas: boolean;
 }) {
   const [mesActual, setMesActual] = useState(() => {
     const hoy = new Date();
@@ -2891,10 +2947,6 @@ function HistorialView({
           estrategias={estrategias}
           onClose={() => setTradeSeleccionado(null)}
           onActualizado={() => {
-            setTradeSeleccionado(null);
-            onTradeCreado();
-          }}
-          onEliminado={() => {
             setTradeSeleccionado(null);
             onTradeCreado();
           }}
@@ -3567,18 +3619,123 @@ function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: S
   }, [cerrados]);
 
   // ---- Errores más frecuentes ----
+  // Cuenta desde el campo nuevo "mistakes" (varios por trade). Para
+  // trades viejos que solo tienen el campo singular "mistake", lo usa
+  // como respaldo — así no se pierden estadísticas de antes de este
+  // cambio.
   const porError = useMemo(() => {
     const grupos = new Map<MistakeType, { pnl: number; total: number }>();
     cerrados.forEach((t) => {
-      if (!t.mistake || t.mistake === "ninguno") return;
-      const actual = grupos.get(t.mistake) ?? { pnl: 0, total: 0 };
-      actual.pnl += t.realized_pnl ?? 0;
-      actual.total += 1;
-      grupos.set(t.mistake, actual);
+      const listaErrores =
+        t.mistakes && t.mistakes.length > 0
+          ? t.mistakes
+          : t.mistake && t.mistake !== "ninguno"
+          ? [t.mistake]
+          : [];
+      listaErrores.forEach((error) => {
+        if (error === "ninguno") return;
+        const actual = grupos.get(error) ?? { pnl: 0, total: 0 };
+        actual.pnl += t.realized_pnl ?? 0;
+        actual.total += 1;
+        grupos.set(error, actual);
+      });
     });
     return Array.from(grupos.entries())
       .map(([error, d]) => ({ etiqueta: MISTAKE_LABELS[error], ...d }))
       .sort((a, b) => b.total - a.total);
+  }, [cerrados]);
+
+  // ---- Distribución de R-múltiplos ----
+  // No es lo mismo "gano seguido montos chicos y de vez en cuando pierdo
+  // grande" que "gano parejo" — el P&L total no distingue estos dos
+  // patrones, pero esta distribución sí. Solo cuenta trades que tienen
+  // el riesgo cargado (sin eso no se puede calcular el R).
+  const BUCKETS_R = [
+    { etiqueta: "< -2R", min: -Infinity, max: -2 },
+    { etiqueta: "-2R a -1R", min: -2, max: -1 },
+    { etiqueta: "-1R a 0R", min: -1, max: 0 },
+    { etiqueta: "0R a 1R", min: 0, max: 1 },
+    { etiqueta: "1R a 2R", min: 1, max: 2 },
+    { etiqueta: "2R a 3R", min: 2, max: 3 },
+    { etiqueta: "> 3R", min: 3, max: Infinity },
+  ];
+  const distribucionR = useMemo(() => {
+    const valoresR = cerrados
+      .map((t) => calcularRMultiple(t.realized_pnl, t.risk_amount))
+      .filter((r): r is number => r !== null);
+    const conteos = BUCKETS_R.map((b) => ({
+      ...b,
+      cantidad: valoresR.filter((r) => r >= b.min && r < b.max).length,
+    }));
+    return { conteos, totalConR: valoresR.length, totalSinR: cerrados.length - valoresR.length };
+  }, [cerrados]);
+
+  // ---- Rendimiento por hora del día ----
+  // "Sesión" (Asia/Londres/NY) son bloques de varias horas — puede que
+  // tu ventaja real esté concentrada en una franja mucho más chica
+  // dentro de esa sesión. Esto lo muestra hora por hora.
+  const porHora = useMemo(() => {
+    const grupos = new Map<number, { pnl: number; total: number; ganadores: number }>();
+    cerrados.forEach((t) => {
+      const hora = new Date(t.entry_time).getHours();
+      const actual = grupos.get(hora) ?? { pnl: 0, total: 0, ganadores: 0 };
+      actual.pnl += t.realized_pnl ?? 0;
+      actual.total += 1;
+      if ((t.realized_pnl ?? 0) > 0) actual.ganadores += 1;
+      grupos.set(hora, actual);
+    });
+    return Array.from({ length: 24 }, (_, hora) => {
+      const d = grupos.get(hora);
+      return {
+        hora,
+        etiqueta: `${String(hora).padStart(2, "0")}:00`,
+        pnl: d?.pnl ?? 0,
+        total: d?.total ?? 0,
+        winRate: d && d.total > 0 ? (d.ganadores / d.total) * 100 : 0,
+      };
+    }).filter((h) => h.total > 0);
+  }, [cerrados]);
+
+  // ---- Rendimiento por número de operación del día (detector de overtrading) ----
+  // Investigando otras journals encontré este patrón: muchos traders que
+  // hacen varias operaciones por día rinden peor a partir de la 3ra/4ta.
+  // Esto agrupa TODAS tus operaciones según si fueron la 1ra, 2da, 3ra...
+  // del día en que las hiciste (sin importar qué día fue), para ver si a
+  // vos te pasa lo mismo — y en qué operación del día conviene frenar.
+  const porNumeroDeOperacion = useMemo(() => {
+    const porDia = new Map<string, Trade[]>();
+    cerrados.forEach((t) => {
+      const clave = fechaKeyLocal(t.entry_time);
+      if (!porDia.has(clave)) porDia.set(clave, []);
+      porDia.get(clave)!.push(t);
+    });
+
+    const porNumero = new Map<number, { pnl: number; total: number; ganadores: number }>();
+    porDia.forEach((tradesDelDia) => {
+      const ordenados = [...tradesDelDia].sort(
+        (a, b) => new Date(a.entry_time).getTime() - new Date(b.entry_time).getTime()
+      );
+      ordenados.forEach((t, i) => {
+        const numero = Math.min(i + 1, 6); // de la 6ta operación en adelante, se agrupan juntas
+        const actual = porNumero.get(numero) ?? { pnl: 0, total: 0, ganadores: 0 };
+        actual.pnl += t.realized_pnl ?? 0;
+        actual.total += 1;
+        if ((t.realized_pnl ?? 0) > 0) actual.ganadores += 1;
+        porNumero.set(numero, actual);
+      });
+    });
+
+    return Array.from({ length: 6 }, (_, i) => {
+      const numero = i + 1;
+      const d = porNumero.get(numero);
+      return {
+        numero,
+        etiqueta: numero === 6 ? "6ª +" : `${numero}ª`,
+        pnlPromedio: d && d.total > 0 ? d.pnl / d.total : 0,
+        total: d?.total ?? 0,
+        winRate: d && d.total > 0 ? (d.ganadores / d.total) * 100 : 0,
+      };
+    }).filter((x) => x.total > 0);
   }, [cerrados]);
 
   // ---- Rendimiento mensual por año (siempre con el historial completo) ----
@@ -3751,6 +3908,110 @@ function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: S
               </div>
             ))}
           </div>
+        )}
+      </section>
+
+      {/* ---------- Distribución de R-múltiplos ---------- */}
+      <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
+        <h2 className="font-display text-lg font-semibold">Distribución de R-múltiplos</h2>
+        <p className="mb-4 text-xs text-kb-text-secondary">
+          ¿Ganás parejo, o ganás poquito seguido y de vez en cuando perdés grande? Solo cuenta
+          trades con el riesgo cargado ({distribucionR.totalConR} de {distribucionR.totalConR + distribucionR.totalSinR}).
+        </p>
+        {distribucionR.totalConR === 0 ? (
+          <p className="py-6 text-center text-sm text-kb-text-secondary">
+            Cargá el campo &quot;Monto arriesgado&quot; en tus trades para desbloquear esto.
+          </p>
+        ) : (
+          <div className="flex h-40 items-end gap-2">
+            {distribucionR.conteos.map((b) => {
+              const max = Math.max(...distribucionR.conteos.map((x) => x.cantidad), 1);
+              const esNegativo = b.max <= 0;
+              return (
+                <div key={b.etiqueta} className="flex flex-1 flex-col items-center gap-1">
+                  <span className="text-[10px] text-kb-text-muted">{b.cantidad || ""}</span>
+                  <div
+                    className={`w-full rounded-t-sm ${esNegativo ? "bg-kb-loss/70" : "bg-kb-gain/70"}`}
+                    style={{ height: `${Math.max((b.cantidad / max) * 100, b.cantidad > 0 ? 6 : 0)}%` }}
+                  />
+                  <span className="text-[9px] text-kb-text-muted">{b.etiqueta}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* ---------- Rendimiento por hora del día ---------- */}
+      <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
+        <h2 className="font-display text-lg font-semibold">Rendimiento por hora del día</h2>
+        <p className="mb-4 text-xs text-kb-text-secondary">
+          Más preciso que por sesión — capaz tu ventaja real está en una franja de 1 hora, no en las 9 horas de "Londres".
+        </p>
+        {porHora.length === 0 ? (
+          <p className="py-6 text-center text-sm text-kb-text-secondary">Sin datos suficientes todavía.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <div className="flex h-32 min-w-[600px] items-end gap-1.5">
+              {porHora.map((h) => {
+                const max = Math.max(...porHora.map((x) => Math.abs(x.pnl)), 1);
+                return (
+                  <div key={h.hora} className="flex flex-1 flex-col items-center gap-1" title={`${h.etiqueta} · ${formatCurrency(h.pnl)} · ${h.total} ops`}>
+                    <div
+                      className={`w-full rounded-t-sm ${h.pnl >= 0 ? "bg-kb-gain/70" : "bg-kb-loss/70"}`}
+                      style={{ height: `${Math.max((Math.abs(h.pnl) / max) * 100, 6)}%` }}
+                    />
+                    <span className="text-[9px] text-kb-text-muted">{h.hora}h</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ---------- Rendimiento por número de operación del día ---------- */}
+      <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
+        <h2 className="font-display text-lg font-semibold">¿Te conviene parar en algún momento?</h2>
+        <p className="mb-4 text-xs text-kb-text-secondary">
+          Agrupa tus operaciones según si fueron la 1ª, 2ª, 3ª... del día (sin importar qué día
+          fue). Muchos traders rinden peor a partir de cierto número de operación — este gráfico
+          te dice si a vos también te pasa, y en qué operación conviene frenar.
+        </p>
+        {porNumeroDeOperacion.length === 0 ? (
+          <p className="py-6 text-center text-sm text-kb-text-secondary">Sin datos suficientes todavía.</p>
+        ) : (
+          <>
+            <div className="flex h-36 items-end gap-3">
+              {porNumeroDeOperacion.map((n) => {
+                const max = Math.max(...porNumeroDeOperacion.map((x) => Math.abs(x.pnlPromedio)), 1);
+                return (
+                  <div key={n.numero} className="flex flex-1 flex-col items-center gap-1.5">
+                    <span className="text-[10px] font-mono text-kb-text-muted">{formatCurrency(n.pnlPromedio)}</span>
+                    <div
+                      className={`w-full rounded-t-sm ${n.pnlPromedio >= 0 ? "bg-kb-gain/70" : "bg-kb-loss/70"}`}
+                      style={{ height: `${Math.max((Math.abs(n.pnlPromedio) / max) * 100, 6)}%` }}
+                    />
+                    <span className="text-[11px] font-medium text-kb-text-secondary">{n.etiqueta} op. del día</span>
+                    <span className="text-[9px] text-kb-text-muted">{n.total} veces</span>
+                  </div>
+                );
+              })}
+            </div>
+            {(() => {
+              const primera = porNumeroDeOperacion[0];
+              const peorDespuesDeLaPrimera = porNumeroDeOperacion
+                .slice(1)
+                .find((n) => n.pnlPromedio < 0 && primera.pnlPromedio >= 0);
+              return peorDespuesDeLaPrimera ? (
+                <p className="mt-4 rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
+                  ⚠️ Tu {peorDespuesDeLaPrimera.etiqueta.toLowerCase()} operación del día promedia{" "}
+                  {formatCurrency(peorDespuesDeLaPrimera.pnlPromedio)} — capaz vale la pena poner un límite
+                  de operaciones por día.
+                </p>
+              ) : null;
+            })()}
+          </>
         )}
       </section>
         </>
@@ -7321,36 +7582,39 @@ function GraficoPnL({ trades }: { trades: Trade[] }) {
 // =====================================================================
 
 function DonutWinRate({ winRate, totalTrades }: { winRate: number; totalTrades: number }) {
-  const tamaño = 136;
-  const grosor = 15;
-  const radio = (tamaño - grosor) / 2;
-  const circunferencia = 2 * Math.PI * radio;
-  const porcionGanadora = (winRate / 100) * circunferencia;
+  // Medidor de arco semicircular (tipo velocímetro) en vez del donut
+  // circular completo que usan casi todas las journals de trading — es
+  // el mismo dato, pero con una forma que no se parece al molde típico.
+  const ancho = 168;
+  const alto = 96;
+  const radio = 72;
+  const grosor = 14;
+  const cx = ancho / 2;
+  const cy = alto - 8;
+  const largoArco = Math.PI * radio; // longitud de un semicírculo
+  const porcionGanadora = (Math.min(Math.max(winRate, 0), 100) / 100) * largoArco;
 
   return (
-    <div className="relative flex h-[136px] w-[136px] shrink-0 items-center justify-center">
-      <svg viewBox={`0 0 ${tamaño} ${tamaño}`} className="h-full w-full -rotate-90">
-        <circle
-          cx={tamaño / 2}
-          cy={tamaño / 2}
-          r={radio}
+    <div className="relative flex w-[168px] shrink-0 flex-col items-center">
+      <svg viewBox={`0 0 ${ancho} ${alto}`} className="w-full">
+        <path
+          d={`M ${cx - radio} ${cy} A ${radio} ${radio} 0 0 1 ${cx + radio} ${cy}`}
           fill="none"
           stroke="var(--kb-loss)"
           strokeWidth={grosor}
-          opacity="0.35"
+          strokeLinecap="round"
+          opacity="0.3"
         />
-        <circle
-          cx={tamaño / 2}
-          cy={tamaño / 2}
-          r={radio}
+        <path
+          d={`M ${cx - radio} ${cy} A ${radio} ${radio} 0 0 1 ${cx + radio} ${cy}`}
           fill="none"
           stroke="var(--kb-gain)"
           strokeWidth={grosor}
-          strokeDasharray={`${porcionGanadora} ${circunferencia}`}
           strokeLinecap="round"
+          strokeDasharray={`${porcionGanadora} ${largoArco}`}
         />
       </svg>
-      <div className="absolute flex flex-col items-center">
+      <div className="absolute bottom-1.5 flex flex-col items-center">
         <span className="font-mono text-2xl font-bold text-kb-text">{winRate.toFixed(1)}%</span>
         <span className="text-[9px] uppercase tracking-wide text-kb-text-secondary">Win rate</span>
         <span className="mt-0.5 text-[9px] text-kb-text-muted">{totalTrades} trades</span>
@@ -7539,7 +7803,11 @@ function calcularKeboScore(trades: Trade[]): { puntaje: number; desglose: Desglo
   );
   const profitFactor = perdidaTotal > 0 ? gananciaTotal / perdidaTotal : gananciaTotal > 0 ? 2 : 0;
 
-  const sinError = cerrados.filter((t) => !t.mistake || t.mistake === "ninguno").length;
+  const sinError = cerrados.filter((t) => {
+    const tieneErrores = t.mistakes && t.mistakes.length > 0;
+    const tieneErrorViejo = t.mistake && t.mistake !== "ninguno";
+    return !tieneErrores && !tieneErrorViejo;
+  }).length;
   const puntajeDisciplina = (sinError / cerrados.length) * 100;
 
   const ordenados = [...cerrados].sort((a, b) => new Date(a.entry_time).getTime() - new Date(b.entry_time).getTime());
@@ -7670,126 +7938,6 @@ function ComparacionMensualWidget({ trades }: { trades: Trade[] }) {
       <p className={`mt-2.5 text-xs font-medium ${mejorando ? "text-kb-gain" : "text-kb-loss"}`}>
         {mejorando ? "▲" : "▼"} {formatCurrency(Math.abs(diferencia))} {mejorando ? "mejor" : "peor"} que el mes pasado
       </p>
-    </section>
-  );
-}
-
-function ChecklistDiarioWidget({
-  items,
-  completados,
-  cargando,
-  onToggle,
-  onAgregar,
-  onEliminar,
-}: {
-  items: ChecklistItem[];
-  completados: Set<string>;
-  cargando: boolean;
-  onToggle: (itemId: string) => void;
-  onAgregar: (texto: string) => void;
-  onEliminar: (itemId: string) => void;
-}) {
-  const [nuevoItem, setNuevoItem] = useState("");
-  const [mostrarForm, setMostrarForm] = useState(false);
-
-  function handleAgregar(e: FormEvent) {
-    e.preventDefault();
-    const texto = nuevoItem.trim();
-    if (!texto) return;
-    onAgregar(texto);
-    setNuevoItem("");
-    setMostrarForm(false);
-  }
-
-  const completadosCount = items.filter((i) => completados.has(i.id)).length;
-
-  if (cargando) {
-    return (
-      <section className="rounded-xl border border-kb-border bg-kb-surface p-4">
-        <SkeletonBloque className="h-4 w-40 mb-3" />
-        <SkeletonBloque className="h-8 w-full mb-2" />
-        <SkeletonBloque className="h-8 w-full" />
-      </section>
-    );
-  }
-
-  return (
-    <section className="rounded-xl border border-kb-border bg-kb-surface p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <h2 className="font-display text-sm font-semibold">✅ Checklist de hoy</h2>
-          {items.length > 0 && (
-            <p className="text-[11px] text-kb-text-secondary">
-              {completadosCount}/{items.length} completados
-            </p>
-          )}
-        </div>
-        <button
-          onClick={() => setMostrarForm((v) => !v)}
-          className="text-xs font-medium text-kb-accent hover:underline"
-        >
-          + Ítem
-        </button>
-      </div>
-
-      {items.length === 0 && !mostrarForm ? (
-        <p className="text-xs text-kb-text-secondary">
-          Armá tu rutina pre-trading — ej. "¿Revisé noticias?", "¿Respeté mi plan de riesgo?".
-          Click en "+ Ítem" para empezar.
-        </p>
-      ) : (
-        <div className="space-y-1.5">
-          {items.map((item) => {
-            const marcado = completados.has(item.id);
-            return (
-              <div
-                key={item.id}
-                className="group flex items-center justify-between rounded-lg border border-kb-border-soft bg-kb-bg px-3 py-2"
-              >
-                <button
-                  onClick={() => onToggle(item.id)}
-                  className="flex flex-1 items-center gap-2 text-left text-sm"
-                >
-                  <span
-                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                      marcado ? "border-kb-gain bg-kb-gain text-kb-bg" : "border-kb-border"
-                    }`}
-                  >
-                    {marcado && "✓"}
-                  </span>
-                  <span className={marcado ? "text-kb-text-muted line-through" : "text-kb-text"}>
-                    {item.text}
-                  </span>
-                </button>
-                <button
-                  onClick={() => onEliminar(item.id)}
-                  className="ml-2 text-xs text-kb-text-muted opacity-0 hover:text-kb-loss group-hover:opacity-100 transition-opacity"
-                >
-                  ✕
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {mostrarForm && (
-        <form onSubmit={handleAgregar} className="mt-2 flex gap-2">
-          <input
-            autoFocus
-            value={nuevoItem}
-            onChange={(e) => setNuevoItem(e.target.value)}
-            placeholder="Ej. ¿Definí mi stop loss antes de entrar?"
-            className={inputClass}
-          />
-          <button
-            type="submit"
-            className="shrink-0 rounded-lg bg-kb-accent px-3 text-sm font-medium text-kb-bg hover:brightness-110 transition"
-          >
-            Agregar
-          </button>
-        </form>
-      )}
     </section>
   );
 }
@@ -8330,6 +8478,60 @@ function CalendarioRendimiento({
 // =====================================================================
 
 /** Devuelve el valor más repetido de una lista (la "moda") — se usa para sugerir la sesión/estrategia que más usás, en vez de arrancar siempre en blanco. */
+/**
+ * Hora de apertura típica de cada sesión, en hora LOCAL de esa plaza
+ * (no UTC) — así el horario de verano/invierno se resuelve solo, sin
+ * tener que ajustar nada a mano dos veces al año. Se usa para
+ * autocompletar la hora de entrada cuando elegís una sesión en el
+ * formulario de carga rápida.
+ */
+const HORA_APERTURA_SESION: Record<TradingSession, { zona: string; hora: number; minuto: number }> = {
+  asia: { zona: "Asia/Tokyo", hora: 9, minuto: 0 },
+  londres: { zona: "Europe/London", hora: 8, minuto: 0 },
+  nueva_york: { zona: "America/New_York", hora: 8, minuto: 0 },
+  apertura_ny: { zona: "America/New_York", hora: 9, minuto: 30 },
+};
+
+/** Diferencia en minutos entre una zona horaria y UTC, en este momento (contempla el horario de verano automáticamente). */
+function obtenerOffsetMinutos(zona: string): number {
+  const ahora = new Date();
+  const opciones: Intl.DateTimeFormatOptions = {
+    timeZone: undefined,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  };
+  const partesUTC = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { ...opciones, timeZone: "UTC" }).formatToParts(ahora).map((p) => [p.type, p.value])
+  );
+  const partesZona = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { ...opciones, timeZone: zona }).formatToParts(ahora).map((p) => [p.type, p.value])
+  );
+  const comoUTC = Date.UTC(+partesUTC.year, +partesUTC.month - 1, +partesUTC.day, +partesUTC.hour, +partesUTC.minute);
+  const comoZona = Date.UTC(+partesZona.year, +partesZona.month - 1, +partesZona.day, +partesZona.hour, +partesZona.minute);
+  return (comoZona - comoUTC) / 60000;
+}
+
+/** Devuelve "HH:MM" — la hora de apertura de la sesión elegida, convertida al huso horario de TU navegador, para hoy. */
+function horaAperturaSesionLocal(sesion: TradingSession): string {
+  const { zona, hora, minuto } = HORA_APERTURA_SESION[sesion];
+  const offsetMin = obtenerOffsetMinutos(zona);
+  const ahora = new Date();
+  const partesHoyEnZona = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", { timeZone: zona, year: "numeric", month: "2-digit", day: "2-digit" })
+      .formatToParts(ahora)
+      .map((p) => [p.type, p.value])
+  );
+  const instanteUTC =
+    Date.UTC(+partesHoyEnZona.year, +partesHoyEnZona.month - 1, +partesHoyEnZona.day, hora, minuto) - offsetMin * 60000;
+  const fechaResultado = new Date(instanteUTC);
+  // getHours()/getMinutes() devuelven la hora en TU navegador automáticamente.
+  return `${String(fechaResultado.getHours()).padStart(2, "0")}:${String(fechaResultado.getMinutes()).padStart(2, "0")}`;
+}
+
 function valorMasFrecuente<T>(valores: T[]): T | null {
   if (valores.length === 0) return null;
   const conteo = new Map<T, number>();
@@ -8369,6 +8571,111 @@ function cargarPlantillas(): PlantillaTrade[] {
 function guardarPlantillas(plantillas: PlantillaTrade[]) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(CLAVE_PLANTILLAS, JSON.stringify(plantillas));
+}
+
+// =====================================================================
+// CALCULADORA DE TAMAÑO DE POSICIÓN — resuelve el cálculo ANTES de
+// entrar al trade: "si arriesgo $X y mi stop está a Y puntos, ¿cuántos
+// contratos/lotes compro?". No se guarda en la base, es una
+// herramienta de apoyo que solo rellena los campos del formulario.
+// =====================================================================
+
+function CalculadoraTamañoPosicion({
+  onUsarCantidad,
+  onUsarRiesgo,
+}: {
+  onUsarCantidad: (valor: string) => void;
+  onUsarRiesgo: (valor: string) => void;
+}) {
+  const [abierta, setAbierta] = useState(false);
+  const [riesgoDolares, setRiesgoDolares] = useState("");
+  const [distanciaStop, setDistanciaStop] = useState("");
+  const [valorPorPunto, setValorPorPunto] = useState("");
+
+  const riesgo = parseFloat(riesgoDolares);
+  const distancia = parseFloat(distanciaStop);
+  const valorPunto = parseFloat(valorPorPunto);
+  const cantidadSugerida =
+    !Number.isNaN(riesgo) && !Number.isNaN(distancia) && !Number.isNaN(valorPunto) && distancia > 0 && valorPunto > 0
+      ? riesgo / (distancia * valorPunto)
+      : null;
+
+  return (
+    <div className="mb-4 rounded-lg border border-kb-border-soft bg-kb-bg">
+      <button
+        type="button"
+        onClick={() => setAbierta((v) => !v)}
+        className="flex w-full items-center justify-between px-3 py-2.5 text-left"
+      >
+        <span className="text-xs font-semibold text-kb-accent">🧮 Calculadora de tamaño de posición</span>
+        <span className={`text-kb-text-muted transition-transform ${abierta ? "rotate-180" : ""}`}>⌄</span>
+      </button>
+      {abierta && (
+        <div className="space-y-3 border-t border-kb-border-soft px-3 py-3">
+          <p className="text-[11px] text-kb-text-muted">
+            Calculá cuántos contratos/lotes comprar según cuánto querés arriesgar — antes de entrar, no después.
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="mb-1 block text-[10px] text-kb-text-secondary">Riesgo ($)</label>
+              <input
+                type="number"
+                step="any"
+                value={riesgoDolares}
+                onChange={(e) => setRiesgoDolares(e.target.value)}
+                placeholder="200"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] text-kb-text-secondary">Distancia al stop</label>
+              <input
+                type="number"
+                step="any"
+                value={distanciaStop}
+                onChange={(e) => setDistanciaStop(e.target.value)}
+                placeholder="15"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] text-kb-text-secondary">Valor x punto (1 unidad)</label>
+              <input
+                type="number"
+                step="any"
+                value={valorPorPunto}
+                onChange={(e) => setValorPorPunto(e.target.value)}
+                placeholder="2"
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          {cantidadSugerida !== null && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-kb-gain/30 bg-kb-gain/10 px-3 py-2">
+              <p className="text-sm text-kb-text">
+                Cantidad sugerida: <span className="font-mono font-bold text-kb-gain">{cantidadSugerida.toFixed(2)}</span>
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  onUsarCantidad(cantidadSugerida.toFixed(2));
+                  if (riesgoDolares.trim() !== "") onUsarRiesgo(riesgoDolares);
+                }}
+                className="rounded-lg bg-kb-gain px-3 py-1.5 text-xs font-semibold text-kb-bg hover:brightness-110 transition"
+              >
+                Usar esta cantidad
+              </button>
+            </div>
+          )}
+          <p className="text-[10px] text-kb-text-muted">
+            "Valor x punto" es cuánto vale 1 punto/pip para 1 sola unidad (1 contrato o 1 lote) —
+            varía según el instrumento, revisalo en tu bróker si no lo sabés de memoria.
+          </p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function FormularioTrade({
@@ -8414,6 +8721,10 @@ function FormularioTrade({
   const [instrumentType, setInstrumentType] = useState<InstrumentType>("stock");
   const [side, setSide] = useState<TradeSide>("long");
   const [yaSeCerro, setYaSeCerro] = useState(true);
+  // Modo rápido: oculta las secciones opcionales (fechas detalladas,
+  // estrategia, psicología, notas) y deja solo lo esencial para cargar
+  // en segundos — se puede completar el resto editando el trade después.
+  const [modoRapido, setModoRapido] = useState(true);
   const [resultType, setResultType] = useState<ResultType>("tp");
   const [quantity, setQuantity] = useState("");
   const [entryPrice, setEntryPrice] = useState("");
@@ -8434,10 +8745,14 @@ function FormularioTrade({
   const [notes, setNotes] = useState("");
   const [strategyId, setStrategyId] = useState<string>(estrategiaSugerida ?? "");
   const [emotion, setEmotion] = useState<EmotionType | "">("");
-  const [mistake, setMistake] = useState<MistakeType>("ninguno");
+  const [mistakes, setMistakes] = useState<MistakeType[]>([]);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+
+  function alternarError(m: MistakeType) {
+    setMistakes((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
+  }
 
   // ---- Plantillas rápidas (guardadas en este navegador) ----
   const [plantillas, setPlantillas] = useState<PlantillaTrade[]>(() => cargarPlantillas());
@@ -8611,7 +8926,8 @@ function FormularioTrade({
         notes: notes.trim() === "" ? null : notes.trim(),
         strategy_id: strategyId === "" ? null : strategyId,
         emotion: emotion === "" ? null : emotion,
-        mistake,
+        mistake: mistakes.length > 0 ? mistakes[0] : "ninguno",
+        mistakes,
         risk_amount: riskAmount.trim() === "" ? null : parseFloat(riskAmount),
         entry_time: entryTimestamp,
         exit_time: exitTimestamp,
@@ -8644,7 +8960,7 @@ function FormularioTrade({
     setResultType("tp");
     setStrategyId("");
     setEmotion("");
-    setMistake("ninguno");
+    setMistakes([]);
     setYaSeCerro(true);
     onTradeCreado();
   }
@@ -8699,7 +9015,7 @@ function FormularioTrade({
       {(ultimoTrade || plantillas.length > 0) && (
         <div className="mb-5 rounded-lg border border-kb-border-soft bg-kb-bg p-3">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-kb-text-secondary">
-            ⚡ Carga rápida
+            ⭐ Accesos rápidos
           </p>
           <div className="flex flex-wrap gap-2">
             {ultimoTrade && (
@@ -8732,6 +9048,30 @@ function FormularioTrade({
           </div>
         </div>
       )}
+
+      <div className="mb-5 flex items-center justify-between rounded-lg border border-kb-border-soft bg-kb-bg px-3 py-2.5">
+        <div>
+          <p className="text-xs font-semibold text-kb-text">
+            {modoRapido ? "⚡ Modo rápido" : "📋 Formulario completo"}
+          </p>
+          <p className="text-[11px] text-kb-text-muted">
+            {modoRapido
+              ? "Solo lo esencial — completá el resto editando el trade después"
+              : "Todos los campos, incluida estrategia, psicología y notas"}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setModoRapido((v) => !v)}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${modoRapido ? "bg-kb-accent" : "bg-kb-border"}`}
+        >
+          <span
+            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+              modoRapido ? "translate-x-5" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+      </div>
 
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
         {/* ---------- Sección 1: qué operaste ---------- */}
@@ -8788,6 +9128,12 @@ function FormularioTrade({
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-kb-accent">
             2. Precios, lotaje y resultado
           </p>
+
+          <CalculadoraTamañoPosicion
+            onUsarCantidad={setQuantity}
+            onUsarRiesgo={setRiskAmount}
+          />
+
           <div className="grid gap-4 sm:grid-cols-3">
             <Campo
               etiqueta={instrumentType === "forex" ? "Lotes" : "Cantidad"}
@@ -8834,26 +9180,30 @@ function FormularioTrade({
                   />
                 </Campo>
 
-                <Campo etiqueta="Pips (opcional)" ayuda="Los pips que viste en tu plataforma">
-                  <input
-                    type="number"
-                    step="any"
-                    value={pips}
-                    onChange={(e) => setPips(e.target.value)}
-                    placeholder="12"
-                    className={inputClass}
-                  />
-                </Campo>
+                {!modoRapido && (
+                  <Campo etiqueta="Pips (opcional)" ayuda="Los pips que viste en tu plataforma">
+                    <input
+                      type="number"
+                      step="any"
+                      value={pips}
+                      onChange={(e) => setPips(e.target.value)}
+                      placeholder="12"
+                      className={inputClass}
+                    />
+                  </Campo>
+                )}
 
-                <Campo etiqueta="Comisión" ayuda="Lo que te cobró tu bróker o empresa">
-                  <input
-                    type="number"
-                    step="any"
-                    value={fees}
-                    onChange={(e) => setFees(e.target.value)}
-                    className={inputClass}
-                  />
-                </Campo>
+                {!modoRapido && (
+                  <Campo etiqueta="Comisión" ayuda="Lo que te cobró tu bróker o empresa">
+                    <input
+                      type="number"
+                      step="any"
+                      value={fees}
+                      onChange={(e) => setFees(e.target.value)}
+                      className={inputClass}
+                    />
+                  </Campo>
+                )}
 
                 <Campo
                   etiqueta="P&L (ganancia o pérdida)"
@@ -8864,7 +9214,17 @@ function FormularioTrade({
                     type="number"
                     step="any"
                     value={pnlManual}
-                    onChange={(e) => setPnlManual(e.target.value)}
+                    onChange={(e) => {
+                      setPnlManual(e.target.value);
+                      // En modo rápido no se ve el campo "Resultado" (TP/SL/BE),
+                      // así que lo calculamos solos según el signo del P&L —
+                      // para que no quede fijo en "Take Profit" por defecto
+                      // aunque hayas cargado una operación perdedora.
+                      const numero = parseFloat(e.target.value);
+                      if (!Number.isNaN(numero)) {
+                        setResultType(numero > 0 ? "tp" : numero < 0 ? "sl" : "breakeven");
+                      }
+                    }}
                     placeholder="200 o -50"
                     className={inputClass}
                   />
@@ -8872,19 +9232,21 @@ function FormularioTrade({
               </>
             )}
 
-            <Campo
-              etiqueta="Monto arriesgado (opcional)"
-              ayuda="Cuánto ibas a perder si tocaba tu stop loss — sirve para calcular tu R-múltiplo"
-            >
-              <input
-                type="number"
-                step="any"
-                value={riskAmount}
-                onChange={(e) => setRiskAmount(e.target.value)}
-                placeholder="Ej. 100"
-                className={inputClass}
-              />
-            </Campo>
+            {!modoRapido && (
+              <Campo
+                etiqueta="Monto arriesgado (opcional)"
+                ayuda="Cuánto ibas a perder si tocaba tu stop loss — sirve para calcular tu R-múltiplo"
+              >
+                <input
+                  type="number"
+                  step="any"
+                  value={riskAmount}
+                  onChange={(e) => setRiskAmount(e.target.value)}
+                  placeholder="Ej. 100"
+                  className={inputClass}
+                />
+              </Campo>
+            )}
           </div>
         </div>
 
@@ -8904,10 +9266,23 @@ function FormularioTrade({
             (cámbialo desde el calendario en Inicio si quieres otra fecha).
           </p>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Campo etiqueta="Sesión (opcional)" ayuda="¿En qué sesión de mercado operaste?">
+            <Campo
+              etiqueta="Sesión (opcional)"
+              ayuda={
+                modoRapido
+                  ? "Al elegirla, completamos sola la hora de entrada con la apertura de esa sesión"
+                  : "¿En qué sesión de mercado operaste?"
+              }
+            >
               <select
                 value={session}
-                onChange={(e) => setSession(e.target.value as TradingSession | "")}
+                onChange={(e) => {
+                  const nuevaSesion = e.target.value as TradingSession | "";
+                  setSession(nuevaSesion);
+                  if (nuevaSesion !== "") {
+                    setEntryTime(horaAperturaSesionLocal(nuevaSesion));
+                  }
+                }}
                 className={inputClass}
               >
                 <option value="">Sin especificar</option>
@@ -8919,28 +9294,33 @@ function FormularioTrade({
               </select>
             </Campo>
 
-            <Campo etiqueta="Hora de entrada (opcional)" ayuda="Si no la pones, se usa la hora actual">
-              <input
-                type="time"
-                value={entryTime}
-                onChange={(e) => setEntryTime(e.target.value)}
-                className={inputClass}
-              />
-            </Campo>
+            {!modoRapido && (
+              <>
+                <Campo etiqueta="Hora de entrada (opcional)" ayuda="Si no la pones, se usa la hora actual">
+                  <input
+                    type="time"
+                    value={entryTime}
+                    onChange={(e) => setEntryTime(e.target.value)}
+                    className={inputClass}
+                  />
+                </Campo>
 
-            <Campo etiqueta="Hora de salida (opcional)" ayuda="Si no la pones, se usa la hora actual">
-              <input
-                type="time"
-                value={exitTime}
-                onChange={(e) => setExitTime(e.target.value)}
-                className={inputClass}
-              />
-            </Campo>
+                <Campo etiqueta="Hora de salida (opcional)" ayuda="Si no la pones, se usa la hora actual">
+                  <input
+                    type="time"
+                    value={exitTime}
+                    onChange={(e) => setExitTime(e.target.value)}
+                    className={inputClass}
+                  />
+                </Campo>
+              </>
+            )}
           </div>
 
-          <div className="mt-4">
-            <span className="mb-1 block text-xs font-medium text-kb-text-secondary">
-              Links de TradingView (opcional)
+          {!modoRapido && (
+            <div className="mt-4">
+              <span className="mb-1 block text-xs font-medium text-kb-text-secondary">
+                Links de TradingView (opcional)
             </span>
             <span className="mb-2 block text-[11px] text-kb-text-muted">
               Pegá uno o varios links como evidencia — útil si querés mostrar distintas
@@ -8977,7 +9357,8 @@ function FormularioTrade({
             >
               + Agregar otro link
             </button>
-          </div>
+            </div>
+          )}
 
           <div className="mt-4">
             <span className="mb-1 block text-xs font-medium text-kb-text-secondary">
@@ -9024,6 +9405,7 @@ function FormularioTrade({
         </div>
 
         {/* ---------- Sección 4: resultado y estrategia ---------- */}
+        {!modoRapido && (
         <div>
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-kb-accent">
             4. {yaSeCerro ? "Resultado y estrategia" : "Estrategia"}
@@ -9100,8 +9482,10 @@ function FormularioTrade({
             </Campo>
           </div>
         </div>
+        )}
 
         {/* ---------- Sección 5: psicología (emoción y error) ---------- */}
+        {!modoRapido && (
         <div>
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-kb-accent">
             5. Psicología de la operación
@@ -9122,23 +9506,34 @@ function FormularioTrade({
               </select>
             </Campo>
 
-            <Campo etiqueta="¿Cometiste algún error?" ayuda="Para detectar patrones que se repiten">
-              <select
-                value={mistake}
-                onChange={(e) => setMistake(e.target.value as MistakeType)}
-                className={inputClass}
-              >
-                {Object.entries(MISTAKE_LABELS).map(([valor, etiqueta]) => (
-                  <option key={valor} value={valor}>
-                    {etiqueta}
-                  </option>
-                ))}
-              </select>
+            <Campo etiqueta="¿Cometiste algún error?" ayuda="Tildá todos los que apliquen — un trade malo suele tener más de una causa junta">
+              <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-kb-border bg-kb-bg p-2.5 sm:grid-cols-3">
+                {(Object.entries(MISTAKE_LABELS) as [MistakeType, string][])
+                  .filter(([valor]) => valor !== "ninguno")
+                  .map(([valor, etiqueta]) => (
+                    <label
+                      key={valor}
+                      className={`flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                        mistakes.includes(valor) ? "bg-kb-loss/15 text-kb-loss" : "text-kb-text-secondary hover:bg-kb-surface"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={mistakes.includes(valor)}
+                        onChange={() => alternarError(valor)}
+                        className="accent-kb-loss"
+                      />
+                      {etiqueta}
+                    </label>
+                  ))}
+              </div>
             </Campo>
           </div>
         </div>
+        )}
 
         {/* ---------- Sección 6: reflexión / journal ---------- */}
+        {!modoRapido && (
         <div>
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-kb-accent">
             6. Tu diario de esta operación
@@ -9156,6 +9551,7 @@ function FormularioTrade({
             />
           </Campo>
         </div>
+        )}
 
         {error && (
           <p className="rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
@@ -9223,14 +9619,12 @@ function ModalDetalleTrade({
   estrategias,
   onClose,
   onActualizado,
-  onEliminado,
   variante = "modal",
 }: {
   trade: Trade;
   estrategias: Strategy[];
   onClose: () => void;
   onActualizado: () => void;
-  onEliminado: () => void;
   /** "modal" = ventana flotante de siempre. "pagina" = se renderiza como
    * contenido normal a página completa, sin fondo oscuro ni superposición
    * — se usa cuando se accede desde el calendario para no interrumpir
@@ -9439,8 +9833,14 @@ function ModalDetalleTrade({
                 valor={trade.emotion ? `${EMOTION_EMOJI[trade.emotion]} ${EMOTION_LABELS[trade.emotion]}` : "—"}
               />
               <DatoDetalle
-                etiqueta="Error"
-                valor={trade.mistake && trade.mistake !== "ninguno" ? MISTAKE_LABELS[trade.mistake] : "Ninguno"}
+                etiqueta="Errores"
+                valor={
+                  trade.mistakes && trade.mistakes.length > 0
+                    ? trade.mistakes.map((m) => MISTAKE_LABELS[m]).join(", ")
+                    : trade.mistake && trade.mistake !== "ninguno"
+                    ? MISTAKE_LABELS[trade.mistake]
+                    : "Ninguno"
+                }
               />
               <DatoDetalle etiqueta="Fecha" valor={formatDate(trade.entry_time)} />
               <DatoDetalle
@@ -9926,7 +10326,17 @@ function FormularioEdicionTrade({
   const [session, setSession] = useState<TradingSession | "">(trade.session ?? "");
   const [strategyId, setStrategyId] = useState(trade.strategy_id ?? "");
   const [emotion, setEmotion] = useState<EmotionType | "">(trade.emotion ?? "");
-  const [mistake, setMistake] = useState<MistakeType>(trade.mistake ?? "ninguno");
+  const [mistakes, setMistakes] = useState<MistakeType[]>(
+    trade.mistakes && trade.mistakes.length > 0
+      ? trade.mistakes
+      : trade.mistake && trade.mistake !== "ninguno"
+      ? [trade.mistake]
+      : []
+  );
+
+  function alternarError(m: MistakeType) {
+    setMistakes((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
+  }
   const [tradingviewLinks, setTradingviewLinks] = useState<string[]>(
     trade.tradingview_links && trade.tradingview_links.length > 0 ? trade.tradingview_links : [""]
   );
@@ -9995,7 +10405,8 @@ function FormularioEdicionTrade({
         session: session === "" ? null : session,
         strategy_id: strategyId === "" ? null : strategyId,
         emotion: emotion === "" ? null : emotion,
-        mistake,
+        mistake: mistakes.length > 0 ? mistakes[0] : "ninguno",
+        mistakes,
         tradingview_links: tradingviewLinks.map((l) => l.trim()).filter((l) => l !== ""),
         evidence_images: [...imagenesExistentes, ...rutasNuevas],
         notes: notes.trim() === "" ? null : notes.trim(),
@@ -10093,12 +10504,27 @@ function FormularioEdicionTrade({
             ))}
           </select>
         </Campo>
-        <Campo etiqueta="Error">
-          <select value={mistake} onChange={(e) => setMistake(e.target.value as MistakeType)} className={inputClass}>
-            {Object.entries(MISTAKE_LABELS).map(([valor, etiqueta]) => (
-              <option key={valor} value={valor}>{etiqueta}</option>
-            ))}
-          </select>
+        <Campo etiqueta="Errores" ayuda="Tildá todos los que apliquen">
+          <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-kb-border bg-kb-bg p-2.5 sm:grid-cols-3">
+            {(Object.entries(MISTAKE_LABELS) as [MistakeType, string][])
+              .filter(([valor]) => valor !== "ninguno")
+              .map(([valor, etiqueta]) => (
+                <label
+                  key={valor}
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                    mistakes.includes(valor) ? "bg-kb-loss/15 text-kb-loss" : "text-kb-text-secondary hover:bg-kb-surface"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={mistakes.includes(valor)}
+                    onChange={() => alternarError(valor)}
+                    className="accent-kb-loss"
+                  />
+                  {etiqueta}
+                </label>
+              ))}
+          </div>
         </Campo>
       </div>
 
@@ -10308,7 +10734,15 @@ function TablaTrades({
                   {t.emotion ? `${EMOTION_EMOJI[t.emotion]} ${EMOTION_LABELS[t.emotion]}` : "—"}
                 </td>
                 <td className="px-5 py-3">
-                  {t.mistake && t.mistake !== "ninguno" ? (
+                  {t.mistakes && t.mistakes.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {t.mistakes.map((m) => (
+                        <span key={m} className="rounded-full bg-kb-accent/10 px-2 py-0.5 text-xs font-medium text-kb-accent">
+                          {MISTAKE_LABELS[m]}
+                        </span>
+                      ))}
+                    </div>
+                  ) : t.mistake && t.mistake !== "ninguno" ? (
                     <span className="rounded-full bg-kb-accent/10 px-2 py-0.5 text-xs font-medium text-kb-accent">
                       {MISTAKE_LABELS[t.mistake]}
                     </span>
