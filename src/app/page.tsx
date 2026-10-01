@@ -193,10 +193,22 @@ function formatRMultiple(r: number | null): string {
 }
 
 /**
+ * Stack global de handlers de Escape. Cuando varios componentes usan
+ * useCerrarConEscape al mismo tiempo (ej. un modal encima de una tarjeta
+ * expandida), solo debe cerrarse el que esté "más arriba" — el último en
+ * montarse. El stack garantiza que solo el handler más reciente responde.
+ */
+const escapeHandlerStack: (() => void)[] = [];
+
+/**
  * Hace que cualquier modal se cierre al apretar la tecla Escape — antes
  * había que buscar la "✕" o un botón "Cancelar" sí o sí. Se usa junto
  * con onClick en el fondo oscuro (backdrop) para que también se cierre
  * al hacer clic afuera de la tarjeta del modal.
+ *
+ * BUG-6 fix: usa un stack global para que solo el handler más reciente
+ * (el panel/modal que está "encima de todo") capture el Escape, evitando
+ * que múltiples componentes montados simultáneamente todos se cierren a la vez.
  */
 function useCerrarConEscape(onClose: () => void) {
   // Guardamos siempre la versión más reciente de onClose en un ref para
@@ -208,11 +220,26 @@ function useCerrarConEscape(onClose: () => void) {
   });
 
   useEffect(() => {
+    // `invocar` es una función estable (misma referencia durante toda la vida
+    // del componente) — la usamos como identidad dentro del stack.
+    const invocar = () => onCloseRef.current();
+    escapeHandlerStack.push(invocar);
+
     function manejarTecla(e: KeyboardEvent) {
-      if (e.key === "Escape") onCloseRef.current();
+      if (e.key !== "Escape") return;
+      // Solo dispara si este componente es el que está más arriba en el stack
+      if (escapeHandlerStack[escapeHandlerStack.length - 1] === invocar) {
+        invocar();
+      }
     }
+
     window.addEventListener("keydown", manejarTecla);
-    return () => window.removeEventListener("keydown", manejarTecla);
+    return () => {
+      window.removeEventListener("keydown", manejarTecla);
+      // Sacar este handler del stack al desmontar el componente
+      const idx = escapeHandlerStack.lastIndexOf(invocar);
+      if (idx !== -1) escapeHandlerStack.splice(idx, 1);
+    };
   }, []);
 }
 
@@ -1534,8 +1561,10 @@ function Dashboard({
     // "perdidaTotal" se conserva porque se usa abajo para "avgPerdida".
 
     const hoy = todayKey();
+    // Usamos exit_time para el P&L del día (las prop firms calculan la
+    // pérdida diaria cuando el trade cierra, no cuando abre).
     const pnlHoy = cerrados
-      .filter((t) => fechaKeyLocal(t.entry_time) === hoy)
+      .filter((t) => fechaKeyLocal(t.exit_time ?? t.entry_time) === hoy)
       .reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0);
 
     // Racha actual: cuenta trades consecutivos (del más reciente hacia
@@ -1565,7 +1594,7 @@ function Dashboard({
 
     return {
       totalPnL,
-      totalTrades: tradesDeLaCuenta.length,
+      totalTrades: cerrados.length,
       winRate,
       pnlHoy,
       racha,
@@ -1857,6 +1886,7 @@ function Dashboard({
                 cargando={cargandoTrades}
                 error={errorCarga}
                 onTradeCreado={cargarTrades}
+                onIrACalendario={() => setVista("calendario")}
               />
             )}
 
@@ -1866,13 +1896,14 @@ function Dashboard({
                 diaSeleccionado={diaParaRegistrar}
                 onSeleccionarDia={setDiaParaRegistrar}
                 onAbrirDia={manejarAbrirDia}
+                soloLectura={modoTodas}
               />
             )}
 
             {vista === "reportes" && <ReportesView trades={tradesDeLaCuenta} estrategias={estrategias} />}
 
             {vista === "estrategias" && (
-              <EstrategiasView trades={tradesDeLaCuenta} estrategias={estrategias} onCambio={cargarEstrategiasDashboard} />
+              <EstrategiasView trades={tradesDeLaCuenta} estrategias={estrategias} onCambio={async () => { await cargarEstrategiasDashboard(); await cargarTrades(); }} />
             )}
 
             {vista === "roi" && (
@@ -2066,6 +2097,13 @@ function InicioView({
   // por día — para no spamear con la misma alerta en cada re-render.
   const [permisoNotificaciones, setPermisoNotificaciones] = useState<NotificationPermission | null>(null);
   const notificadoRef = useRef<string | null>(null);
+  const [confirmandoAvanzarFase, setConfirmandoAvanzarFase] = useState<"fase_2" | "financiada" | null>(null);
+
+  // Resetear confirmación de fase si el usuario cambia de cuenta
+  // (evita que un "Sí, confirmar" aplique a la cuenta equivocada)
+  useEffect(() => {
+    setConfirmandoAvanzarFase(null);
+  }, [cuenta?.id]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && "Notification" in window) {
@@ -2257,33 +2295,81 @@ function InicioView({
                           fase, se salta directo a Financiada. */}
                       {cuenta.phase === "fase_1" &&
                         (cuenta.challenge_type === "una_fase" ? (
+                          confirmandoAvanzarFase === "financiada" ? (
+                            <span className="inline-flex items-center gap-2 text-xs">
+                              <span className="text-kb-text-secondary">¿Confirmar avance a Financiada?</span>
+                              <button
+                                onClick={() => { setConfirmandoAvanzarFase(null); onAvanzarFase(cuenta.id, "financiada", pnlDesdeInicioFase, cuenta.phase_target_percent); }}
+                                className="rounded-lg bg-kb-gain px-2.5 py-1 font-semibold text-kb-bg hover:brightness-110 transition"
+                              >
+                                Sí, confirmar
+                              </button>
+                              <button
+                                onClick={() => setConfirmandoAvanzarFase(null)}
+                                className="rounded-lg border border-kb-border px-2.5 py-1 text-kb-text-secondary hover:text-kb-text transition"
+                              >
+                                Cancelar
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmandoAvanzarFase("financiada")}
+                              className="rounded-lg bg-kb-gain px-3 py-1.5 text-xs font-semibold text-kb-bg hover:brightness-110 transition"
+                            >
+                              Marcar como Financiada
+                            </button>
+                          )
+                        ) : (
+                          confirmandoAvanzarFase === "fase_2" ? (
+                            <span className="inline-flex items-center gap-2 text-xs">
+                              <span className="text-kb-text-secondary">¿Confirmar avance a Fase 2?</span>
+                              <button
+                                onClick={() => { setConfirmandoAvanzarFase(null); onAvanzarFase(cuenta.id, "fase_2", pnlDesdeInicioFase, cuenta.phase_target_percent); }}
+                                className="rounded-lg bg-kb-accent px-2.5 py-1 font-semibold text-kb-bg hover:brightness-110 transition"
+                              >
+                                Sí, confirmar
+                              </button>
+                              <button
+                                onClick={() => setConfirmandoAvanzarFase(null)}
+                                className="rounded-lg border border-kb-border px-2.5 py-1 text-kb-text-secondary hover:text-kb-text transition"
+                              >
+                                Cancelar
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmandoAvanzarFase("fase_2")}
+                              className="rounded-lg bg-kb-accent px-3 py-1.5 text-xs font-semibold text-kb-bg hover:brightness-110 transition"
+                            >
+                              Pasar a Fase 2
+                            </button>
+                          )
+                        ))}
+                      {cuenta.phase === "fase_2" && (
+                        confirmandoAvanzarFase === "financiada" ? (
+                          <span className="inline-flex items-center gap-2 text-xs">
+                            <span className="text-kb-text-secondary">¿Confirmar avance a Financiada?</span>
+                            <button
+                              onClick={() => { setConfirmandoAvanzarFase(null); onAvanzarFase(cuenta.id, "financiada", pnlDesdeInicioFase, cuenta.phase_target_percent); }}
+                              className="rounded-lg bg-kb-gain px-2.5 py-1 font-semibold text-kb-bg hover:brightness-110 transition"
+                            >
+                              Sí, confirmar
+                            </button>
+                            <button
+                              onClick={() => setConfirmandoAvanzarFase(null)}
+                              className="rounded-lg border border-kb-border px-2.5 py-1 text-kb-text-secondary hover:text-kb-text transition"
+                            >
+                              Cancelar
+                            </button>
+                          </span>
+                        ) : (
                           <button
-                            onClick={() =>
-                              onAvanzarFase(cuenta.id, "financiada", pnlDesdeInicioFase, cuenta.phase_target_percent)
-                            }
+                            onClick={() => setConfirmandoAvanzarFase("financiada")}
                             className="rounded-lg bg-kb-gain px-3 py-1.5 text-xs font-semibold text-kb-bg hover:brightness-110 transition"
                           >
                             Marcar como Financiada
                           </button>
-                        ) : (
-                          <button
-                            onClick={() =>
-                              onAvanzarFase(cuenta.id, "fase_2", pnlDesdeInicioFase, cuenta.phase_target_percent)
-                            }
-                            className="rounded-lg bg-kb-accent px-3 py-1.5 text-xs font-semibold text-kb-bg hover:brightness-110 transition"
-                          >
-                            Pasar a Fase 2
-                          </button>
-                        ))}
-                      {cuenta.phase === "fase_2" && (
-                        <button
-                          onClick={() =>
-                            onAvanzarFase(cuenta.id, "financiada", pnlDesdeInicioFase, cuenta.phase_target_percent)
-                          }
-                          className="rounded-lg bg-kb-gain px-3 py-1.5 text-xs font-semibold text-kb-bg hover:brightness-110 transition"
-                        >
-                          Marcar como Financiada
-                        </button>
+                        )
                       )}
                     </div>
                   </div>
@@ -2887,12 +2973,14 @@ function HistorialView({
   cargando,
   error,
   onTradeCreado,
+  onIrACalendario,
 }: {
   trades: Trade[];
   estrategias: Strategy[];
   cargando: boolean;
   error: string | null;
   onTradeCreado: () => void;
+  onIrACalendario?: () => void;
 }) {
   const [filtros, setFiltros] = useState<Filtros>({ estrategiaId: "", sesion: "", resultado: "" });
   const [busqueda, setBusqueda] = useState("");
@@ -2914,13 +3002,22 @@ function HistorialView({
 
   return (
     <div className="space-y-6">
-      <section className="flex items-center gap-2 rounded-xl border border-dashed border-kb-border bg-kb-surface px-4 py-3">
-        <span className="text-base">📅</span>
-        <p className="text-sm text-kb-text-secondary">
-          Para registrar una nueva operación, hacé clic en el día correspondiente desde el{" "}
-          <span className="font-medium text-kb-accent">Calendario</span> (en el Dashboard o en
-          la sección Calendario del menú). Acá solo vas a ver tu historial.
-        </p>
+      <section className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-kb-border bg-kb-surface px-4 py-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="shrink-0 text-base">📅</span>
+          <p className="text-sm text-kb-text-secondary">
+            Para registrar una nueva operación, hacé clic en el día desde el{" "}
+            <span className="font-medium text-kb-accent">Calendario</span>. Acá solo vas a ver tu historial.
+          </p>
+        </div>
+        {onIrACalendario && (
+          <button
+            onClick={onIrACalendario}
+            className="shrink-0 rounded-lg border border-kb-accent/40 px-3 py-1.5 text-xs font-medium text-kb-accent hover:bg-kb-accent/10 transition-colors"
+          >
+            Ir al Calendario
+          </button>
+        )}
       </section>
 
       <section className="rounded-xl border border-kb-border bg-kb-surface">
@@ -3260,7 +3357,8 @@ function TarjetaEstrategia({
   const [mostrarFormRegla, setMostrarFormRegla] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(false);
-  useCerrarConEscape(() => setConfirmandoEliminar(false));
+  const [confirmandoEliminarRegla, setConfirmandoEliminarRegla] = useState<number | null>(null);
+  useCerrarConEscape(() => { setConfirmandoEliminar(false); setConfirmandoEliminarRegla(null); });
 
   async function guardarNombre() {
     const nombreLimpio = nombreEditado.trim();
@@ -3402,12 +3500,30 @@ function TarjetaEstrategia({
                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${color.punto}`} />
                   <span className="text-kb-text">{regla}</span>
                 </span>
-                <button
-                  onClick={() => eliminarRegla(i)}
-                  className="text-xs text-kb-text-muted opacity-0 hover:text-kb-loss group-hover:opacity-100 transition-opacity"
-                >
-                  ✕
-                </button>
+                {confirmandoEliminarRegla === i ? (
+                  <span className="inline-flex items-center gap-1 text-xs">
+                    <button
+                      onClick={() => { setConfirmandoEliminarRegla(null); eliminarRegla(i); }}
+                      className="font-semibold text-kb-loss hover:brightness-110 transition-colors"
+                    >
+                      Sí
+                    </button>
+                    <span className="text-kb-text-muted">·</span>
+                    <button
+                      onClick={() => setConfirmandoEliminarRegla(null)}
+                      className="text-kb-text-muted hover:text-kb-text transition-colors"
+                    >
+                      No
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => setConfirmandoEliminarRegla(i)}
+                    className="text-xs text-kb-text-muted opacity-0 hover:text-kb-loss group-hover:opacity-100 transition-opacity"
+                  >
+                    ✕
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -3508,7 +3624,9 @@ function calcularListaDeRachas(cerrados: Trade[]): { ganadoras: number[]; perded
   let tipoActual: "g" | "p" | null = null;
 
   cerrados.forEach((t) => {
-    const tipo = (t.realized_pnl ?? 0) >= 0 ? "g" : "p";
+    const pnl = t.realized_pnl ?? 0;
+    if (pnl === 0) return; // breakeven no corta ni suma racha
+    const tipo = pnl > 0 ? "g" : "p";
     if (tipo === tipoActual) {
       actual++;
     } else {
@@ -3592,7 +3710,11 @@ function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: S
       peorCaidaMonto = Math.max(peorCaidaMonto, caida);
       if (pico > 0) peorCaidaPorcentaje = Math.max(peorCaidaPorcentaje, (caida / pico) * 100);
     });
-    return { monto: peorCaidaMonto, porcentaje: peorCaidaPorcentaje };
+    // Si el pico nunca superó cero (todas las ops son pérdidas desde el
+    // inicio), no podemos expresar la caída como % de un pico positivo —
+    // devolvemos null para que la UI muestre "—" en vez de "0.0%".
+    const porcentaje = pico > 0 ? peorCaidaPorcentaje : peorCaidaMonto > 0 ? null : 0;
+    return { monto: peorCaidaMonto, porcentaje };
   }, [cerrados]);
 
   // ---- Duración promedio de ganadoras vs perdedoras ----
@@ -3916,7 +4038,8 @@ function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: S
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-display text-base font-semibold">Curva de equity</h2>
           <span className="text-xs text-kb-text-muted">
-            Caída máxima {formatCurrency(drawdown.monto)} ({drawdown.porcentaje.toFixed(1)}%)
+            Caída máxima {formatCurrency(drawdown.monto)}{" "}
+            ({drawdown.porcentaje !== null ? `${drawdown.porcentaje.toFixed(1)}%` : "—"})
           </span>
         </div>
         <MiniCurvaEquity puntos={puntosEquity} />
@@ -4907,9 +5030,13 @@ function RetirosView({
   const [notes, setNotes] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exitoRetiro, setExitoRetiro] = useState(false);
+  const exitoRetiroTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (exitoRetiroTimerRef.current) clearTimeout(exitoRetiroTimerRef.current); }, []);
   const [buscandoPtax, setBuscandoPtax] = useState(false);
   const [ptaxMensaje, setPtaxMensaje] = useState<string | null>(null);
   const [mostrarGuia, setMostrarGuia] = useState(false);
+  const [confirmandoEliminarId, setConfirmandoEliminarId] = useState<string | null>(null);
 
   async function buscarPtax() {
     if (!fecha) return;
@@ -5070,6 +5197,9 @@ function RetirosView({
     setProofPixFile(null);
     setProofPixPreview(null);
     setNotes("");
+    setExitoRetiro(true);
+    if (exitoRetiroTimerRef.current) clearTimeout(exitoRetiroTimerRef.current);
+    exitoRetiroTimerRef.current = setTimeout(() => setExitoRetiro(false), 4000);
     onCambio();
   }
 
@@ -5552,6 +5682,12 @@ function RetirosView({
               >
                 {enviando ? "Guardando…" : "Registrar retiro"}
               </button>
+
+              {exitoRetiro && (
+                <p className="mt-2 rounded-lg border border-kb-gain/30 bg-kb-gain/10 px-3 py-2 text-center text-xs font-semibold text-kb-gain">
+                  ✓ Retiro registrado correctamente
+                </p>
+              )}
             </form>
           )}
         </section>
@@ -5645,12 +5781,30 @@ function RetirosView({
                           )}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button
-                            onClick={() => eliminar(r.id)}
-                            className="text-xs text-kb-text-muted hover:text-kb-loss transition-colors"
-                          >
-                            Eliminar
-                          </button>
+                          {confirmandoEliminarId === r.id ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <button
+                                onClick={() => { setConfirmandoEliminarId(null); eliminar(r.id); }}
+                                className="text-xs font-semibold text-kb-loss hover:brightness-110 transition-colors"
+                              >
+                                Sí, eliminar
+                              </button>
+                              <span className="text-kb-text-muted">·</span>
+                              <button
+                                onClick={() => setConfirmandoEliminarId(null)}
+                                className="text-xs text-kb-text-muted hover:text-kb-text transition-colors"
+                              >
+                                Cancelar
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmandoEliminarId(r.id)}
+                              className="text-xs text-kb-text-muted hover:text-kb-loss transition-colors"
+                            >
+                              Eliminar
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -5709,6 +5863,10 @@ function InversionesView({
   const [notes, setNotes] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exitoAporte, setExitoAporte] = useState(false);
+  const exitoAporteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (exitoAporteTimerRef.current) clearTimeout(exitoAporteTimerRef.current); }, []);
+  const [confirmandoEliminarId, setConfirmandoEliminarId] = useState<string | null>(null);
 
   // Aportes filtrados según la cuenta activa
   const aportesVisibles = useMemo(() => {
@@ -5758,6 +5916,9 @@ function InversionesView({
 
     setAmountStr("");
     setNotes("");
+    setExitoAporte(true);
+    if (exitoAporteTimerRef.current) clearTimeout(exitoAporteTimerRef.current);
+    exitoAporteTimerRef.current = setTimeout(() => setExitoAporte(false), 4000);
     onCambio();
   }
 
@@ -5871,6 +6032,12 @@ function InversionesView({
               >
                 {enviando ? "Guardando…" : "Registrar aporte"}
               </button>
+
+              {exitoAporte && (
+                <p className="mt-2 rounded-lg border border-kb-gain/30 bg-kb-gain/10 px-3 py-2 text-center text-xs font-semibold text-kb-gain">
+                  ✓ Aporte registrado correctamente
+                </p>
+              )}
             </form>
           )}
         </section>
@@ -5929,12 +6096,30 @@ function InversionesView({
                           -{formatCurrency(a.amount)}
                         </td>
                         <td className="px-5 py-3 text-right">
-                          <button
-                            onClick={() => eliminar(a.id)}
-                            className="text-xs text-kb-text-muted hover:text-kb-loss transition-colors"
-                          >
-                            Eliminar
-                          </button>
+                          {confirmandoEliminarId === a.id ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <button
+                                onClick={() => { setConfirmandoEliminarId(null); eliminar(a.id); }}
+                                className="text-xs font-semibold text-kb-loss hover:brightness-110 transition-colors"
+                              >
+                                Sí, eliminar
+                              </button>
+                              <span className="text-kb-text-muted">·</span>
+                              <button
+                                onClick={() => setConfirmandoEliminarId(null)}
+                                className="text-xs text-kb-text-muted hover:text-kb-text transition-colors"
+                              >
+                                Cancelar
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmandoEliminarId(a.id)}
+                              className="text-xs text-kb-text-muted hover:text-kb-loss transition-colors"
+                            >
+                              Eliminar
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -5993,6 +6178,9 @@ function LogrosView({
   const [archivo, setArchivo] = useState<File | null>(null);
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exitoLogro, setExitoLogro] = useState(false);
+  const exitoLogroTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (exitoLogroTimerRef.current) clearTimeout(exitoLogroTimerRef.current); }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -6047,6 +6235,9 @@ function LogrosView({
     setTitle("");
     setDescription("");
     setArchivo(null);
+    setExitoLogro(true);
+    if (exitoLogroTimerRef.current) clearTimeout(exitoLogroTimerRef.current);
+    exitoLogroTimerRef.current = setTimeout(() => setExitoLogro(false), 4000);
     onCambio();
   }
 
@@ -6158,6 +6349,12 @@ function LogrosView({
             >
               {subiendo ? "Subiendo…" : "Guardar logro"}
             </button>
+
+            {exitoLogro && (
+              <p className="mt-2 rounded-lg border border-kb-gain/30 bg-kb-gain/10 px-3 py-2 text-center text-xs font-semibold text-kb-gain">
+                ✓ Logro guardado correctamente
+              </p>
+            )}
           </form>
         )}
       </section>
@@ -6245,6 +6442,7 @@ function TarjetaLogro({
   onEliminar: () => void;
 }) {
   const [urlFirmada, setUrlFirmada] = useState<string | null>(null);
+  const [confirmando, setConfirmando] = useState(false);
 
   useEffect(() => {
     let activo = true;
@@ -6292,12 +6490,30 @@ function TarjetaLogro({
         {logro.description && (
           <p className="mt-1 text-xs text-kb-text-muted line-clamp-2">{logro.description}</p>
         )}
-        <button
-          onClick={onEliminar}
-          className="mt-2 text-[11px] text-kb-text-muted hover:text-kb-loss transition-colors"
-        >
-          Eliminar
-        </button>
+        {confirmando ? (
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={() => { setConfirmando(false); onEliminar(); }}
+              className="text-[11px] font-semibold text-kb-loss hover:brightness-110 transition-colors"
+            >
+              Sí, eliminar
+            </button>
+            <span className="text-[11px] text-kb-text-muted">·</span>
+            <button
+              onClick={() => setConfirmando(false)}
+              className="text-[11px] text-kb-text-muted hover:text-kb-text transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmando(true)}
+            className="mt-2 text-[11px] text-kb-text-muted hover:text-kb-loss transition-colors"
+          >
+            Eliminar
+          </button>
+        )}
       </div>
     </div>
   );
@@ -6336,6 +6552,7 @@ function PerfilView({
   const [guardandoPublico, setGuardandoPublico] = useState(false);
   const [copiado, setCopiado] = useState(false);
   const [errorPublico, setErrorPublico] = useState<string | null>(null);
+  const [confirmandoRegenerar, setConfirmandoRegenerar] = useState(false);
 
   useEffect(() => {
     async function cargarPerfil() {
@@ -6379,9 +6596,7 @@ function PerfilView({
   }
 
   async function regenerarLink() {
-    if (!window.confirm("Esto invalida el link anterior al instante — quien lo tenga guardado ya no va a poder verlo. ¿Continuar?")) {
-      return;
-    }
+    setConfirmandoRegenerar(false);
     setGuardandoPublico(true);
     const nuevoToken = crypto.randomUUID();
     const { error: updateError } = await supabase
@@ -6666,13 +6881,25 @@ function PerfilView({
                 Ver página →
               </a>
             </div>
-            <button
-              onClick={regenerarLink}
-              disabled={guardandoPublico}
-              className="mt-2 text-[11px] text-kb-text-muted hover:text-kb-loss transition-colors"
-            >
-              Regenerar link (invalida el actual)
-            </button>
+            {confirmandoRegenerar ? (
+              <div className="mt-2 flex items-center gap-2 text-[11px]">
+                <span className="text-kb-text-muted">¿Confirmar? El link anterior deja de funcionar.</span>
+                <button onClick={regenerarLink} disabled={guardandoPublico} className="font-semibold text-kb-loss hover:underline">
+                  Sí, regenerar
+                </button>
+                <button onClick={() => setConfirmandoRegenerar(false)} className="text-kb-text-muted hover:text-kb-text transition-colors">
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmandoRegenerar(true)}
+                disabled={guardandoPublico}
+                className="mt-2 text-[11px] text-kb-text-muted hover:text-kb-loss transition-colors"
+              >
+                Regenerar link (invalida el actual)
+              </button>
+            )}
           </div>
         )}
       </section>
@@ -6813,6 +7040,7 @@ function parsearFechaCSV(valor: string | undefined): string | null {
 
 type CampoDestino =
   | "symbol"
+  | "instrument_type"
   | "side"
   | "quantity"
   | "entry_price"
@@ -6825,6 +7053,7 @@ type CampoDestino =
 
 const CAMPOS_IMPORTACION: { campo: CampoDestino; etiqueta: string; requerido: boolean }[] = [
   { campo: "symbol", etiqueta: "Símbolo", requerido: true },
+  { campo: "instrument_type", etiqueta: "Tipo de instrumento", requerido: false },
   { campo: "side", etiqueta: "Dirección (compra/venta)", requerido: false },
   { campo: "quantity", etiqueta: "Cantidad / Lotes", requerido: true },
   { campo: "entry_price", etiqueta: "Precio de entrada", requerido: true },
@@ -6869,6 +7098,7 @@ function ImportarView({
   const [accountId, setAccountId] = useState(cuentaActivaId !== "todas" ? cuentaActivaId : "");
   const [strategyId, setStrategyId] = useState("");
   const [sideDefault, setSideDefault] = useState<TradeSide>("long");
+  const [instrumentTypeImport, setInstrumentTypeImport] = useState<InstrumentType>("forex");
   // Muchos reportes de plataformas de futuros (como el "Position History"
   // de Tradovate) no incluyen la comisión en el archivo — viene en un
   // reporte aparte. En vez de pedir un segundo archivo, dejamos que el
@@ -6890,6 +7120,7 @@ function ImportarView({
   const [errorOcr, setErrorOcr] = useState<string | null>(null);
   const [guardandoOcr, setGuardandoOcr] = useState(false);
   const [resultadoOcr, setResultadoOcr] = useState<{ insertados: number } | null>(null);
+  const [confirmandoGuardarOcr, setConfirmandoGuardarOcr] = useState(false);
   const [accountIdOcr, setAccountIdOcr] = useState(cuentaActivaId !== "todas" ? cuentaActivaId : "");
   const [strategyIdOcr, setStrategyIdOcr] = useState("");
 
@@ -6900,6 +7131,7 @@ function ImportarView({
     setTradesOcr([]);
     setErrorOcr(null);
     setResultadoOcr(null);
+    setConfirmandoGuardarOcr(false); // BUG-2: evitar que la confirmación quede abierta al cambiar imagen
   }
 
   function manejarImagenOcr(archivo: File) {
@@ -7053,7 +7285,8 @@ function ImportarView({
       // Avg Fill Price, Timestamp, etc.
       const autoMapeo: Partial<Record<CampoDestino, number>> = {};
       const alias: Record<CampoDestino, string[]> = {
-        symbol: ["symbol", "simbolo", "símbolo", "ticker", "instrument", "activo", "contract", "product"],
+        symbol: ["symbol", "simbolo", "símbolo", "ticker", "activo", "contract", "product"],
+        instrument_type: ["instrument type", "tipo instrumento", "asset type", "tipo activo"],
         side: ["side", "direction", "direccion", "b/s", "buy/sell", "buysell", "action"],
         quantity: [
           "quantity", "cantidad", "lots", "lotes", "volume", "volumen", "qty",
@@ -7144,6 +7377,13 @@ function ImportarView({
       const quantity = parsearNumeroCSV(obtener("quantity"));
       const entryPrice = parsearNumeroCSV(obtener("entry_price"));
       const entryTime = parsearFechaCSV(obtener("entry_time"));
+      // Tipo de instrumento: del CSV si viene mapeado, si no el default elegido.
+      const tipoDelCSV = obtener("instrument_type")?.trim().toLowerCase();
+      const TIPOS_VALIDOS: InstrumentType[] = ["stock", "option", "crypto", "forex", "futures"];
+      const instrumentTypeRow: InstrumentType =
+        tipoDelCSV && TIPOS_VALIDOS.includes(tipoDelCSV as InstrumentType)
+          ? (tipoDelCSV as InstrumentType)
+          : instrumentTypeImport;
 
       if (!symbol || quantity === null || entryPrice === null || !entryTime) {
         saltados++;
@@ -7181,14 +7421,17 @@ function ImportarView({
         account_id: accountId,
         strategy_id: strategyId === "" ? null : strategyId,
         symbol: symbol.toUpperCase(),
-        instrument_type: "forex" as InstrumentType,
+        instrument_type: instrumentTypeRow,
         side,
         status: estaCerrado ? "closed" : "open",
         quantity,
         entry_price: entryPrice,
         exit_price: exitPrice,
         fees,
-        realized_pnl: estaCerrado ? (realizedPnl ?? 0) - fees : null,
+        // Si el CSV trae su propio P&L, lo usamos tal cual (la mayoría
+        // de brokers y exportaciones ya dan el P&L neto, con fees
+        // incluidas). Solo restamos fees cuando calculamos el P&L nosotros.
+        realized_pnl: realizedPnl !== null ? realizedPnl : null,
         result_type: estaCerrado ? "manual" : null,
         notes,
         entry_time: entryTime,
@@ -7529,15 +7772,40 @@ function ImportarView({
                         </p>
                       )}
 
-                      <button
-                        onClick={guardarTradesOcr}
-                        disabled={guardandoOcr || tradesOcr.length === 0}
-                        className="rounded-lg bg-kb-accent px-5 py-2.5 text-sm font-semibold text-kb-bg hover:brightness-110 transition disabled:opacity-60"
-                      >
-                        {guardandoOcr
-                          ? "Guardando…"
-                          : `Guardar ${tradesOcr.length} operaci${tradesOcr.length === 1 ? "ón" : "ones"}`}
-                      </button>
+                      {confirmandoGuardarOcr ? (
+                        <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4">
+                          <p className="text-sm font-semibold text-yellow-400">⚠️ Atención: esto reemplaza las operaciones existentes</p>
+                          <p className="mt-1 text-xs text-kb-text-secondary">
+                            Los trades ya guardados para las mismas fechas en esta cuenta serán <span className="font-semibold text-kb-loss">borrados permanentemente</span> antes de insertar los nuevos. Esta acción no se puede deshacer.
+                          </p>
+                          <div className="mt-3 flex gap-2">
+                            <button
+                              onClick={() => { setConfirmandoGuardarOcr(false); guardarTradesOcr(); }}
+                              disabled={guardandoOcr}
+                              className="rounded-lg bg-kb-accent px-4 py-2 text-xs font-semibold text-kb-bg hover:brightness-110 transition disabled:opacity-60"
+                            >
+                              {guardandoOcr ? "Guardando…" : `Sí, reemplazar y guardar ${tradesOcr.length} operaci${tradesOcr.length === 1 ? "ón" : "ones"}`}
+                            </button>
+                            <button
+                              onClick={() => setConfirmandoGuardarOcr(false)}
+                              disabled={guardandoOcr}
+                              className="rounded-lg border border-kb-border px-4 py-2 text-xs font-medium text-kb-text-secondary hover:text-kb-text transition disabled:opacity-60"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmandoGuardarOcr(true)}
+                          disabled={guardandoOcr || tradesOcr.length === 0}
+                          className="rounded-lg bg-kb-accent px-5 py-2.5 text-sm font-semibold text-kb-bg hover:brightness-110 transition disabled:opacity-60"
+                        >
+                          {guardandoOcr
+                            ? "Guardando…"
+                            : `Guardar ${tradesOcr.length} operaci${tradesOcr.length === 1 ? "ón" : "ones"}`}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -7622,6 +7890,16 @@ function ImportarView({
                   <option value="">Sin estrategia</option>
                   {estrategias.map((e) => (
                     <option key={e.id} value={e.id}>{e.name}</option>
+                  ))}
+                </select>
+              </Campo>
+              <Campo
+                etiqueta="Tipo de instrumento por defecto"
+                ayuda={mapeo.instrument_type !== undefined ? "Se usa solo si una fila no trae tipo claro" : "No mapeaste columna de tipo — se aplica este a todas las filas"}
+              >
+                <select value={instrumentTypeImport} onChange={(e) => setInstrumentTypeImport(e.target.value as InstrumentType)} className={inputClass}>
+                  {Object.entries(INSTRUMENT_LABELS).map(([valor, etiqueta]) => (
+                    <option key={valor} value={valor}>{etiqueta}</option>
                   ))}
                 </select>
               </Campo>
@@ -7972,6 +8250,8 @@ function TarjetaCuenta({
 }) {
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(false);
   const [confirmandoQuemar, setConfirmandoQuemar] = useState(false);
+  const [confirmandoArchivar, setConfirmandoArchivar] = useState(false);
+  const [confirmandoFondear, setConfirmandoFondear] = useState(false);
   const [procesando, setProcesando] = useState(false);
   const [conteo, setConteo] = useState<{ trades: number; retiros: number } | null>(null);
   const [cargandoConteo, setCargandoConteo] = useState(false);
@@ -7979,6 +8259,7 @@ function TarjetaCuenta({
   useCerrarConEscape(() => {
     setConfirmandoEliminar(false);
     setConfirmandoQuemar(false);
+    setConfirmandoFondear(false);
     setErrorEliminar(null);
   });
 
@@ -8010,7 +8291,41 @@ function TarjetaCuenta({
 
   async function fondearCuenta() {
     setProcesando(true);
-    await supabase.from("accounts").update({ phase: "financiada" }).eq("id", cuenta.id);
+
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+
+    // Registrar el avance en el historial (igual que avanzarFase en el
+    // componente principal) para poder ver cuándo se fondeó y con qué P&L.
+    if (userId) {
+      const { error: histError } = await supabase.from("phase_history").insert({
+        account_id: cuenta.id,
+        user_id: userId,
+        phase: cuenta.phase,            // la fase que se SUPERA (ej. "fase_1" o "fase_2")
+        target_percent: cuenta.phase_target_percent,
+        pnl_alcanzado: pnlDesdeInicioFase,
+      });
+      if (histError) {
+        console.error("[fondearCuenta] Error al guardar historial de fase:", histError.message);
+        setProcesando(false);
+        return; // no avanzar si no se pudo registrar el historial
+      }
+    }
+
+    const { error: updateError } = await supabase
+      .from("accounts")
+      .update({
+        phase: "financiada",
+        phase_started_at: new Date().toISOString(),
+      })
+      .eq("id", cuenta.id);
+
+    if (updateError) {
+      console.error("[fondearCuenta] Error al actualizar cuenta:", updateError.message);
+      setProcesando(false);
+      return;
+    }
+
     setProcesando(false);
     onCambio();
   }
@@ -8156,7 +8471,7 @@ function TarjetaCuenta({
             🔥
           </button>
           <button
-            onClick={archivar}
+            onClick={() => setConfirmandoArchivar(true)}
             disabled={procesando}
             className="rounded-lg border border-kb-border p-1.5 text-kb-text-secondary hover:text-kb-text transition-colors disabled:opacity-60"
             aria-label="Archivar cuenta"
@@ -8194,6 +8509,33 @@ function TarjetaCuenta({
             </button>
             <button
               onClick={() => setConfirmandoQuemar(false)}
+              disabled={procesando}
+              className="rounded-lg border border-kb-border px-4 py-1.5 text-xs font-medium text-kb-text-secondary hover:text-kb-text transition-colors disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirmación de archivar ── */}
+      {confirmandoArchivar && (
+        <div className="mx-5 mb-3 rounded-xl border border-kb-border bg-kb-bg p-4">
+          <p className="text-sm font-semibold text-kb-text">🗂 ¿Archivar &quot;{cuenta.name}&quot;?</p>
+          <p className="mt-1 text-xs text-kb-text-secondary">
+            La cuenta se moverá a <span className="font-medium text-kb-text">Cuentas archivadas</span>.
+            Todos los trades, retiros e historial quedan guardados — podés desarchivarla cuando quieras.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={() => { setConfirmandoArchivar(false); archivar(); }}
+              disabled={procesando}
+              className="rounded-lg bg-kb-text-secondary px-4 py-1.5 text-xs font-semibold text-kb-bg hover:brightness-110 transition-colors disabled:opacity-60"
+            >
+              {procesando ? "Archivando…" : "Sí, archivar"}
+            </button>
+            <button
+              onClick={() => setConfirmandoArchivar(false)}
               disabled={procesando}
               className="rounded-lg border border-kb-border px-4 py-1.5 text-xs font-medium text-kb-text-secondary hover:text-kb-text transition-colors disabled:opacity-60"
             >
@@ -8277,13 +8619,38 @@ function TarjetaCuenta({
       )}
 
       {cuenta.account_type === "real" && cuenta.phase !== "financiada" && cuenta.phase !== "no_aplica" && (
-        <button
-          onClick={fondearCuenta}
-          disabled={procesando}
-          className="flex w-full items-center justify-center gap-1.5 border-t border-kb-border-soft px-5 py-2.5 text-xs font-medium text-kb-gain hover:bg-kb-gain/5 transition-colors disabled:opacity-60"
-        >
-          🎯 Marcar como Fondeada
-        </button>
+        confirmandoFondear ? (
+          <div className="border-t border-kb-border-soft px-5 py-3 bg-kb-gain/5">
+            <p className="text-xs font-semibold text-kb-gain">🎯 ¿Marcar &quot;{cuenta.name}&quot; como Fondeada?</p>
+            <p className="mt-0.5 text-xs text-kb-text-secondary">
+              Esto registrará el avance de fase. No se pueden deshacer los cambios.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button
+                onClick={() => { setConfirmandoFondear(false); fondearCuenta(); }}
+                disabled={procesando}
+                className="rounded-lg bg-kb-gain px-4 py-1.5 text-xs font-semibold text-kb-bg hover:brightness-110 transition-colors disabled:opacity-60"
+              >
+                {procesando ? "Procesando…" : "Sí, fondear"}
+              </button>
+              <button
+                onClick={() => setConfirmandoFondear(false)}
+                disabled={procesando}
+                className="rounded-lg border border-kb-border px-4 py-1.5 text-xs font-medium text-kb-text-secondary hover:text-kb-text transition-colors disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmandoFondear(true)}
+            disabled={procesando}
+            className="flex w-full items-center justify-center gap-1.5 border-t border-kb-border-soft px-5 py-2.5 text-xs font-medium text-kb-gain hover:bg-kb-gain/5 transition-colors disabled:opacity-60"
+          >
+            🎯 Marcar como Fondeada
+          </button>
+        )
       )}
 
       {confirmandoEliminar && (
@@ -9314,12 +9681,24 @@ function GraficoPnL({ trades }: { trades: Trade[] }) {
         ))}
 
         {/* Tooltip flotante */}
-        {puntoHover && hoverIndex !== null && (
+        {puntoHover && hoverIndex !== null && (() => {
+          const pctX = (coordX(hoverIndex) / ancho) * 100;
+          // Clamp tooltip so it doesn't overflow left or right edge
+          const tooltipWidth = 140; // min-w-[140px]
+          const containerWidth = contenedorRef.current?.offsetWidth ?? ancho;
+          const offsetPx = (pctX / 100) * containerWidth;
+          const clampedLeft = Math.min(
+            Math.max(offsetPx, tooltipWidth / 2),
+            containerWidth - tooltipWidth / 2
+          );
+          const translateX = offsetPx - clampedLeft;
+          return (
           <div
-            className="pointer-events-none absolute z-10 min-w-[140px] -translate-x-1/2 -translate-y-[calc(100%+12px)] rounded-lg border border-kb-border bg-kb-surface-raised px-3 py-2 text-xs shadow-xl"
+            className="pointer-events-none absolute z-10 min-w-[140px] -translate-y-[calc(100%+12px)] rounded-lg border border-kb-border bg-kb-surface-raised px-3 py-2 text-xs shadow-xl"
             style={{
-              left: `${(coordX(hoverIndex) / ancho) * 100}%`,
+              left: `${(clampedLeft / containerWidth) * 100}%`,
               top: `${(coordY(puntoHover.acumulado) / alto) * 100}%`,
+              transform: `translateX(-50%) translateX(${translateX}px) translateY(calc(-100% - 12px))`,
             }}
           >
             <p className="mb-1 text-kb-text-muted">{formatFechaCorta(puntoHover.fecha)}</p>
@@ -9332,7 +9711,8 @@ function GraficoPnL({ trades }: { trades: Trade[] }) {
             </p>
             <p className="text-kb-text-secondary">{puntoHover.symbol}</p>
           </div>
-        )}
+          );
+        })()}
       </div>
     </section>
   );
@@ -9613,9 +9993,14 @@ function KeboScoreWidget({ trades }: { trades: Trade[] }) {
       </p>
 
       {!resultado ? (
-        <p className="py-4 text-center text-xs text-kb-text-secondary">
-          Cerrá al menos 5 operaciones para desbloquear tu puntaje.
-        </p>
+        <div className="py-4 text-center">
+          <p className="text-xs text-kb-text-secondary">
+            Cerrá al menos 5 operaciones para desbloquear tu puntaje.
+          </p>
+          <p className="mt-1 font-mono text-xs font-semibold text-kb-text-muted">
+            {trades.filter((t) => t.status === "closed" && t.realized_pnl !== null).length} / 5 operaciones cerradas
+          </p>
+        </div>
       ) : (
         <>
           <div className="flex items-center gap-4">
@@ -9991,11 +10376,13 @@ function CalendarioRendimiento({
   diaSeleccionado,
   onSeleccionarDia,
   onAbrirDia,
+  soloLectura = false,
 }: {
   trades: Trade[];
   diaSeleccionado: string;
   onSeleccionarDia: (clave: string) => void;
   onAbrirDia: (clave: string, tradesDelDia: Trade[]) => void;
+  soloLectura?: boolean;
 }) {
   const [mesActual, setMesActual] = useState(() => {
     const hoy = new Date();
@@ -10077,8 +10464,11 @@ function CalendarioRendimiento({
   // mostrar: elegir entre varias, ver el detalle de una sola, o abrir el
   // formulario de registro si el día está vacío. Ya no se abre ninguna
   // ventana flotante desde acá.
+  // En modo soloLectura (cuando no hay una cuenta seleccionada) solo
+  // permitimos ver trades existentes, no abrir el form de registro.
   function manejarClickDia(clave: string) {
     const tradesDelDia = trades.filter((t) => fechaKeyLocal(t.entry_time) === clave);
+    if (soloLectura && tradesDelDia.length === 0) return; // nada que ver
     onSeleccionarDia(clave);
     onAbrirDia(clave, tradesDelDia);
   }
@@ -10117,6 +10507,16 @@ function CalendarioRendimiento({
                 className="rounded-lg border border-kb-border px-2.5 py-1 text-sm text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
               >
                 ‹
+              </button>
+              <button
+                onClick={() => {
+                  const hoy = new Date();
+                  setMesActual({ year: hoy.getFullYear(), month: hoy.getMonth() });
+                }}
+                aria-label="Mes actual"
+                className="rounded-lg border border-kb-border px-2.5 py-1 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+              >
+                Hoy
               </button>
               <button
                 onClick={() => cambiarMes(1)}
@@ -10510,6 +10910,7 @@ function FormularioTrade({
   const [mistakes, setMistakes] = useState<MistakeType[]>([]);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exito, setExito] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   function alternarError(m: MistakeType) {
@@ -10518,6 +10919,8 @@ function FormularioTrade({
 
   // ---- Plantillas rápidas (guardadas en este navegador) ----
   const [plantillas, setPlantillas] = useState<PlantillaTrade[]>(() => cargarPlantillas());
+  const [mostrarInputPlantilla, setMostrarInputPlantilla] = useState(false);
+  const [nombrePlantillaInput, setNombrePlantillaInput] = useState("");
 
   function duplicarUltimoTrade() {
     if (!ultimoTrade) return;
@@ -10538,12 +10941,19 @@ function FormularioTrade({
   }
 
   function guardarComoPlantilla() {
-    const nombre = window.prompt("Nombre para esta plantilla (ej. \"Setup NQ apertura NY\"):");
-    if (!nombre || !nombre.trim()) return;
-    const nueva: PlantillaTrade = { nombre: nombre.trim(), symbol, instrumentType, side, session, strategyId };
+    setNombrePlantillaInput("");
+    setMostrarInputPlantilla(true);
+  }
+
+  function confirmarGuardarPlantilla() {
+    const nombre = nombrePlantillaInput.trim();
+    if (!nombre) return;
+    const nueva: PlantillaTrade = { nombre, symbol, instrumentType, side, session, strategyId };
     const actualizadas = [...plantillas.filter((p) => p.nombre !== nueva.nombre), nueva];
     setPlantillas(actualizadas);
     guardarPlantillas(actualizadas);
+    setMostrarInputPlantilla(false);
+    setNombrePlantillaInput("");
   }
 
   function eliminarPlantilla(nombre: string) {
@@ -10724,11 +11134,18 @@ function FormularioTrade({
     setEmotion("");
     setMistakes([]);
     setYaSeCerro(true);
+    setExito(true);
+    setTimeout(() => setExito(false), 3000);
     onTradeCreado();
   }
 
   return (
     <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
+      {exito && (
+        <div className="mb-4 rounded-lg border border-kb-gain/30 bg-kb-gain/10 px-4 py-2.5 text-sm font-medium text-kb-gain">
+          ✓ Operación guardada correctamente
+        </div>
+      )}
       <h2 className="font-display text-lg font-semibold mb-1">Registrar nueva operación</h2>
       <p className="mb-4 text-sm text-kb-text-secondary">
         Escribe el resultado bruto (P&amp;L) que viste en tu plataforma. La comisión que
@@ -10776,9 +11193,14 @@ function FormularioTrade({
 
       {(ultimoTrade || plantillas.length > 0) && (
         <div className="mb-5 rounded-lg border border-kb-border-soft bg-kb-bg p-3">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-kb-text-secondary">
-            ⭐ Accesos rápidos
-          </p>
+          <div className="mb-2 flex items-baseline justify-between">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-kb-text-secondary">
+              ⭐ Accesos rápidos
+            </p>
+            {plantillas.length > 0 && (
+              <span className="text-[10px] text-kb-text-muted">(plantillas guardadas en este navegador)</span>
+            )}
+          </div>
           <div className="flex flex-wrap gap-2">
             {ultimoTrade && (
               <button
@@ -11327,14 +11749,43 @@ function FormularioTrade({
           >
             {enviando ? "Guardando…" : "Guardar operación"}
           </button>
-          <button
-            type="button"
-            onClick={guardarComoPlantilla}
-            disabled={!symbol.trim()}
-            className="rounded-lg border border-kb-border px-4 py-2.5 text-sm font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors disabled:opacity-40"
-          >
-            ⭐ Guardar como plantilla
-          </button>
+          {mostrarInputPlantilla ? (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                autoFocus
+                value={nombrePlantillaInput}
+                onChange={(e) => setNombrePlantillaInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmarGuardarPlantilla(); } if (e.key === "Escape") setMostrarInputPlantilla(false); }}
+                placeholder='Ej: Setup NQ apertura NY'
+                className={inputClass + " text-sm"}
+              />
+              <button
+                type="button"
+                onClick={confirmarGuardarPlantilla}
+                disabled={!nombrePlantillaInput.trim()}
+                className="shrink-0 rounded-lg bg-kb-accent px-4 py-2 text-sm font-semibold text-kb-bg hover:brightness-110 disabled:opacity-40 transition"
+              >
+                Guardar
+              </button>
+              <button
+                type="button"
+                onClick={() => setMostrarInputPlantilla(false)}
+                className="shrink-0 rounded-lg border border-kb-border px-3 py-2 text-sm text-kb-text-secondary hover:text-kb-text transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={guardarComoPlantilla}
+              disabled={!symbol.trim()}
+              className="rounded-lg border border-kb-border px-4 py-2.5 text-sm font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors disabled:opacity-40"
+            >
+              ⭐ Guardar como plantilla
+            </button>
+          )}
           <span className="text-[11px] text-kb-text-muted">
             Tip: <kbd className="rounded border border-kb-border-soft px-1 py-0.5 font-mono">Ctrl</kbd> +{" "}
             <kbd className="rounded border border-kb-border-soft px-1 py-0.5 font-mono">Enter</kbd> guarda rápido
@@ -11709,6 +12160,14 @@ function FormularioCerrarTrade({
   const [pips, setPips] = useState("");
   const [fees, setFees] = useState(String(trade.fees ?? 0));
   const [pnlManual, setPnlManual] = useState("");
+  // Hora de cierre: se inicializa al momento actual en formato local para
+  // el input datetime-local, pero el usuario puede corregirla si el trade
+  // cerró antes y recién ahora lo está registrando.
+  const [exitTimeLocal, setExitTimeLocal] = useState(() => {
+    const now = new Date();
+    const off = now.getTimezoneOffset() * 60000;
+    return new Date(now.getTime() - off).toISOString().slice(0, 16);
+  });
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -11739,7 +12198,7 @@ function FormularioCerrarTrade({
           // último tramo, y recién ahí se resta la comisión total.
           realized_pnl: Math.round((pnlParcialesPrevios + pnlNumero - comisiones) * 100) / 100,
           result_type: resultType,
-          exit_time: new Date().toISOString(),
+          exit_time: new Date(exitTimeLocal).toISOString(),
         })
         .eq("id", trade.id)
     );
@@ -11813,6 +12272,11 @@ function FormularioCerrarTrade({
         <Campo etiqueta="P&L (bruto)" ayuda="Restamos la comisión automáticamente">
           <input required type="number" step="any" value={pnlManual} onChange={(e) => setPnlManual(e.target.value)} placeholder="200 o -50" className={inputClass} />
         </Campo>
+        <div className="col-span-2">
+          <Campo etiqueta="Hora de cierre" ayuda="Modificá si el trade cerró antes de ahora">
+            <input type="datetime-local" value={exitTimeLocal} onChange={(e) => setExitTimeLocal(e.target.value)} className={inputClass} />
+          </Campo>
+        </div>
       </div>
 
       {error && (
@@ -12116,6 +12580,17 @@ function FormularioEdicionTrade({
   const [imagenesNuevas, setImagenesNuevas] = useState<File[]>([]);
   const [subiendoImagenes, setSubiendoImagenes] = useState(false);
   const [notes, setNotes] = useState(trade.notes ?? "");
+  // Fechas de entrada/salida editables (datetime-local usa hora LOCAL del
+  // navegador; al guardar las convertimos de vuelta a ISO UTC).
+  const [entryTimeLocal, setEntryTimeLocal] = useState(() => {
+    const d = new Date(trade.entry_time);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  });
+  const [exitTimeLocal, setExitTimeLocal] = useState(() => {
+    if (!trade.exit_time) return "";
+    const d = new Date(trade.exit_time);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  });
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -12175,6 +12650,8 @@ function FormularioEdicionTrade({
         quantity: cantidad,
         entry_price: precioEntrada,
         exit_price: esAbierta ? null : precioSalida,
+        entry_time: new Date(entryTimeLocal).toISOString(),
+        exit_time: exitTimeLocal.trim() !== "" ? new Date(exitTimeLocal).toISOString() : null,
         pips: pips.trim() === "" ? null : parseFloat(pips),
         fees: comisiones,
         realized_pnl: esAbierta ? null : Math.round((pnlNumero - comisiones) * 100) / 100,
@@ -12244,6 +12721,23 @@ function FormularioEdicionTrade({
         </Campo>
         <Campo etiqueta="Comisión">
           <input type="number" step="any" value={fees} onChange={(e) => setFees(e.target.value)} className={inputClass} />
+        </Campo>
+        <Campo etiqueta="Fecha/hora de entrada" ayuda="Hora local del dispositivo">
+          <input
+            type="datetime-local"
+            value={entryTimeLocal}
+            onChange={(e) => setEntryTimeLocal(e.target.value)}
+            className={inputClass}
+          />
+        </Campo>
+        <Campo etiqueta="Fecha/hora de salida" ayuda={trade.status === "open" ? "Opcional para trades abiertos" : "Hora local del dispositivo"}>
+          <input
+            type="datetime-local"
+            value={exitTimeLocal}
+            onChange={(e) => setExitTimeLocal(e.target.value)}
+            className={inputClass}
+            placeholder={trade.status === "open" ? "— trade abierto —" : ""}
+          />
         </Campo>
         <Campo etiqueta="P&L (bruto)" ayuda={trade.status === "open" ? "Opcional para trades abiertos" : "Se resta la comisión automáticamente al guardar"}>
           <input type="number" step="any" value={pnlManual} onChange={(e) => setPnlManual(e.target.value)} className={inputClass} placeholder={trade.status === "open" ? "— trade abierto —" : ""} />
