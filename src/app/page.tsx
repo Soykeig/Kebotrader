@@ -1864,6 +1864,7 @@ function Dashboard({
                 trades={tradesDeLaCuenta}
                 metricas={metricas}
                 cuentas={cuentas}
+                estrategias={estrategias}
                 modoTodas={modoTodas}
                 nombreUsuario={nombreParaMostrar}
                 totalRetirado={totalRetirado}
@@ -1874,6 +1875,8 @@ function Dashboard({
                 onIrACalendario={() => irA("calendario")}
                 onIrARetiros={() => irA("retiros")}
                 onIrARoi={() => irA("roi")}
+                onIrAEstrategias={() => irA("estrategias")}
+                onNuevaCuenta={() => setMostrarModalCuenta(true)}
                 onAbrirDia={manejarAbrirDia}
                 onAvanzarFase={avanzarFase}
               />
@@ -2012,6 +2015,7 @@ function InicioView({
   trades,
   metricas,
   cuentas,
+  estrategias,
   modoTodas,
   nombreUsuario,
   totalRetirado,
@@ -2022,6 +2026,8 @@ function InicioView({
   onIrACalendario,
   onIrARetiros,
   onIrARoi,
+  onIrAEstrategias,
+  onNuevaCuenta,
   onAbrirDia,
   onAvanzarFase,
 }: {
@@ -2029,6 +2035,7 @@ function InicioView({
   trades: Trade[];
   metricas: Metricas;
   cuentas: Account[];
+  estrategias: Strategy[];
   modoTodas: boolean;
   nombreUsuario: string;
   totalRetirado: number;
@@ -2039,6 +2046,8 @@ function InicioView({
   onIrACalendario: () => void;
   onIrARetiros: () => void;
   onIrARoi: () => void;
+  onIrAEstrategias: () => void;
+  onNuevaCuenta: () => void;
   onAbrirDia: (clave: string, tradesDelDia: Trade[]) => void;
   onAvanzarFase: (
     accountId: string,
@@ -2160,11 +2169,60 @@ function InicioView({
   return (
     <div className="space-y-4">
       {/* ---------- Saludo personalizado ---------- */}
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-kb-accent">Sesión activa</p>
-        <h1 className="font-display text-xl font-bold text-kb-text">Hola, {nombreUsuario}</h1>
-        <p className="text-xs text-kb-text-secondary">Resumen de tu rendimiento</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-kb-accent">Sesión activa</p>
+          <h1 className="font-display text-xl font-bold text-kb-text">Hola, {nombreUsuario}</h1>
+          <p className="text-xs text-kb-text-secondary">Resumen de tu rendimiento</p>
+        </div>
+        {metricas.racha > 0 && (
+          <div className={`shrink-0 rounded-xl border px-3 py-2 text-center ${
+            metricas.tipoRacha === "ganadora"
+              ? "border-kb-gain/30 bg-kb-gain/8"
+              : "border-kb-loss/30 bg-kb-loss/8"
+          }`}>
+            <p className="text-[10px] uppercase tracking-wider text-kb-text-muted">Racha</p>
+            <p className={`font-mono text-xl font-bold leading-tight ${
+              metricas.tipoRacha === "ganadora" ? "text-kb-gain" : "text-kb-loss"
+            }`}>
+              {metricas.tipoRacha === "ganadora" ? "🔥" : "❄️"} {metricas.racha}
+            </p>
+            <p className="text-[10px] text-kb-text-muted">
+              {metricas.tipoRacha === "ganadora" ? "ganadoras" : "perdedoras"}
+            </p>
+          </div>
+        )}
       </div>
+
+      {/* ---------- Banner de resumen del día ---------- */}
+      {(() => {
+        const hoy = todayKey();
+        const tradesHoy = trades.filter((t) => {
+          if (!t.exit_time) return false; // Solo trades cerrados
+          return fechaKeyLocal(t.exit_time) === hoy;
+        });
+        if (tradesHoy.length === 0) return null;
+        const pnlHoy = tradesHoy.reduce((sum, t) => sum + (t.realized_pnl ?? 0), 0);
+        const ganadoresHoy = tradesHoy.filter((t) => (t.realized_pnl ?? 0) > 0).length;
+        return (
+          <div className={`flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl border px-4 py-3 ${
+            pnlHoy >= 0 ? "border-kb-gain/25 bg-kb-gain/5" : "border-kb-loss/25 bg-kb-loss/5"
+          }`}>
+            <span className="text-lg">{pnlHoy >= 0 ? "📈" : "📉"}</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-kb-text-muted">Hoy</span>
+            <span className="text-sm text-kb-text-secondary">
+              <span className="font-semibold text-kb-text">{tradesHoy.length}</span>{" "}
+              op{tradesHoy.length === 1 ? "" : "s"}.
+            </span>
+            <span className={`font-mono text-sm font-bold ${pnlHoy >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
+              {pnlHoy >= 0 ? "+" : ""}{formatCurrency(pnlHoy)}
+            </span>
+            <span className="text-sm text-kb-text-secondary">
+              <span className="font-semibold text-kb-text">{ganadoresHoy}/{tradesHoy.length}</span> ganadoras
+            </span>
+          </div>
+        );
+      })()}
 
       {/* ---------- Banner: cuenta individual ---------- */}
       {cuenta && (
@@ -2409,74 +2467,187 @@ function InicioView({
         </section>
       )}
 
-      {/* BUGFIX: antes esta condición incluía "!modoTodas", pero con 0
-          cuentas el estado por defecto de cuentaActivaId es "todas" — o
-          sea que modoTodas siempre es true en ese momento, y la condición
-          contradictoria hacía que este bloque de bienvenida NUNCA se
-          mostrara en la práctica, ni para usuarios nuevos. */}
-      {cuentas.length === 0 && (() => {
+      {/* Checklist de primeros pasos — se muestra a usuarios sin cuenta o
+          sin operaciones cargadas. La condición antes era solo
+          cuentas.length === 0, lo que dejaba el dashboard vacío (todo en
+          $0,00) cuando existía una cuenta pero sin trades. */}
+      {(cuentas.length === 0 || trades.length === 0) && (() => {
         const pasoCuentaListo = cuentas.length > 0;
         const pasoTradeListo = trades.length > 0;
-        const pasosListos = [pasoCuentaListo, pasoTradeListo].filter(Boolean).length;
+        const pasoEstrategiaListo = estrategias.length > 0;
+        const pasosListos = [pasoCuentaListo, pasoTradeListo, pasoEstrategiaListo].filter(Boolean).length;
+        const totalPasos = 3;
+
+        // Próximo paso pendiente (para el CTA principal)
+        const proximoPasoPendiente = !pasoCuentaListo ? 1 : !pasoTradeListo ? 2 : !pasoEstrategiaListo ? 3 : null;
+
         return (
-          <section className="rounded-xl border border-dashed border-kb-accent/40 bg-kb-accent/5 p-6">
-            <div className="mx-auto max-w-md text-center">
-              <p className="text-2xl">👋</p>
-              <h2 className="mt-2 font-display text-lg font-semibold text-kb-text">
-                ¡Bienvenido a KeboTrader!
-              </h2>
-              <p className="mt-1 text-sm text-kb-text-secondary">
-                {pasosListos === 0
-                  ? "Te faltan unos pasos rápidos para tener tu diario andando."
-                  : `Vas ${pasosListos} de 2 — ¡seguí así!`}
-              </p>
-              <div className="mx-auto mt-3 h-1.5 max-w-xs overflow-hidden rounded-full bg-kb-border">
-                <div
-                  className="h-full rounded-full bg-kb-gain transition-all"
-                  style={{ width: `${(pasosListos / 2) * 100}%` }}
-                />
+          <section className="rounded-xl border border-kb-accent/25 bg-gradient-to-br from-kb-accent/8 to-kb-accent/3 p-5">
+            {/* Encabezado */}
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">
+                    {pasosListos === 0 ? "👋" : pasosListos === totalPasos ? "🎉" : "⚡"}
+                  </span>
+                  <h2 className="font-display text-base font-semibold text-kb-text">
+                    {pasosListos === 0
+                      ? "¡Bienvenido a KeboTrader!"
+                      : pasosListos === totalPasos
+                      ? "¡Todo listo!"
+                      : "Primeros pasos"}
+                  </h2>
+                </div>
+                <p className="mt-0.5 text-xs text-kb-text-secondary">
+                  {pasosListos === 0
+                    ? "Completá estos pasos para tener tu diario operativo."
+                    : pasosListos === totalPasos
+                    ? "Tu diario está completamente configurado."
+                    : `${pasosListos} de ${totalPasos} completados — ¡seguí así!`}
+                </p>
+              </div>
+              {/* Progreso circular-ish como badge */}
+              <div className="shrink-0 text-right">
+                <span className="font-mono text-2xl font-bold text-kb-accent leading-none">
+                  {pasosListos}
+                </span>
+                <span className="font-mono text-sm text-kb-text-muted">/{totalPasos}</span>
               </div>
             </div>
 
-            <div className="mx-auto mt-5 max-w-md space-y-3 text-left">
-              <div className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 ${pasoCuentaListo ? "border-kb-gain/30 bg-kb-gain/5" : "border-kb-border-soft bg-kb-surface"}`}>
-                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${pasoCuentaListo ? "bg-kb-gain text-kb-bg" : "bg-kb-accent/15 text-kb-accent"}`}>
+            {/* Barra de progreso */}
+            <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-kb-border">
+              <div
+                className="h-full rounded-full bg-kb-accent transition-all duration-500"
+                style={{ width: `${(pasosListos / totalPasos) * 100}%` }}
+              />
+            </div>
+
+            {/* Pasos */}
+            <div className="mt-4 space-y-2">
+              {/* Paso 1: Crear cuenta */}
+              <div className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
+                pasoCuentaListo
+                  ? "border-kb-gain/20 bg-kb-gain/5"
+                  : "border-kb-border-soft bg-kb-surface"
+              }`}>
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                  pasoCuentaListo ? "bg-kb-gain text-kb-bg" : "bg-kb-accent text-kb-bg"
+                }`}>
                   {pasoCuentaListo ? "✓" : "1"}
                 </span>
-                <div>
-                  <p className={`text-sm font-medium ${pasoCuentaListo ? "text-kb-text-muted line-through" : "text-kb-text"}`}>
-                    Creá tu primera cuenta
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-medium leading-tight ${
+                    pasoCuentaListo ? "text-kb-text-muted line-through" : "text-kb-text"
+                  }`}>
+                    Crear una cuenta
                   </p>
-                  <p className="text-xs text-kb-text-secondary">
-                    Usá el botón &quot;+ Nueva cuenta&quot; de arriba — puede ser demo o real.
-                  </p>
+                  {!pasoCuentaListo && (
+                    <p className="text-[11px] text-kb-text-secondary mt-0.5">
+                      Real, demo o challenge — la que uses.
+                    </p>
+                  )}
                 </div>
+                {!pasoCuentaListo && (
+                  <button
+                    onClick={onNuevaCuenta}
+                    className="shrink-0 rounded-lg bg-kb-accent px-3 py-1.5 text-xs font-semibold text-kb-bg hover:brightness-110 transition"
+                  >
+                    Crear →
+                  </button>
+                )}
               </div>
-              <div className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 ${pasoTradeListo ? "border-kb-gain/30 bg-kb-gain/5" : "border-kb-border-soft bg-kb-surface"}`}>
-                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${pasoTradeListo ? "bg-kb-gain text-kb-bg" : "bg-kb-accent/15 text-kb-accent"}`}>
+
+              {/* Paso 2: Primera operación */}
+              <div className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
+                pasoTradeListo
+                  ? "border-kb-gain/20 bg-kb-gain/5"
+                  : pasoCuentaListo
+                  ? "border-kb-border-soft bg-kb-surface"
+                  : "border-kb-border-soft bg-kb-surface opacity-50"
+              }`}>
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                  pasoTradeListo
+                    ? "bg-kb-gain text-kb-bg"
+                    : pasoCuentaListo
+                    ? "bg-kb-accent text-kb-bg"
+                    : "bg-kb-border text-kb-text-muted"
+                }`}>
                   {pasoTradeListo ? "✓" : "2"}
                 </span>
-                <div>
-                  <p className={`text-sm font-medium ${pasoTradeListo ? "text-kb-text-muted line-through" : "text-kb-text"}`}>
-                    Registrá tu primera operación
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-medium leading-tight ${
+                    pasoTradeListo ? "text-kb-text-muted line-through" : "text-kb-text"
+                  }`}>
+                    Registrar primera operación
                   </p>
-                  <p className="text-xs text-kb-text-secondary">
-                    Andá al Calendario y hacé clic en un día para cargarla.
-                  </p>
+                  {!pasoTradeListo && pasoCuentaListo && (
+                    <p className="text-[11px] text-kb-text-secondary mt-0.5">
+                      Hacé clic en un día del Calendario para cargarla.
+                    </p>
+                  )}
                 </div>
+                {!pasoTradeListo && pasoCuentaListo && (
+                  <button
+                    onClick={onIrACalendario}
+                    className="shrink-0 rounded-lg bg-kb-accent px-3 py-1.5 text-xs font-semibold text-kb-bg hover:brightness-110 transition"
+                  >
+                    Ir →
+                  </button>
+                )}
               </div>
-              <div className="flex items-start gap-3 rounded-lg border border-kb-border-soft bg-kb-surface px-3 py-2.5 opacity-70">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-kb-accent/15 text-xs font-bold text-kb-accent">
-                  3
+
+              {/* Paso 3: Estrategia */}
+              <div className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
+                pasoEstrategiaListo
+                  ? "border-kb-gain/20 bg-kb-gain/5"
+                  : pasoTradeListo
+                  ? "border-kb-border-soft bg-kb-surface"
+                  : "border-kb-border-soft bg-kb-surface opacity-50"
+              }`}>
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                  pasoEstrategiaListo
+                    ? "bg-kb-gain text-kb-bg"
+                    : pasoTradeListo
+                    ? "bg-kb-accent text-kb-bg"
+                    : "bg-kb-border text-kb-text-muted"
+                }`}>
+                  {pasoEstrategiaListo ? "✓" : "3"}
                 </span>
-                <div>
-                  <p className="text-sm font-medium text-kb-text">Explorá tus Estadísticas</p>
-                  <p className="text-xs text-kb-text-secondary">
-                    Con un par de operaciones cargadas vas a empezar a ver patrones útiles. (Opcional, cuando quieras)
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-medium leading-tight ${
+                    pasoEstrategiaListo ? "text-kb-text-muted line-through" : "text-kb-text"
+                  }`}>
+                    Definir tu estrategia
                   </p>
+                  {!pasoEstrategiaListo && pasoTradeListo && (
+                    <p className="text-[11px] text-kb-text-secondary mt-0.5">
+                      Documentá tu plan de trading para seguirlo con disciplina.
+                    </p>
+                  )}
+                  {!pasoTradeListo && !pasoEstrategiaListo && (
+                    <p className="text-[11px] text-kb-text-secondary mt-0.5">
+                      Disponible después del paso 2.
+                    </p>
+                  )}
                 </div>
+                {!pasoEstrategiaListo && pasoTradeListo && (
+                  <button
+                    onClick={onIrAEstrategias}
+                    className="shrink-0 rounded-lg bg-kb-accent px-3 py-1.5 text-xs font-semibold text-kb-bg hover:brightness-110 transition"
+                  >
+                    Crear →
+                  </button>
+                )}
               </div>
             </div>
+
+            {/* Mensaje final si ya completó todo */}
+            {proximoPasoPendiente === null && (
+              <p className="mt-3 text-center text-xs text-kb-text-secondary">
+                🚀 Tu diario está listo. Seguí registrando operaciones para ver tus métricas.
+              </p>
+            )}
           </section>
         );
       })()}
@@ -2515,9 +2686,22 @@ function InicioView({
           </div>
 
           {ultimasOperaciones.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-kb-text-secondary">
-              Todavía no registraste operaciones en esta cuenta.
-            </p>
+            <div className="flex flex-col items-center gap-2.5 px-4 py-8 text-center">
+              <span className="text-2xl">📋</span>
+              <p className="text-sm text-kb-text-secondary">
+                {cuentas.length === 0
+                  ? "Primero creá una cuenta para empezar a registrar."
+                  : "Todavía no registraste operaciones. ¡Cargá tu primera trade!"}
+              </p>
+              {cuentas.length > 0 && (
+                <button
+                  onClick={onIrACalendario}
+                  className="rounded-lg bg-kb-accent/10 px-4 py-1.5 text-xs font-semibold text-kb-accent hover:bg-kb-accent/20 transition-colors"
+                >
+                  Ir al Calendario →
+                </button>
+              )}
+            </div>
           ) : (
             <div className="divide-y divide-kb-border-soft">
               {ultimasOperaciones.map((t) => (
@@ -2985,6 +3169,19 @@ function HistorialView({
   const [filtros, setFiltros] = useState<Filtros>({ estrategiaId: "", sesion: "", resultado: "" });
   const [busqueda, setBusqueda] = useState("");
   const [tradeSeleccionado, setTradeSeleccionado] = useState<Trade | null>(null);
+  const [hashtagActivo, setHashtagActivo] = useState<string | null>(null);
+
+  // Extrae todos los #hashtags únicos de las notas de todos los trades
+  const hashtags = useMemo(() => {
+    const set = new Set<string>();
+    trades.forEach((t) => {
+      if (t.notes) {
+        const matches = t.notes.match(/#\w+/g) ?? [];
+        matches.forEach((m) => set.add(m.toLowerCase()));
+      }
+    });
+    return Array.from(set).sort();
+  }, [trades]);
 
   const tradesFiltrados = useMemo(() => {
     const busquedaNormalizada = busqueda.trim().toUpperCase();
@@ -2993,12 +3190,13 @@ function HistorialView({
       if (filtros.sesion && t.session !== filtros.sesion) return false;
       if (filtros.resultado && t.result_type !== filtros.resultado) return false;
       if (busquedaNormalizada && !t.symbol.toUpperCase().includes(busquedaNormalizada)) return false;
+      if (hashtagActivo && !t.notes?.toLowerCase().includes(hashtagActivo)) return false;
       return true;
     });
-  }, [trades, filtros, busqueda]);
+  }, [trades, filtros, busqueda, hashtagActivo]);
 
   const hayFiltrosActivos =
-    filtros.estrategiaId !== "" || filtros.sesion !== "" || filtros.resultado !== "" || busqueda !== "";
+    filtros.estrategiaId !== "" || filtros.sesion !== "" || filtros.resultado !== "" || busqueda !== "" || hashtagActivo !== null;
 
   return (
     <div className="space-y-6">
@@ -3080,6 +3278,7 @@ function HistorialView({
                 onClick={() => {
                   setFiltros({ estrategiaId: "", sesion: "", resultado: "" });
                   setBusqueda("");
+                  setHashtagActivo(null);
                 }}
                 className="rounded-lg border border-kb-border px-2.5 py-1.5 text-xs text-kb-text-secondary hover:text-kb-text transition-colors"
               >
@@ -3088,6 +3287,26 @@ function HistorialView({
             )}
           </div>
         </div>
+
+        {/* Chips de hashtags — solo se muestran si hay al menos uno en las notas */}
+        {hashtags.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-kb-border-soft px-5 py-3">
+            <span className="text-[10px] uppercase tracking-wider text-kb-text-muted">Tags:</span>
+            {hashtags.map((tag) => (
+              <button
+                key={tag}
+                onClick={() => setHashtagActivo(hashtagActivo === tag ? null : tag)}
+                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors ${
+                  hashtagActivo === tag
+                    ? "bg-kb-accent text-kb-bg"
+                    : "border border-kb-border bg-kb-bg text-kb-text-secondary hover:border-kb-accent/50 hover:text-kb-accent"
+                }`}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
 
         {cargando ? (
           <SkeletonTabla filas={6} columnas={8} />
@@ -3959,6 +4178,40 @@ function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: S
     return MESES.map((m, i) => ({ etiqueta: m.slice(0, 3), valor: conteo[i] }));
   }, [todosCerrados]);
 
+  // ---- Rendimiento (PnL + winrate) por día de la semana ----
+  const rendimientoPorDiaSemana = useMemo(() => {
+    const mapa = new Map<number, { pnl: number; total: number; ganadores: number }>();
+    [0, 1, 2, 3, 4, 5, 6].forEach((d) => mapa.set(d, { pnl: 0, total: 0, ganadores: 0 }));
+    cerrados.forEach((t) => {
+      const dia = new Date(t.entry_time).getDay();
+      const entry = mapa.get(dia)!;
+      entry.pnl += t.realized_pnl ?? 0;
+      entry.total += 1;
+      if ((t.realized_pnl ?? 0) > 0) entry.ganadores += 1;
+    });
+    // Lun=1, Mar=2, … Dom=0 → índice 6
+    return [1, 2, 3, 4, 5, 6, 0].map((dayIdx, i) => {
+      const d = mapa.get(dayIdx)!;
+      return {
+        etiqueta: DIAS_SEMANA[i],
+        pnl: d.pnl,
+        total: d.total,
+        winRate: d.total > 0 ? (d.ganadores / d.total) * 100 : 0,
+      };
+    });
+  }, [cerrados]);
+
+  // ---- % adherencia al plan (proxy: trades sin errores registrados) ----
+  const adherencia = useMemo(() => {
+    if (cerrados.length === 0) return null;
+    const sinErrores = cerrados.filter(
+      (t) =>
+        (!t.mistakes || t.mistakes.length === 0) &&
+        (!t.mistake || t.mistake === "ninguno")
+    ).length;
+    return (sinErrores / cerrados.length) * 100;
+  }, [cerrados]);
+
   if (todosCerrados.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-kb-border bg-kb-surface p-8 text-center">
@@ -4009,7 +4262,7 @@ function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: S
       ) : (
         <>
       {/* ---------- Fila de KPIs principales ---------- */}
-      <section className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <section className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <MetricCard
           etiqueta="Resultado neto"
           valor={formatCurrency(resultadoNeto)}
@@ -4030,6 +4283,11 @@ function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: S
           etiqueta="Drawdown máximo"
           valor={formatCurrency(drawdown.monto)}
           tono={drawdown.monto > 0 ? "loss" : undefined}
+        />
+        <MetricCard
+          etiqueta="Adherencia al plan"
+          valor={adherencia !== null ? `${adherencia.toFixed(0)}%` : "—"}
+          tono={adherencia !== null ? (adherencia >= 80 ? "gain" : adherencia >= 60 ? undefined : "loss") : undefined}
         />
       </section>
 
@@ -4082,6 +4340,56 @@ function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: S
       {/* ---------- Rendimiento por sesión / día / emoción ---------- */}
       <ReporteBarras titulo="Rendimiento por sesión" subtitulo="¿En qué sesión de mercado rindes mejor?" filas={porSesion} />
       <ReporteBarras titulo="Rendimiento por emoción" subtitulo="¿Con qué estado emocional operas mejor?" filas={porEmocion} vacio="Todavía no registraste la emoción en ninguna operación." />
+
+      {/* ---------- Heatmap de rendimiento por día de la semana ---------- */}
+      <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
+        <h2 className="font-display text-lg font-semibold">¿En qué día de la semana rendís mejor?</h2>
+        <p className="mb-5 text-xs text-kb-text-secondary">
+          PnL acumulado por día — el color indica ganancia (verde) o pérdida (rojo), la intensidad refleja la magnitud.
+        </p>
+        {(() => {
+          const maxAbs = Math.max(...rendimientoPorDiaSemana.map((d) => Math.abs(d.pnl)), 1);
+          return (
+            <div className="grid grid-cols-7 gap-2">
+              {rendimientoPorDiaSemana.map((d) => {
+                const intensidad = Math.abs(d.pnl) / maxAbs;
+                const esGanancia = d.pnl >= 0;
+                return (
+                  <div key={d.etiqueta} className="flex flex-col items-center gap-1.5">
+                    <div
+                      className="relative flex w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-kb-border-soft"
+                      style={{ minHeight: 80 }}
+                      title={`${d.etiqueta}: ${d.total > 0 ? formatCurrency(d.pnl) : "Sin datos"} · ${d.total > 0 ? `${d.winRate.toFixed(0)}% WR · ${d.total} ops` : ""}`}
+                    >
+                      {/* Capa de color con opacidad proporcional */}
+                      {d.total > 0 && (
+                        <div
+                          className={`absolute inset-0 ${esGanancia ? "bg-kb-gain" : "bg-kb-loss"}`}
+                          style={{ opacity: 0.1 + intensidad * 0.55 }}
+                        />
+                      )}
+                      <div className="relative flex flex-col items-center gap-0.5 py-3 px-1">
+                        {d.total > 0 ? (
+                          <>
+                            <span className={`font-mono text-[11px] font-bold ${esGanancia ? "text-kb-gain" : "text-kb-loss"}`}>
+                              {esGanancia ? "+" : ""}{formatCurrency(d.pnl)}
+                            </span>
+                            <span className="text-[10px] text-kb-text-muted">{d.winRate.toFixed(0)}% WR</span>
+                            <span className="text-[10px] text-kb-text-muted">{d.total} ops</span>
+                          </>
+                        ) : (
+                          <span className="text-[10px] text-kb-text-muted">—</span>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-medium text-kb-text-secondary">{d.etiqueta}</span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </section>
 
       {/* ---------- Errores más frecuentes ---------- */}
       <section className="rounded-xl border border-kb-border bg-kb-surface">
@@ -7111,7 +7419,7 @@ function ImportarView({
   const [mostrarGuia, setMostrarGuia] = useState(true);
 
   // ─── Estado para modo OCR ──────────────────────────────────────────
-  const [modoImportar, setModoImportar] = useState<"csv" | "ocr">("csv");
+  const [modoImportar, setModoImportar] = useState<"csv" | "ocr" | "mt">("csv");
   const [imagenOcrData, setImagenOcrData] = useState<string | null>(null);
   const [imagenOcrMime, setImagenOcrMime] = useState<string>("image/png");
   const [imagenOcrPreview, setImagenOcrPreview] = useState<string | null>(null);
@@ -7124,6 +7432,25 @@ function ImportarView({
   const [accountIdOcr, setAccountIdOcr] = useState(cuentaActivaId !== "todas" ? cuentaActivaId : "");
   const [strategyIdOcr, setStrategyIdOcr] = useState("");
 
+  // ─── Estado para modo MetaTrader HTML ─────────────────────────────
+  type TradesMT = {
+    symbol: string;
+    side: TradeSide;
+    quantity: number;
+    entry_price: number;
+    exit_price: number | null;
+    entry_time: string;
+    exit_time: string | null;
+    realized_pnl: number | null;
+    fees: number;
+  };
+  const [tradesMt, setTradesMt] = useState<TradesMT[]>([]);
+  const [errorMt, setErrorMt] = useState<string | null>(null);
+  const [guardandoMt, setGuardandoMt] = useState(false);
+  const [resultadoMt, setResultadoMt] = useState<{ insertados: number } | null>(null);
+  const [accountIdMt, setAccountIdMt] = useState(cuentaActivaId !== "todas" ? cuentaActivaId : "");
+  const [strategyIdMt, setStrategyIdMt] = useState("");
+
   function reiniciarOcr() {
     setImagenOcrData(null);
     setImagenOcrMime("image/png");
@@ -7132,6 +7459,173 @@ function ImportarView({
     setErrorOcr(null);
     setResultadoOcr(null);
     setConfirmandoGuardarOcr(false); // BUG-2: evitar que la confirmación quede abierta al cambiar imagen
+  }
+
+  // ─── Helpers MetaTrader HTML ──────────────────────────────────────
+  function reiniciarMt() {
+    setTradesMt([]);
+    setErrorMt(null);
+    setResultadoMt(null);
+  }
+
+  function parsearHtmlMt(html: string) {
+    setErrorMt(null);
+    setTradesMt([]);
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      const filas = Array.from(doc.querySelectorAll("tr")).filter((tr) => {
+        const celdas = Array.from(tr.querySelectorAll("td"));
+        return celdas.length >= 8;
+      });
+
+      if (filas.length === 0) {
+        setErrorMt("No se encontraron operaciones en el HTML. Asegurate de subir el reporte de historial de MetaTrader 4 o 5 (.htm/.html).");
+        return;
+      }
+
+      const trades: TradesMT[] = [];
+      for (const fila of filas) {
+        const cols = Array.from(fila.querySelectorAll("td")).map((td) => td.textContent?.trim() ?? "");
+
+        // MT4: col[2] es el tipo (buy/sell)
+        // MT5: col[3] es el tipo (buy/sell)
+        // Detectamos por la cantidad de columnas y por el contenido
+        const tipoMt4 = cols[2]?.toLowerCase() ?? "";
+        const tipoMt5 = cols[3]?.toLowerCase() ?? "";
+        const esMt5 = cols.length >= 14;
+        const tipoTrade = esMt5 ? tipoMt5 : tipoMt4;
+
+        if (!tipoTrade.includes("buy") && !tipoTrade.includes("sell")) continue;
+
+        const side: TradeSide = tipoTrade.includes("sell") ? "short" : "long";
+
+        // MT4 layout: [ticket, open_time, type, size, symbol, open_price, sl, tp, close_time, close_price, commission, swap, profit]
+        // MT5 tiene dos formatos comunes de 14+ columnas:
+        //   Formato A: [Position, Time, Deal, Type, Direction, Volume, Price, S/L, T/P, Commission, Swap, Profit, Balance, Comment]
+        //   Formato B: [Time, Deal, Symbol, Type, Direction, Volume, Price, Order, Commission, Swap, Profit, Balance, Comment, ...]
+        // En ambos casos cols[3] = Type. Se detecta el formato por si cols[0] parece una fecha.
+        let symbol: string, quantity: number, entry_price: number, exit_price: number | null,
+            entry_time: string, exit_time: string | null, realized_pnl: number | null, fees: number;
+
+        if (esMt5) {
+          // Si cols[0] empieza con dígitos de año (ej "2024.") → Formato B (Time primero)
+          const col0EsFecha = /^\d{4}[.\-]/.test(cols[0] || "");
+          if (col0EsFecha) {
+            // Formato B: symbol disponible en cols[2]
+            symbol = (cols[2] || "UNKNOWN").toUpperCase();
+            quantity = parseFloat(cols[5]) || 0;
+            entry_price = parseFloat(cols[6]) || 0;
+            exit_price = null;
+            entry_time = cols[0] || "";
+            exit_time = null;
+            realized_pnl = parseFloat(cols[10]) || null;
+            fees = parseFloat(cols[8]) || 0;
+          } else {
+            // Formato A: cols[0] es Position ID, no hay columna de símbolo
+            symbol = "UNKNOWN";
+            quantity = parseFloat(cols[5]) || 0;
+            entry_price = parseFloat(cols[6]) || 0;
+            exit_price = null;
+            entry_time = cols[1] || "";
+            exit_time = null;
+            realized_pnl = parseFloat(cols[11]) || null;
+            fees = parseFloat(cols[9]) || 0;
+          }
+        } else {
+          // MT4 estándar
+          symbol = (cols[4] || "UNKNOWN").toUpperCase();
+          quantity = parseFloat(cols[3]) || 0;
+          entry_price = parseFloat(cols[5]) || 0;
+          exit_price = parseFloat(cols[9]) || null;
+          entry_time = cols[1] || "";
+          exit_time = cols[8] || null;
+          realized_pnl = parseFloat(cols[12]) || null;
+          fees = (parseFloat(cols[10]) || 0) + (parseFloat(cols[11]) || 0);
+        }
+
+        // Convertir fecha MT "YYYY.MM.DD HH:MM:SS" → ISO
+        const toIso = (s: string): string | null => {
+          if (!s) return null;
+          const limpio = s.replace(/\./g, "-").replace(" ", "T");
+          return limpio.length > 0 ? limpio : null;
+        };
+
+        const entryIso = toIso(entry_time);
+        if (!entryIso || !symbol || quantity === 0) continue;
+
+        trades.push({
+          symbol,
+          side,
+          quantity,
+          entry_price,
+          exit_price,
+          entry_time: entryIso,
+          exit_time: toIso(exit_time ?? ""),
+          realized_pnl: isNaN(realized_pnl as number) ? null : realized_pnl,
+          fees: isNaN(fees) ? 0 : Math.abs(fees),
+        });
+      }
+
+      if (trades.length === 0) {
+        setErrorMt("Se leyó el archivo pero no se encontraron filas de operaciones reconocibles. Verificá que sea un reporte de historial de MT4 o MT5.");
+        return;
+      }
+      setTradesMt(trades);
+    } catch (e) {
+      setErrorMt(`Error al procesar el archivo HTML: ${e instanceof Error ? e.message : "Error desconocido"}`);
+    }
+  }
+
+  async function guardarTradesMt() {
+    if (!accountIdMt) {
+      setErrorMt("Elegí a qué cuenta se van a guardar estas operaciones.");
+      return;
+    }
+    setGuardandoMt(true);
+    setErrorMt(null);
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) {
+      setGuardandoMt(false);
+      setErrorMt("Tu sesión expiró. Volvé a iniciar sesión.");
+      return;
+    }
+    const filas = tradesMt.map((t) => ({
+      user_id: userId,
+      account_id: accountIdMt,
+      strategy_id: strategyIdMt === "" ? null : strategyIdMt,
+      symbol: t.symbol.toUpperCase(),
+      instrument_type: "forex" as InstrumentType,
+      side: t.side,
+      status: t.exit_price !== null || t.realized_pnl !== null ? "closed" : "open",
+      quantity: t.quantity,
+      entry_price: t.entry_price,
+      exit_price: t.exit_price,
+      fees: t.fees,
+      realized_pnl: t.realized_pnl,
+      result_type: t.exit_price !== null || t.realized_pnl !== null ? "manual" : null,
+      notes: null,
+      entry_time: t.entry_time,
+      exit_time: t.exit_time,
+      tradingview_links: [],
+      evidence_images: [],
+      mistake: "ninguno",
+    }));
+    let insertados = 0;
+    for (let i = 0; i < filas.length; i += 200) {
+      const tanda = filas.slice(i, i + 200);
+      const { error: err } = await supabase.from("trades").insert(tanda);
+      if (err) {
+        setGuardandoMt(false);
+        setErrorMt(`Error al insertar: ${err.message}`);
+        return;
+      }
+      insertados += tanda.length;
+    }
+    setGuardandoMt(false);
+    setResultadoMt({ insertados });
+    onImportado();
   }
 
   function manejarImagenOcr(archivo: File) {
@@ -7539,8 +8033,8 @@ function ImportarView({
         )}
       </section>
 
-      {/* ─── Selector de modo: CSV vs OCR ──────────────────────── */}
-      <div className="flex gap-2">
+      {/* ─── Selector de modo: CSV / OCR / MetaTrader HTML ────────── */}
+      <div className="flex flex-wrap gap-2">
         <button
           onClick={() => setModoImportar("csv")}
           className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
@@ -7561,7 +8055,177 @@ function ImportarView({
         >
           📷 OCR desde captura
         </button>
+        <button
+          onClick={() => { setModoImportar("mt"); reiniciarMt(); }}
+          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            modoImportar === "mt"
+              ? "bg-kb-accent text-kb-bg"
+              : "border border-kb-border text-kb-text-secondary hover:text-kb-text"
+          }`}
+        >
+          🖥️ MetaTrader HTML
+        </button>
       </div>
+
+      {/* ─── Modo MetaTrader HTML ─────────────────────────────────── */}
+      {modoImportar === "mt" && (
+        <section className="space-y-4">
+          {resultadoMt ? (
+            <div className="rounded-xl border border-kb-gain/30 bg-kb-gain/5 p-8 text-center">
+              <p className="text-3xl">✅</p>
+              <h2 className="mt-2 font-display text-lg font-semibold text-kb-text">¡Trades importados!</h2>
+              <p className="mt-1 text-sm text-kb-text-secondary">
+                <span className="font-semibold text-kb-gain">{resultadoMt.insertados}</span> operaciones guardadas.
+              </p>
+              <button
+                onClick={reiniciarMt}
+                className="mt-4 rounded-lg border border-kb-border px-5 py-2.5 text-sm font-medium text-kb-text-secondary hover:text-kb-text transition-colors"
+              >
+                Importar otro archivo
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="rounded-xl border border-kb-accent/20 bg-kb-accent/5 px-4 py-3 text-xs text-kb-accent">
+                <p className="font-semibold">¿Cómo obtener el archivo HTML de MetaTrader?</p>
+                <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-kb-text-secondary">
+                  <li>Abrí MetaTrader 4 o 5 → pestaña <span className="text-kb-text">Historia de cuenta</span> (Account History).</li>
+                  <li>Click derecho sobre la tabla → <span className="text-kb-text">Guardar como reporte</span> (Save as Report) → guardalo como <span className="font-mono text-kb-text">.htm</span> o <span className="font-mono text-kb-text">.html</span>.</li>
+                  <li>Subí ese archivo acá abajo.</li>
+                </ol>
+              </div>
+
+              {tradesMt.length === 0 ? (
+                <label className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-kb-accent/40 bg-kb-accent/5 p-8 text-center cursor-pointer hover:bg-kb-accent/10 transition">
+                  <span className="text-4xl">🖥️</span>
+                  <span className="text-sm font-semibold text-kb-text">Subí el reporte HTML de MetaTrader</span>
+                  <span className="text-xs text-kb-text-secondary">Archivos .htm o .html — MT4 y MT5</span>
+                  <span className="mt-1 rounded-lg bg-kb-accent px-4 py-2 text-sm font-semibold text-kb-bg">
+                    Elegir archivo
+                  </span>
+                  <input
+                    type="file"
+                    accept=".htm,.html,text/html"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      const reader = new FileReader();
+                      reader.onload = (ev) => parsearHtmlMt(String(ev.target?.result ?? ""));
+                      reader.readAsText(f);
+                    }}
+                  />
+                </label>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-kb-text">
+                      Se encontraron <span className="text-kb-gain">{tradesMt.length}</span> operaciones
+                    </p>
+                    <button
+                      onClick={reiniciarMt}
+                      className="text-xs text-kb-text-muted hover:text-kb-text transition-colors"
+                    >
+                      Cambiar archivo
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-lg border border-kb-border-soft">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-kb-border-soft bg-kb-bg text-kb-text-secondary">
+                          <th className="px-3 py-2 font-medium">Símbolo</th>
+                          <th className="px-3 py-2 font-medium">Dir.</th>
+                          <th className="px-3 py-2 font-medium">Qty</th>
+                          <th className="px-3 py-2 font-medium">Entrada</th>
+                          <th className="px-3 py-2 font-medium">Salida</th>
+                          <th className="px-3 py-2 font-medium">P&amp;L</th>
+                          <th className="px-3 py-2 font-medium">Fee</th>
+                          <th className="px-3 py-2 font-medium">Hora entrada</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tradesMt.slice(0, 50).map((t, i) => (
+                          <tr key={i} className="border-b border-kb-border-soft last:border-0">
+                            <td className="px-3 py-2 font-mono font-semibold text-kb-text">{t.symbol}</td>
+                            <td className="px-3 py-2">
+                              <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${t.side === "long" ? "bg-kb-gain/20 text-kb-gain" : "bg-kb-loss/20 text-kb-loss"}`}>
+                                {t.side === "long" ? "L" : "S"}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-kb-text">{t.quantity}</td>
+                            <td className="px-3 py-2 font-mono text-kb-text">{t.entry_price}</td>
+                            <td className="px-3 py-2 font-mono text-kb-text">{t.exit_price ?? "—"}</td>
+                            <td className={`px-3 py-2 font-mono font-semibold ${t.realized_pnl === null ? "text-kb-text-secondary" : t.realized_pnl >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
+                              {t.realized_pnl !== null ? `${t.realized_pnl >= 0 ? "+" : ""}${t.realized_pnl.toFixed(2)}` : "—"}
+                            </td>
+                            <td className="px-3 py-2 font-mono text-kb-text-secondary">{t.fees > 0 ? t.fees.toFixed(2) : "—"}</td>
+                            <td className="px-3 py-2 text-kb-text-secondary">{t.entry_time.replace("T", " ")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {tradesMt.length > 50 && (
+                      <p className="border-t border-kb-border-soft px-4 py-2 text-center text-xs text-kb-text-muted">
+                        Mostrando 50 de {tradesMt.length} operaciones. Se van a guardar todas.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Guardar en la cuenta *</label>
+                      <select
+                        value={accountIdMt}
+                        onChange={(e) => setAccountIdMt(e.target.value)}
+                        className={inputClass}
+                      >
+                        <option value="">Elegí una cuenta…</option>
+                        {cuentas.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Estrategia (opcional)</label>
+                      <select
+                        value={strategyIdMt}
+                        onChange={(e) => setStrategyIdMt(e.target.value)}
+                        className={inputClass}
+                      >
+                        <option value="">Sin estrategia</option>
+                        {estrategias.map((e) => (
+                          <option key={e.id} value={e.id}>{e.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {errorMt && (
+                    <p className="rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
+                      {errorMt}
+                    </p>
+                  )}
+
+                  <button
+                    onClick={guardarTradesMt}
+                    disabled={guardandoMt || !accountIdMt}
+                    className="w-full rounded-xl bg-kb-gain py-3 text-sm font-bold text-kb-bg hover:brightness-110 transition disabled:opacity-60"
+                  >
+                    {guardandoMt ? "Guardando…" : `Importar ${tradesMt.length} operaciones`}
+                  </button>
+                </div>
+              )}
+
+              {errorMt && tradesMt.length === 0 && (
+                <p className="rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
+                  {errorMt}
+                </p>
+              )}
+            </>
+          )}
+        </section>
+      )}
 
       {/* ─── Modo OCR ──────────────────────────────────────────────── */}
       {modoImportar === "ocr" && (
