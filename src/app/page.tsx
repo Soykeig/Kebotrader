@@ -9684,138 +9684,191 @@ type PlanPropFirm = {
 
 const FIRMAS_PROP: { id: string; nombre: string; planes: PlanPropFirm[] }[] = [
   // ── Apex Trader Funding ─────────────────────────────────────────────
-  // Trailing drawdown EOD, sin daily loss. Pago único por evaluación.
+  // Intraday: trailing MLL intraday, sin DLL. EOD: trailing EOD, con DLL incluido.
+  // Ambos modalidades son suscripción mensual.
   {
     id: "apex",
     nombre: "Apex Trader Funding",
     planes: [
-      { nombre: "25K", balance: 25000, objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 199, tipoCosto: "único" },
-      { nombre: "50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 399, tipoCosto: "único" },
-      { nombre: "100K", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: null, challengeType: "una_fase", costo: 699, tipoCosto: "único" },
-      { nombre: "150K", balance: 150000, objetivoPct: 6, drawdownTotal: 6000, perdidaDiaria: null, challengeType: "una_fase", costo: 999, tipoCosto: "único" },
+      // Intraday (trailing intraday, sin DLL)
+      { nombre: "25K Intraday", balance: 25000, objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 118, tipoCosto: "mensual" },
+      { nombre: "50K Intraday", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 131, tipoCosto: "mensual" },
+      { nombre: "100K Intraday", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 198, tipoCosto: "mensual" },
+      { nombre: "150K Intraday", balance: 150000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: null, challengeType: "una_fase", costo: 265, tipoCosto: "mensual" },
+      // EOD (trailing EOD, con DLL)
+      { nombre: "25K EOD", balance: 25000, objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: 500, challengeType: "una_fase", costo: 177, tipoCosto: "mensual" },
+      { nombre: "50K EOD", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1000, challengeType: "una_fase", costo: 197, tipoCosto: "mensual" },
+      { nombre: "100K EOD", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 1500, challengeType: "una_fase", costo: 297, tipoCosto: "mensual" },
+      { nombre: "150K EOD", balance: 150000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: 2000, challengeType: "una_fase", costo: 397, tipoCosto: "mensual" },
     ],
   },
   // ── Topstep ─────────────────────────────────────────────────────────
-  // Trailing MLL intraday + Daily Loss Limit separado. Suscripción mensual.
+  // DLL opcional que afecta el precio: con DLL es $10/20/30 más barato.
+  // Sin DLL: $95/$149/$229/mes. Con DLL: $85/$129/$199/mes.
   {
     id: "topstep",
     nombre: "Topstep",
     planes: [
-      { nombre: "50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1000, challengeType: "una_fase", costo: 85, tipoCosto: "mensual" },
-      { nombre: "100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 2000, challengeType: "una_fase", costo: 129, tipoCosto: "mensual" },
-      { nombre: "150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 3000, challengeType: "una_fase", costo: 199, tipoCosto: "mensual" },
+      { nombre: "50K sin DLL", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 95, tipoCosto: "mensual" },
+      { nombre: "50K con DLL", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1000, challengeType: "una_fase", costo: 85, tipoCosto: "mensual" },
+      { nombre: "100K sin DLL", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 149, tipoCosto: "mensual" },
+      { nombre: "100K con DLL", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 2000, challengeType: "una_fase", costo: 129, tipoCosto: "mensual" },
+      { nombre: "150K sin DLL", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 229, tipoCosto: "mensual" },
+      { nombre: "150K con DLL", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 3000, challengeType: "una_fase", costo: 199, tipoCosto: "mensual" },
     ],
   },
   // ── Tradeify ─────────────────────────────────────────────────────────
-  // Growth accounts: trailing EOD + daily loss limit. Pago único.
+  // Select: sin DLL, suscripción mensual. Growth: con DLL, suscripción mensual.
   {
     id: "tradeify",
     nombre: "Tradeify",
     planes: [
-      { nombre: "25K", balance: 25000, objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: 600, challengeType: "una_fase", costo: 99, tipoCosto: "único" },
-      { nombre: "50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: 1250, challengeType: "una_fase", costo: 145, tipoCosto: "único" },
-      { nombre: "100K", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: 2500, challengeType: "una_fase", costo: 255, tipoCosto: "único" },
-      { nombre: "150K", balance: 150000, objetivoPct: 6, drawdownTotal: 5000, perdidaDiaria: 3750, challengeType: "una_fase", costo: 369, tipoCosto: "único" },
+      // Select (sin DLL)
+      { nombre: "Select 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: null, challengeType: "una_fase", costo: 159, tipoCosto: "mensual" },
+      { nombre: "Select 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: null, challengeType: "una_fase", costo: 259, tipoCosto: "mensual" },
+      { nombre: "Select 150K", balance: 150000, objetivoPct: 6, drawdownTotal: 5000, perdidaDiaria: null, challengeType: "una_fase", costo: 359, tipoCosto: "mensual" },
+      // Growth (con DLL — más barato que Select)
+      { nombre: "Growth 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: 1250, challengeType: "una_fase", costo: 139, tipoCosto: "mensual" },
+      { nombre: "Growth 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: 2500, challengeType: "una_fase", costo: 249, tipoCosto: "mensual" },
+      { nombre: "Growth 150K", balance: 150000, objetivoPct: 6, drawdownTotal: 5000, perdidaDiaria: 3750, challengeType: "una_fase", costo: 359, tipoCosto: "mensual" },
     ],
   },
   // ── TradeDay ─────────────────────────────────────────────────────────
-  // Trailing drawdown solo, sin daily loss. Pago único (Fast Pass).
+  // Intraday: trailing intraday, sin DLL. EOD: trailing EOD, sin DLL. Ambos pago único.
   {
     id: "tradeday",
     nombre: "TradeDay",
     planes: [
-      { nombre: "25K", balance: 25000, objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 59, tipoCosto: "único" },
-      { nombre: "50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 85, tipoCosto: "único" },
-      { nombre: "100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 149, tipoCosto: "único" },
-      { nombre: "150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 225, tipoCosto: "único" },
+      // Intraday
+      { nombre: "50K Intraday", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 125, tipoCosto: "único" },
+      { nombre: "100K Intraday", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 200, tipoCosto: "único" },
+      { nombre: "150K Intraday", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 300, tipoCosto: "único" },
+      // EOD
+      { nombre: "50K EOD", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 175, tipoCosto: "único" },
+      { nombre: "100K EOD", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 275, tipoCosto: "único" },
+      { nombre: "150K EOD", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 375, tipoCosto: "único" },
     ],
   },
   // ── MyFundedFutures ──────────────────────────────────────────────────
-  // 1 fase, trailing EOD. Plan Rapid: sin daily loss, pago único.
+  // Rapid: trailing EOD, sin DLL. Pago único.
   {
     id: "mff",
     nombre: "MyFundedFutures",
     planes: [
-      { nombre: "25K Rapid", balance: 25000, objetivoPct: 6, drawdownTotal: 1500, perdidaDiaria: null, challengeType: "una_fase", costo: 109, tipoCosto: "único" },
+      { nombre: "25K Rapid", balance: 25000, objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 109, tipoCosto: "único" },
       { nombre: "50K Rapid", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 149, tipoCosto: "único" },
       { nombre: "100K Rapid", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 339, tipoCosto: "único" },
       { nombre: "150K Rapid", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 489, tipoCosto: "único" },
     ],
   },
   // ── Earn2Trade ───────────────────────────────────────────────────────
-  // Gauntlet Mini: 1 fase, trailing EOD + daily loss limit. Suscripción mensual.
+  // Gauntlet Mini: 1 fase, trailing EOD + DLL fijo. TCP: 2 fases, sin DLL. Ambos pago único.
   {
     id: "earn2trade",
     nombre: "Earn2Trade",
     planes: [
-      { nombre: "Gauntlet Mini 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1100, challengeType: "una_fase", costo: 170, tipoCosto: "mensual" },
-      { nombre: "Gauntlet Mini 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3500, perdidaDiaria: 2200, challengeType: "una_fase", costo: 315, tipoCosto: "mensual" },
-      { nombre: "Gauntlet Mini 150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 3300, challengeType: "una_fase", costo: 375, tipoCosto: "mensual" },
-      { nombre: "Gauntlet Mini 200K", balance: 200000, objetivoPct: 5, drawdownTotal: 6000, perdidaDiaria: 4400, challengeType: "una_fase", costo: 550, tipoCosto: "mensual" },
+      // Gauntlet Mini (con DLL)
+      { nombre: "Gauntlet Mini 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1100, challengeType: "una_fase", costo: 170, tipoCosto: "único" },
+      { nombre: "Gauntlet Mini 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3500, perdidaDiaria: 2200, challengeType: "una_fase", costo: 315, tipoCosto: "único" },
+      { nombre: "Gauntlet Mini 150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 3300, challengeType: "una_fase", costo: 375, tipoCosto: "único" },
+      { nombre: "Gauntlet Mini 200K", balance: 200000, objetivoPct: 5, drawdownTotal: 6000, perdidaDiaria: 4400, challengeType: "una_fase", costo: 550, tipoCosto: "único" },
+      // TCP - The Trader Career Path (2 fases, sin DLL)
+      { nombre: "TCP 25K", balance: 25000, objetivoPct: 6, drawdownTotal: 1500, perdidaDiaria: null, challengeType: "dos_fases", costo: 60, tipoCosto: "único" },
+      { nombre: "TCP 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: null, challengeType: "dos_fases", costo: 76, tipoCosto: "único" },
+      { nombre: "TCP 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: null, challengeType: "dos_fases", costo: 140, tipoCosto: "único" },
     ],
   },
   // ── Lucid Trading ────────────────────────────────────────────────────
-  // LucidFlex: sin daily loss. LucidPro: con DLL en 50K+. Todos pago único.
+  // LucidFlex: sin DLL. LucidPro: DLL opcional (mismo precio con o sin).
+  // LucidDirect: cuenta instantánea (ya fondeada). Todos pago único.
   {
     id: "lucid",
     nombre: "Lucid Trading",
     planes: [
+      // LucidFlex (sin DLL siempre)
       { nombre: "LucidFlex 25K", balance: 25000, objetivoPct: 5, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 100, tipoCosto: "único" },
       { nombre: "LucidFlex 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 140, tipoCosto: "único" },
       { nombre: "LucidFlex 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 225, tipoCosto: "único" },
       { nombre: "LucidFlex 150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 420, tipoCosto: "único" },
-      { nombre: "LucidPro 25K", balance: 25000, objetivoPct: 5, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 135, tipoCosto: "único" },
-      { nombre: "LucidPro 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1200, challengeType: "una_fase", costo: 185, tipoCosto: "único" },
-      { nombre: "LucidPro 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 1800, challengeType: "una_fase", costo: 285, tipoCosto: "único" },
-      { nombre: "LucidPro 150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 2700, challengeType: "una_fase", costo: 370, tipoCosto: "único" },
+      // LucidPro sin DLL (toggle OFF — mismo precio)
+      { nombre: "LucidPro 25K sin DLL", balance: 25000, objetivoPct: 5, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 123, tipoCosto: "único" },
+      { nombre: "LucidPro 50K sin DLL", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 192, tipoCosto: "único" },
+      { nombre: "LucidPro 100K sin DLL", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 307, tipoCosto: "único" },
+      { nombre: "LucidPro 150K sin DLL", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 370, tipoCosto: "único" },
+      // LucidPro con DLL (toggle ON — mismo precio)
+      { nombre: "LucidPro 25K con DLL", balance: 25000, objetivoPct: 5, drawdownTotal: 1000, perdidaDiaria: 600, challengeType: "una_fase", costo: 123, tipoCosto: "único" },
+      { nombre: "LucidPro 50K con DLL", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1200, challengeType: "una_fase", costo: 192, tipoCosto: "único" },
+      { nombre: "LucidPro 100K con DLL", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 1800, challengeType: "una_fase", costo: 307, tipoCosto: "único" },
+      { nombre: "LucidPro 150K con DLL", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 2700, challengeType: "una_fase", costo: 370, tipoCosto: "único" },
+      // LucidDirect (cuenta ya fondeada — instantánea)
+      { nombre: "LucidDirect 25K", balance: 25000, objetivoPct: 5, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "instantanea", costo: 340, tipoCosto: "único" },
+      { nombre: "LucidDirect 50K con DLL", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1200, challengeType: "instantanea", costo: 520, tipoCosto: "único" },
+      { nombre: "LucidDirect 100K con DLL", balance: 100000, objetivoPct: 6, drawdownTotal: 3500, perdidaDiaria: 2100, challengeType: "instantanea", costo: 700, tipoCosto: "único" },
+      { nombre: "LucidDirect 150K con DLL", balance: 150000, objetivoPct: 6, drawdownTotal: 5000, perdidaDiaria: 3000, challengeType: "instantanea", costo: 840, tipoCosto: "único" },
     ],
   },
   // ── Bulenox ──────────────────────────────────────────────────────────
-  // Opción 2 (EOD trailing + daily loss limit). Suscripción mensual.
+  // Trailing EOD. DLL opcional (mismo precio con o sin). Suscripción mensual.
   {
     id: "bulenox",
     nombre: "Bulenox",
     planes: [
-      { nombre: "10K", balance: 10000, objetivoPct: 6, drawdownTotal: 600, perdidaDiaria: 400, challengeType: "una_fase", costo: 98, tipoCosto: "único" },
-      { nombre: "25K", balance: 25000, objetivoPct: 6, drawdownTotal: 1500, perdidaDiaria: 500, challengeType: "una_fase", costo: 143, tipoCosto: "único" },
-      { nombre: "50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: 1100, challengeType: "una_fase", costo: 148, tipoCosto: "único" },
-      { nombre: "100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 2200, challengeType: "una_fase", costo: 248, tipoCosto: "único" },
-      { nombre: "150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 3300, challengeType: "una_fase", costo: 498, tipoCosto: "único" },
-      { nombre: "250K", balance: 250000, objetivoPct: 6, drawdownTotal: 6000, perdidaDiaria: 4500, challengeType: "una_fase", costo: 898, tipoCosto: "único" },
+      { nombre: "25K sin DLL", balance: 25000, objetivoPct: 6, drawdownTotal: 1500, perdidaDiaria: null, challengeType: "una_fase", costo: 15.95, tipoCosto: "mensual" },
+      { nombre: "25K con DLL", balance: 25000, objetivoPct: 6, drawdownTotal: 1500, perdidaDiaria: 500, challengeType: "una_fase", costo: 15.95, tipoCosto: "mensual" },
+      { nombre: "50K sin DLL", balance: 50000, objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: null, challengeType: "una_fase", costo: 19.25, tipoCosto: "mensual" },
+      { nombre: "50K con DLL", balance: 50000, objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: 1100, challengeType: "una_fase", costo: 19.25, tipoCosto: "mensual" },
+      { nombre: "100K sin DLL", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 23.65, tipoCosto: "mensual" },
+      { nombre: "100K con DLL", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 2200, challengeType: "una_fase", costo: 23.65, tipoCosto: "mensual" },
+      { nombre: "150K sin DLL", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 35.75, tipoCosto: "mensual" },
+      { nombre: "150K con DLL", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 3300, challengeType: "una_fase", costo: 35.75, tipoCosto: "mensual" },
+      { nombre: "250K sin DLL", balance: 250000, objetivoPct: 6, drawdownTotal: 5500, perdidaDiaria: null, challengeType: "una_fase", costo: 58.85, tipoCosto: "mensual" },
+      { nombre: "250K con DLL", balance: 250000, objetivoPct: 6, drawdownTotal: 5500, perdidaDiaria: 4500, challengeType: "una_fase", costo: 58.85, tipoCosto: "mensual" },
     ],
   },
   // ── Take Profit Trader ───────────────────────────────────────────────
-  // Trailing drawdown EOD, sin daily loss. Pago único.
+  // Trailing drawdown EOD, sin DLL. Pago único.
   {
     id: "tpt",
     nombre: "Take Profit Trader",
     planes: [
-      { nombre: "50K", balance: 50000, objetivoPct: 4, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 150, tipoCosto: "único" },
-      { nombre: "100K", balance: 100000, objetivoPct: 4, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 250, tipoCosto: "único" },
-      { nombre: "150K", balance: 150000, objetivoPct: 4, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 350, tipoCosto: "único" },
+      { nombre: "25K", balance: 25000, objetivoPct: 5, drawdownTotal: 1500, perdidaDiaria: null, challengeType: "una_fase", costo: 150, tipoCosto: "único" },
+      { nombre: "50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 170, tipoCosto: "único" },
+      { nombre: "75K", balance: 75000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 245, tipoCosto: "único" },
+      { nombre: "100K", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: null, challengeType: "una_fase", costo: 330, tipoCosto: "único" },
+      { nombre: "150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 360, tipoCosto: "único" },
     ],
   },
   // ── Alpha Futures ────────────────────────────────────────────────────
-  // Standard Eval: trailing EOD, sin daily loss. Suscripción mensual.
+  // Standard: trailing EOD, sin DLL. Zero: mismas reglas, precio mayor. Suscripción mensual.
   {
     id: "alpha",
     nombre: "Alpha Futures",
     planes: [
-      { nombre: "50K Standard", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 129, tipoCosto: "mensual" },
-      { nombre: "100K Standard", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 239, tipoCosto: "mensual" },
-      { nombre: "150K Standard", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 349, tipoCosto: "mensual" },
+      // Standard
+      { nombre: "Standard 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 79, tipoCosto: "mensual" },
+      { nombre: "Standard 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: null, challengeType: "una_fase", costo: 159, tipoCosto: "mensual" },
+      { nombre: "Standard 150K", balance: 150000, objetivoPct: 6, drawdownTotal: 6000, perdidaDiaria: null, challengeType: "una_fase", costo: 239, tipoCosto: "mensual" },
+      // Zero (sin comisiones en cuenta fondeada)
+      { nombre: "Zero 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 99, tipoCosto: "mensual" },
+      { nombre: "Zero 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: null, challengeType: "una_fase", costo: 199, tipoCosto: "mensual" },
     ],
   },
   // ── FundedNext Futures ───────────────────────────────────────────────
-  // Plan Rapid (1 fase, sin DLL). Plan Bolt 50K (con DLL 2%). Pago único.
+  // Legacy: trailing EOD, sin DLL. Bolt: con DLL. Rapid: trailing EOD, sin DLL. Pago único.
   {
     id: "fundednext",
     nombre: "FundedNext Futures",
     planes: [
-      { nombre: "25K Rapid", balance: 25000, objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 100, tipoCosto: "único" },
-      { nombre: "50K Bolt", balance: 50000, objetivoPct: 5, drawdownTotal: 2000, perdidaDiaria: 1000, challengeType: "una_fase", costo: 100, tipoCosto: "único" },
-      { nombre: "50K Rapid", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 200, tipoCosto: "único" },
-      { nombre: "100K Rapid", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 279, tipoCosto: "único" },
+      // Legacy (sin DLL)
+      { nombre: "Legacy 25K", balance: 25000, objetivoPct: 5, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 80, tipoCosto: "único" },
+      { nombre: "Legacy 50K", balance: 50000, objetivoPct: 5, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 150, tipoCosto: "único" },
+      { nombre: "Legacy 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 250, tipoCosto: "único" },
+      // Bolt (con DLL)
+      { nombre: "Bolt 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1000, challengeType: "una_fase", costo: 100, tipoCosto: "único" },
+      // Rapid (sin DLL)
+      { nombre: "Rapid 25K", balance: 25000, objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 150, tipoCosto: "único" },
+      { nombre: "Rapid 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 200, tipoCosto: "único" },
+      { nombre: "Rapid 100K", balance: 100000, objetivoPct: 5, drawdownTotal: 2500, perdidaDiaria: null, challengeType: "una_fase", costo: 280, tipoCosto: "único" },
     ],
   },
 ];
