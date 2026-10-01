@@ -9974,23 +9974,56 @@ function ModalNuevaCuenta({
               Usar plantilla de prop firm
             </p>
 
-            {/* Chips de firma */}
-            <div className="flex flex-wrap gap-1.5">
-              {FIRMAS_PROP.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => seleccionarFirma(f.id)}
-                  className={`rounded-full border px-3 py-1 text-[11px] font-medium transition-colors ${
-                    firmaId === f.id
-                      ? "border-kb-accent bg-kb-accent text-kb-bg"
-                      : "border-kb-border text-kb-text-secondary hover:border-kb-text-secondary hover:text-kb-text"
-                  }`}
-                >
-                  {f.nombre}
-                </button>
-              ))}
-            </div>
+            {/* Grid visual de firmas con ícono + nombre */}
+            {(() => {
+              const FIRMA_META: Record<string, { abbr: string; color: string; bg: string }> = {
+                apex:       { abbr: "ATF", color: "#f97316", bg: "rgba(249,115,22,0.15)" },
+                topstep:    { abbr: "TS",  color: "#3b82f6", bg: "rgba(59,130,246,0.15)" },
+                tradeify:   { abbr: "TF",  color: "#10b981", bg: "rgba(16,185,129,0.15)" },
+                tradeday:   { abbr: "TD",  color: "#8b5cf6", bg: "rgba(139,92,246,0.15)" },
+                mff:        { abbr: "MFF", color: "#f59e0b", bg: "rgba(245,158,11,0.15)" },
+                earn2trade: { abbr: "E2T", color: "#ef4444", bg: "rgba(239,68,68,0.15)"  },
+                lucid:      { abbr: "LT",  color: "#06b6d4", bg: "rgba(6,182,212,0.15)"  },
+                bulenox:    { abbr: "BX",  color: "#6366f1", bg: "rgba(99,102,241,0.15)" },
+                tpt:        { abbr: "TPT", color: "#22c55e", bg: "rgba(34,197,94,0.15)"  },
+                alpha:      { abbr: "AF",  color: "#a855f7", bg: "rgba(168,85,247,0.15)" },
+                fundednext: { abbr: "FNF", color: "#fb923c", bg: "rgba(251,146,60,0.15)" },
+              };
+              return (
+                <div className="grid grid-cols-2 gap-1.5">
+                  {FIRMAS_PROP.map((f) => {
+                    const meta = FIRMA_META[f.id] || { abbr: f.nombre.slice(0, 2).toUpperCase(), color: "#6b7280", bg: "rgba(107,114,128,0.15)" };
+                    const sel = firmaId === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => seleccionarFirma(f.id)}
+                        className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${
+                          sel
+                            ? "border-kb-accent bg-kb-accent/10"
+                            : "border-kb-border hover:border-kb-text-secondary"
+                        }`}
+                      >
+                        <span
+                          className="flex-shrink-0 flex items-center justify-center rounded-md text-[9px] font-bold"
+                          style={{
+                            width: 28, height: 28,
+                            backgroundColor: meta.bg,
+                            color: meta.color,
+                          }}
+                        >
+                          {meta.abbr}
+                        </span>
+                        <span className={`text-[11px] font-medium leading-tight ${sel ? "text-kb-accent" : "text-kb-text-secondary"}`}>
+                          {f.nombre}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {/* Botones de tamaño — con precio visible */}
             {firma && (
