@@ -9668,6 +9668,159 @@ function BarraLimitePerdida({
 }
 
 // =====================================================================
+// DATOS DE PROP FIRMS (plantillas para autocompletar nueva cuenta)
+// =====================================================================
+
+type PlanPropFirm = {
+  nombre: string;
+  balance: number;
+  objetivoPct: number;
+  drawdownTotal: number;
+  perdidaDiaria: number | null;
+  challengeType: AccountChallengeType;
+  costo: number;
+  tipoCosto: "mensual" | "único";
+};
+
+const FIRMAS_PROP: { id: string; nombre: string; planes: PlanPropFirm[] }[] = [
+  // ── Apex Trader Funding ─────────────────────────────────────────────
+  // Trailing drawdown EOD, sin daily loss. Pago único por evaluación.
+  {
+    id: "apex",
+    nombre: "Apex Trader Funding",
+    planes: [
+      { nombre: "25K", balance: 25000, objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 199, tipoCosto: "único" },
+      { nombre: "50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 399, tipoCosto: "único" },
+      { nombre: "100K", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: null, challengeType: "una_fase", costo: 699, tipoCosto: "único" },
+      { nombre: "150K", balance: 150000, objetivoPct: 6, drawdownTotal: 6000, perdidaDiaria: null, challengeType: "una_fase", costo: 999, tipoCosto: "único" },
+    ],
+  },
+  // ── Topstep ─────────────────────────────────────────────────────────
+  // Trailing MLL intraday + Daily Loss Limit separado. Suscripción mensual.
+  {
+    id: "topstep",
+    nombre: "Topstep",
+    planes: [
+      { nombre: "50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1000, challengeType: "una_fase", costo: 85, tipoCosto: "mensual" },
+      { nombre: "100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 2000, challengeType: "una_fase", costo: 129, tipoCosto: "mensual" },
+      { nombre: "150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 3000, challengeType: "una_fase", costo: 199, tipoCosto: "mensual" },
+    ],
+  },
+  // ── Tradeify ─────────────────────────────────────────────────────────
+  // Growth accounts: trailing EOD + daily loss limit. Pago único.
+  {
+    id: "tradeify",
+    nombre: "Tradeify",
+    planes: [
+      { nombre: "25K", balance: 25000, objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: 600, challengeType: "una_fase", costo: 99, tipoCosto: "único" },
+      { nombre: "50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: 1250, challengeType: "una_fase", costo: 145, tipoCosto: "único" },
+      { nombre: "100K", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: 2500, challengeType: "una_fase", costo: 255, tipoCosto: "único" },
+      { nombre: "150K", balance: 150000, objetivoPct: 6, drawdownTotal: 5000, perdidaDiaria: 3750, challengeType: "una_fase", costo: 369, tipoCosto: "único" },
+    ],
+  },
+  // ── TradeDay ─────────────────────────────────────────────────────────
+  // Trailing drawdown solo, sin daily loss. Pago único (Fast Pass).
+  {
+    id: "tradeday",
+    nombre: "TradeDay",
+    planes: [
+      { nombre: "25K", balance: 25000, objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 59, tipoCosto: "único" },
+      { nombre: "50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 85, tipoCosto: "único" },
+      { nombre: "100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 149, tipoCosto: "único" },
+      { nombre: "150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 225, tipoCosto: "único" },
+    ],
+  },
+  // ── MyFundedFutures ──────────────────────────────────────────────────
+  // 1 fase, trailing EOD. Plan Rapid: sin daily loss, pago único.
+  {
+    id: "mff",
+    nombre: "MyFundedFutures",
+    planes: [
+      { nombre: "25K Rapid", balance: 25000, objetivoPct: 6, drawdownTotal: 1500, perdidaDiaria: null, challengeType: "una_fase", costo: 109, tipoCosto: "único" },
+      { nombre: "50K Rapid", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 149, tipoCosto: "único" },
+      { nombre: "100K Rapid", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 339, tipoCosto: "único" },
+      { nombre: "150K Rapid", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 489, tipoCosto: "único" },
+    ],
+  },
+  // ── Earn2Trade ───────────────────────────────────────────────────────
+  // Gauntlet Mini: 1 fase, trailing EOD + daily loss limit. Suscripción mensual.
+  {
+    id: "earn2trade",
+    nombre: "Earn2Trade",
+    planes: [
+      { nombre: "Gauntlet Mini 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1100, challengeType: "una_fase", costo: 170, tipoCosto: "mensual" },
+      { nombre: "Gauntlet Mini 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3500, perdidaDiaria: 2200, challengeType: "una_fase", costo: 315, tipoCosto: "mensual" },
+      { nombre: "Gauntlet Mini 150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 3300, challengeType: "una_fase", costo: 375, tipoCosto: "mensual" },
+      { nombre: "Gauntlet Mini 200K", balance: 200000, objetivoPct: 5, drawdownTotal: 6000, perdidaDiaria: 4400, challengeType: "una_fase", costo: 550, tipoCosto: "mensual" },
+    ],
+  },
+  // ── Lucid Trading ────────────────────────────────────────────────────
+  // LucidFlex: sin daily loss. LucidPro: con DLL en 50K+. Todos pago único.
+  {
+    id: "lucid",
+    nombre: "Lucid Trading",
+    planes: [
+      { nombre: "LucidFlex 25K", balance: 25000, objetivoPct: 5, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 100, tipoCosto: "único" },
+      { nombre: "LucidFlex 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 140, tipoCosto: "único" },
+      { nombre: "LucidFlex 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 225, tipoCosto: "único" },
+      { nombre: "LucidFlex 150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 420, tipoCosto: "único" },
+      { nombre: "LucidPro 25K", balance: 25000, objetivoPct: 5, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 135, tipoCosto: "único" },
+      { nombre: "LucidPro 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1200, challengeType: "una_fase", costo: 185, tipoCosto: "único" },
+      { nombre: "LucidPro 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 1800, challengeType: "una_fase", costo: 285, tipoCosto: "único" },
+      { nombre: "LucidPro 150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 2700, challengeType: "una_fase", costo: 370, tipoCosto: "único" },
+    ],
+  },
+  // ── Bulenox ──────────────────────────────────────────────────────────
+  // Opción 2 (EOD trailing + daily loss limit). Suscripción mensual.
+  {
+    id: "bulenox",
+    nombre: "Bulenox",
+    planes: [
+      { nombre: "10K", balance: 10000, objetivoPct: 6, drawdownTotal: 600, perdidaDiaria: 400, challengeType: "una_fase", costo: 98, tipoCosto: "único" },
+      { nombre: "25K", balance: 25000, objetivoPct: 6, drawdownTotal: 1500, perdidaDiaria: 500, challengeType: "una_fase", costo: 143, tipoCosto: "único" },
+      { nombre: "50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: 1100, challengeType: "una_fase", costo: 148, tipoCosto: "único" },
+      { nombre: "100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 2200, challengeType: "una_fase", costo: 248, tipoCosto: "único" },
+      { nombre: "150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 3300, challengeType: "una_fase", costo: 498, tipoCosto: "único" },
+      { nombre: "250K", balance: 250000, objetivoPct: 6, drawdownTotal: 6000, perdidaDiaria: 4500, challengeType: "una_fase", costo: 898, tipoCosto: "único" },
+    ],
+  },
+  // ── Take Profit Trader ───────────────────────────────────────────────
+  // Trailing drawdown EOD, sin daily loss. Pago único.
+  {
+    id: "tpt",
+    nombre: "Take Profit Trader",
+    planes: [
+      { nombre: "50K", balance: 50000, objetivoPct: 4, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 150, tipoCosto: "único" },
+      { nombre: "100K", balance: 100000, objetivoPct: 4, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 250, tipoCosto: "único" },
+      { nombre: "150K", balance: 150000, objetivoPct: 4, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 350, tipoCosto: "único" },
+    ],
+  },
+  // ── Alpha Futures ────────────────────────────────────────────────────
+  // Standard Eval: trailing EOD, sin daily loss. Suscripción mensual.
+  {
+    id: "alpha",
+    nombre: "Alpha Futures",
+    planes: [
+      { nombre: "50K Standard", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 129, tipoCosto: "mensual" },
+      { nombre: "100K Standard", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 239, tipoCosto: "mensual" },
+      { nombre: "150K Standard", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 349, tipoCosto: "mensual" },
+    ],
+  },
+  // ── FundedNext Futures ───────────────────────────────────────────────
+  // Plan Rapid (1 fase, sin DLL). Plan Bolt 50K (con DLL 2%). Pago único.
+  {
+    id: "fundednext",
+    nombre: "FundedNext Futures",
+    planes: [
+      { nombre: "25K Rapid", balance: 25000, objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 100, tipoCosto: "único" },
+      { nombre: "50K Bolt", balance: 50000, objetivoPct: 5, drawdownTotal: 2000, perdidaDiaria: 1000, challengeType: "una_fase", costo: 100, tipoCosto: "único" },
+      { nombre: "50K Rapid", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 200, tipoCosto: "único" },
+      { nombre: "100K Rapid", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 279, tipoCosto: "único" },
+    ],
+  },
+];
+
+// =====================================================================
 // MODAL: crear nueva cuenta
 // =====================================================================
 
@@ -9690,6 +9843,53 @@ function ModalNuevaCuenta({
   const [phaseTargetPercent, setPhaseTargetPercent] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Selector de prop firm
+  const [firmaId, setFirmaId] = useState<string | null>(null);
+  const [planIdx, setPlanIdx] = useState<number | null>(null);
+  const [plantillaAplicada, setPlantillaAplicada] = useState(false);
+  const [usarDailyLoss, setUsarDailyLoss] = useState(true);
+
+  const firma = FIRMAS_PROP.find((f) => f.id === firmaId) ?? null;
+
+  function aplicarPlan(f: (typeof FIRMAS_PROP)[0], idx: number) {
+    const plan = f.planes[idx];
+    setBroker(f.nombre);
+    setStartingBalance(String(plan.balance));
+    setChallengeType(plan.challengeType);
+    setAccountType("demo");
+    setPhaseTargetPercent(String(plan.objetivoPct));
+    setMaxTotalLoss(String(plan.drawdownTotal));
+    setUsarDailyLoss(true);
+    setMaxDailyLoss(plan.perdidaDiaria !== null ? String(plan.perdidaDiaria) : "");
+    setPurchaseCost(String(plan.costo));
+    if (!name.trim()) {
+      setName(`${f.nombre} ${plan.nombre}`);
+    }
+    setPlanIdx(idx);
+    setPlantillaAplicada(true);
+  }
+
+  function toggleDailyLoss(checked: boolean) {
+    setUsarDailyLoss(checked);
+    if (firma && planIdx !== null) {
+      const plan = firma.planes[planIdx];
+      setMaxDailyLoss(checked && plan.perdidaDiaria !== null ? String(plan.perdidaDiaria) : "");
+    }
+  }
+
+  function seleccionarFirma(id: string) {
+    if (firmaId === id) {
+      setFirmaId(null);
+      setPlanIdx(null);
+      setPlantillaAplicada(false);
+    } else {
+      setFirmaId(id);
+      setPlanIdx(null);
+      setPlantillaAplicada(false);
+    }
+  }
+
   useCerrarConEscape(onClose);
 
   // La fase inicial queda determinada por el tipo de cuenta elegido, para
@@ -9768,6 +9968,133 @@ function ModalNuevaCuenta({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* ── Selector de prop firm ─────────────────────────── */}
+          <div className="rounded-lg border border-kb-border-soft bg-kb-bg p-3 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-kb-text-secondary">
+              Usar plantilla de prop firm
+            </p>
+
+            {/* Chips de firma */}
+            <div className="flex flex-wrap gap-1.5">
+              {FIRMAS_PROP.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => seleccionarFirma(f.id)}
+                  className={`rounded-full border px-3 py-1 text-[11px] font-medium transition-colors ${
+                    firmaId === f.id
+                      ? "border-kb-accent bg-kb-accent text-kb-bg"
+                      : "border-kb-border text-kb-text-secondary hover:border-kb-text-secondary hover:text-kb-text"
+                  }`}
+                >
+                  {f.nombre}
+                </button>
+              ))}
+            </div>
+
+            {/* Botones de tamaño — con precio visible */}
+            {firma && (
+              <div>
+                <p className="mb-1.5 text-[11px] text-kb-text-muted">Elige el tamaño:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {firma.planes.map((plan, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => aplicarPlan(firma, idx)}
+                      className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                        planIdx === idx && plantillaAplicada
+                          ? "border-kb-profit bg-kb-profit/10"
+                          : "border-kb-border hover:border-kb-text-secondary"
+                      }`}
+                    >
+                      <p className={`text-xs font-bold ${planIdx === idx && plantillaAplicada ? "text-kb-profit" : "text-kb-text"}`}>
+                        {plan.nombre}
+                      </p>
+                      <p className={`text-[10px] ${planIdx === idx && plantillaAplicada ? "text-kb-profit/70" : "text-kb-text-muted"}`}>
+                        desde ~${plan.costo}/{plan.tipoCosto === "mensual" ? "mes" : "único"}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Panel de detalles cuando hay un plan seleccionado */}
+            {plantillaAplicada && firma && planIdx !== null && (() => {
+              const plan = firma.planes[planIdx];
+              const ddPct = ((plan.drawdownTotal / plan.balance) * 100).toFixed(1);
+              const dlPct = plan.perdidaDiaria
+                ? ((plan.perdidaDiaria / plan.balance) * 100).toFixed(1)
+                : null;
+              return (
+                <div className="rounded-lg border border-kb-profit/25 bg-kb-profit/5 p-3 space-y-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-kb-profit">
+                    ✓ Plantilla aplicada — {firma.nombre} {plan.nombre}
+                  </p>
+
+                  {/* Grid de métricas */}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    <div>
+                      <p className="text-[10px] text-kb-text-muted">Balance</p>
+                      <p className="text-xs font-semibold text-kb-text">${plan.balance.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-kb-text-muted">Objetivo fase</p>
+                      <p className="text-xs font-semibold text-kb-text">{plan.objetivoPct}%</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-kb-text-muted">Drawdown total</p>
+                      <p className="text-xs font-semibold text-kb-text">${plan.drawdownTotal.toLocaleString()} ({ddPct}%)</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-kb-text-muted">Tipo de challenge</p>
+                      <p className="text-xs font-semibold text-kb-text">{CHALLENGE_TYPE_LABELS[plan.challengeType]}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-kb-text-muted">Precio base (sin promo)</p>
+                      <p className="text-xs font-semibold text-kb-text">
+                        ~${plan.costo} {plan.tipoCosto === "mensual" ? "/ mes" : "(pago único)"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Toggle daily loss */}
+                  {plan.perdidaDiaria !== null ? (
+                    <div className="flex items-center justify-between rounded-md border border-kb-border-soft bg-kb-bg px-2.5 py-2">
+                      <div>
+                        <p className="text-[11px] font-medium text-kb-text">Daily loss limit</p>
+                        <p className="text-[10px] text-kb-text-muted">
+                          ${plan.perdidaDiaria.toLocaleString()} ({dlPct}% del balance)
+                        </p>
+                      </div>
+                      <label className="flex cursor-pointer items-center gap-2 select-none">
+                        <input
+                          type="checkbox"
+                          checked={usarDailyLoss}
+                          onChange={(e) => toggleDailyLoss(e.target.checked)}
+                          className="h-4 w-4 accent-kb-accent"
+                        />
+                        <span className={`text-[11px] font-medium ${usarDailyLoss ? "text-kb-profit" : "text-kb-text-muted"}`}>
+                          {usarDailyLoss ? "Activado" : "Desactivado"}
+                        </span>
+                      </label>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-kb-text-muted italic">
+                      Esta firma no maneja daily loss limit — solo drawdown total.
+                    </p>
+                  )}
+
+                  <p className="text-[9px] text-kb-text-muted">
+                    💡 Precios base (sin código promo). La mayoría de firmas tienen descuentos activos de 20–60% — siempre verifica promos en el sitio oficial antes de comprar.
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
+          {/* ───────────────────────────────────────────────────── */}
+
           <Campo etiqueta="Nombre de la cuenta" ayuda="Para identificarla rápido, ej. 'FTMO 10K' o 'Mi cuenta real'">
             <input
               required
@@ -13734,3 +14061,4 @@ function TablaTrades({
     </div>
   );
 }
+
