@@ -30,6 +30,9 @@ import {
   EMOTION_LABELS,
   EMOTION_EMOJI,
   MISTAKE_LABELS,
+  type Investment,
+  type InvestmentType,
+  INVESTMENT_TYPE_LABELS,
 } from "@/lib/supabase";
 
 // =====================================================================
@@ -126,6 +129,21 @@ function todayKey(): string {
 }
 
 /**
+ * Devuelve el offset UTC local del navegador como string con signo,
+ * ej. "-03:00" o "+00:00". Se usa para construir rangos de fecha en
+ * Supabase que respeten la zona horaria real del usuario en vez de
+ * tener el offset hardcodeado.
+ */
+function tzOffsetLocal(): string {
+  const off = new Date().getTimezoneOffset(); // minutos, positivo = atrás de UTC
+  const sign = off <= 0 ? "+" : "-";
+  const abs = Math.abs(off);
+  const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+  const mm = String(abs % 60).padStart(2, "0");
+  return `${sign}${hh}:${mm}`;
+}
+
+/**
  * BUGFIX: antes se usaba `trade.entry_time.slice(0, 10)` en varios
  * lugares para agrupar operaciones por día de calendario. El problema es
  * que entry_time se guarda como ISO en UTC (vía toISOString()), así que
@@ -181,13 +199,20 @@ function formatRMultiple(r: number | null): string {
  * al hacer clic afuera de la tarjeta del modal.
  */
 function useCerrarConEscape(onClose: () => void) {
+  // Guardamos siempre la versión más reciente de onClose en un ref para
+  // evitar el problema de "stale closure": el listener se registra una
+  // sola vez ([] como dependencia) pero siempre llama a la función actual.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     function manejarTecla(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     }
     window.addEventListener("keydown", manejarTecla);
     return () => window.removeEventListener("keydown", manejarTecla);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }
 
@@ -866,6 +891,7 @@ type Vista =
   | "configuracion"
   | "roi"
   | "retiros"
+  | "aportes"
   | "logros"
   | "importar"
   | "perfil";
@@ -1019,7 +1045,9 @@ const NAV_GRUPOS: NavGrupo[] = [
   },
   {
     titulo: "Cuenta",
-    items: [{ id: "perfil", etiqueta: "Perfil", icono: "⚙️" }],
+    items: [
+      { id: "perfil", etiqueta: "Perfil", icono: "⚙️" },
+    ],
   },
 ];
 
@@ -1043,6 +1071,7 @@ function SelectorCuentaSidebar({
   cargando,
   cuentaActivaId,
   pnlPorCuenta,
+  retiradoPorCuenta,
   onSeleccionar,
   onNuevaCuenta,
 }: {
@@ -1050,13 +1079,18 @@ function SelectorCuentaSidebar({
   cargando: boolean;
   cuentaActivaId: CuentaSeleccion;
   pnlPorCuenta: Map<string, number>;
+  retiradoPorCuenta: Map<string, number>;
   onSeleccionar: (id: CuentaSeleccion) => void;
   onNuevaCuenta: () => void;
 }) {
   const [abierto, setAbierto] = useState(false);
 
   const equityTotal = cuentas.reduce(
-    (acc, c) => acc + c.starting_balance + (pnlPorCuenta.get(c.id) ?? 0),
+    (acc, c) =>
+      acc +
+      c.starting_balance +
+      (pnlPorCuenta.get(c.id) ?? 0) -
+      (retiradoPorCuenta.get(c.id) ?? 0),
     0
   );
 
@@ -1065,7 +1099,9 @@ function SelectorCuentaSidebar({
     cuentaActivaId === "todas"
       ? equityTotal
       : cuentaActiva
-      ? cuentaActiva.starting_balance + (pnlPorCuenta.get(cuentaActiva.id) ?? 0)
+      ? cuentaActiva.starting_balance +
+        (pnlPorCuenta.get(cuentaActiva.id) ?? 0) -
+        (retiradoPorCuenta.get(cuentaActiva.id) ?? 0)
       : 0;
 
   return (
@@ -1108,7 +1144,7 @@ function SelectorCuentaSidebar({
             📊 Todas las cuentas
           </button>
           {cuentas.map((c) => {
-            const pnl = pnlPorCuenta.get(c.id) ?? 0;
+            const pnl = (pnlPorCuenta.get(c.id) ?? 0) - (retiradoPorCuenta.get(c.id) ?? 0);
             return (
               <button
                 key={c.id}
@@ -1237,6 +1273,8 @@ function Dashboard({
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
 
   const [retiros, setRetiros] = useState<Withdrawal[]>([]);
+  const [aportes, setAportes] = useState<Investment[]>([]);
+  const [cargandoAportes, setCargandoAportes] = useState(false);
   const [cargandoRetiros, setCargandoRetiros] = useState(true);
 
   const [logros, setLogros] = useState<Achievement[]>([]);
@@ -1294,12 +1332,16 @@ function Dashboard({
       pnl_alcanzado: pnlAlcanzado,
     });
 
+    // No reseteamos phase_target_percent a null: lo dejamos como estaba
+    // para que la barra de progreso de la nueva fase siga funcionando
+    // con el mismo objetivo como punto de partida. El usuario puede
+    // editarlo desde la tarjeta de cuenta si la nueva fase tiene un
+    // porcentaje diferente.
     await supabase
       .from("accounts")
       .update({
         phase: nuevaFase,
         phase_started_at: new Date().toISOString(),
-        phase_target_percent: null,
       })
       .eq("id", accountId);
 
@@ -1338,6 +1380,16 @@ function Dashboard({
     setCargandoRetiros(false);
   }
 
+  async function cargarAportes() {
+    setCargandoAportes(true);
+    const { data } = await supabase
+      .from("investments")
+      .select("*")
+      .order("investment_date", { ascending: false });
+    setAportes((data as Investment[]) ?? []);
+    setCargandoAportes(false);
+  }
+
   async function cargarLogros() {
     setCargandoLogros(true);
     const { data } = await supabase
@@ -1353,6 +1405,7 @@ function Dashboard({
     cargarTrades();
     cargarEstrategiasDashboard();
     cargarRetiros();
+    cargarAportes();
     cargarLogros();
     cargarHistorialFases();
   }, []);
@@ -1369,7 +1422,7 @@ function Dashboard({
    * por un cambio en las cuentas.
    */
   async function recargarTrasCambioDeCuentas() {
-    await Promise.all([cargarCuentas(), cargarTrades(), cargarRetiros(), cargarLogros()]);
+    await Promise.all([cargarCuentas(), cargarTrades(), cargarRetiros(), cargarAportes(), cargarLogros()]);
   }
 
   const cuentaActiva =
@@ -1385,7 +1438,7 @@ function Dashboard({
       NAV_GRUPOS.map((grupo) => ({
         ...grupo,
         items: grupo.items.filter(
-          (item) => hayCuentaReal || (item.id !== "roi" && item.id !== "retiros" && item.id !== "logros")
+          (item) => hayCuentaReal || (item.id !== "roi" && item.id !== "retiros" && item.id !== "logros" && item.id !== "aportes")
         ),
       })).filter((grupo) => grupo.items.length > 0),
     [hayCuentaReal]
@@ -1394,7 +1447,7 @@ function Dashboard({
   // Si la única cuenta real se elimina/archiva mientras estás viendo Retiros
   // o ROI, te manda de vuelta al Dashboard para no dejarte en una vista vacía.
   useEffect(() => {
-    if (!hayCuentaReal && (vista === "roi" || vista === "retiros" || vista === "logros")) {
+    if (!hayCuentaReal && (vista === "roi" || vista === "retiros" || vista === "logros" || vista === "aportes")) {
       setVista("inicio");
     }
   }, [hayCuentaReal, vista]);
@@ -1437,17 +1490,32 @@ function Dashboard({
     return mapa;
   }, [retiros]);
 
+  /** Suma de aportes reales (fees de challenge, reintentos…) por cuenta.
+   *  Reemplaza a purchase_cost en los cálculos de ROI. Si una cuenta no
+   *  tiene ningún aporte registrado, volvemos a purchase_cost como
+   *  aproximación para no romper cuentas viejas. */
+  const invertidoPorCuenta = useMemo(() => {
+    const mapa = new Map<string, number>();
+    aportes.forEach((a) => {
+      if (a.account_id) {
+        mapa.set(a.account_id, (mapa.get(a.account_id) ?? 0) + a.amount);
+      }
+    });
+    return mapa;
+  }, [aportes]);
+
   // P&L por cuenta, para mostrar un mini-resumen en cada chip del selector
   const pnlPorCuenta = useMemo(() => {
     const mapa = new Map<string, number>();
+    const idsActivas = new Set(cuentas.map((c) => c.id));
     trades
-      .filter((t) => t.status === "closed" && t.realized_pnl !== null && t.account_id)
+      .filter((t) => t.status === "closed" && t.realized_pnl !== null && t.account_id && idsActivas.has(t.account_id))
       .forEach((t) => {
         const previo = mapa.get(t.account_id as string) ?? 0;
         mapa.set(t.account_id as string, previo + (t.realized_pnl ?? 0));
       });
     return mapa;
-  }, [trades]);
+  }, [trades, cuentas]);
 
   const metricas = useMemo(() => {
     const cerrados = tradesDeLaCuenta
@@ -1467,21 +1535,18 @@ function Dashboard({
 
     const hoy = todayKey();
     const pnlHoy = cerrados
-      .filter((t) => {
-        const fecha = new Date(t.entry_time);
-        const clave = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(
-          fecha.getDate()
-        ).padStart(2, "0")}`;
-        return clave === hoy;
-      })
+      .filter((t) => fechaKeyLocal(t.entry_time) === hoy)
       .reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0);
 
     // Racha actual: cuenta trades consecutivos (del más reciente hacia
-    // atrás) con el mismo signo de resultado.
+    // atrás) con el mismo signo de resultado. Breakeven (P&L = 0) no
+    // suma ni corta la racha — se ignora completamente.
     let racha = 0;
     let tipoRacha: "ganadora" | "perdedora" | null = null;
     for (let i = cerrados.length - 1; i >= 0; i--) {
-      const esGanadora = (cerrados[i].realized_pnl ?? 0) >= 0;
+      const pnl = cerrados[i].realized_pnl ?? 0;
+      if (pnl === 0) continue; // breakeven no afecta la racha
+      const esGanadora = pnl > 0;
       if (tipoRacha === null) {
         tipoRacha = esGanadora ? "ganadora" : "perdedora";
         racha = 1;
@@ -1549,6 +1614,7 @@ function Dashboard({
             cargando={cargandoCuentas}
             cuentaActivaId={cuentaActivaId}
             pnlPorCuenta={pnlPorCuenta}
+            retiradoPorCuenta={retiradoPorCuenta}
             onSeleccionar={setCuentaActivaId}
             onNuevaCuenta={() => setMostrarModalCuenta(true)}
           />
@@ -1700,7 +1766,7 @@ function Dashboard({
                     📊 Todas las cuentas
                   </button>
                   {cuentas.map((c) => {
-                    const pnlChip = pnlPorCuenta.get(c.id) ?? 0;
+                    const pnlChip = (pnlPorCuenta.get(c.id) ?? 0) - (retiradoPorCuenta.get(c.id) ?? 0);
                     return (
                       <button
                         key={c.id}
@@ -1810,7 +1876,7 @@ function Dashboard({
             )}
 
             {vista === "roi" && (
-              <RoiCuentasView cuentas={cuentas} trades={trades} pnlPorCuenta={pnlPorCuenta} retiradoPorCuenta={retiradoPorCuenta} />
+              <RoiCuentasView cuentas={cuentas} trades={trades} pnlPorCuenta={pnlPorCuenta} retiradoPorCuenta={retiradoPorCuenta} invertidoPorCuenta={invertidoPorCuenta} retiros={retiros} aportes={aportes} />
             )}
 
             {vista === "retiros" && (
@@ -1833,6 +1899,7 @@ function Dashboard({
               />
             )}
 
+
             {vista === "importar" && (
               <ImportarView
                 cuentas={cuentas}
@@ -1852,6 +1919,7 @@ function Dashboard({
                 trades={trades}
                 pnlPorCuenta={pnlPorCuenta}
                 retiradoPorCuenta={retiradoPorCuenta}
+                invertidoPorCuenta={invertidoPorCuenta}
                 historialFases={historialFases}
                 onCambio={recargarTrasCambioDeCuentas}
                 onVerArchivadas={() => setMostrarArchivadas(true)}
@@ -2103,8 +2171,12 @@ function InicioView({
                   </span>
                 )}
                 {cuenta.phase !== "no_aplica" && (
-                  <span className="rounded-full bg-kb-accent/10 px-2 py-0.5 text-[11px] font-medium text-kb-accent">
-                    {PHASE_LABELS[cuenta.phase]}
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                    cuenta.phase === "financiada"
+                      ? "bg-kb-gain/15 text-kb-gain"
+                      : "bg-kb-accent/10 text-kb-accent"
+                  }`}>
+                    {cuenta.phase === "financiada" ? "✓ FONDEADA" : PHASE_LABELS[cuenta.phase]}
                   </span>
                 )}
                 {cuenta.challenge_type && cuenta.challenge_type !== "capital_propio" && (
@@ -4238,20 +4310,29 @@ function RoiCuentasView({
   trades,
   pnlPorCuenta,
   retiradoPorCuenta,
+  invertidoPorCuenta,
+  retiros,
+  aportes,
 }: {
   cuentas: Account[];
   trades: Trade[];
   pnlPorCuenta: Map<string, number>;
   retiradoPorCuenta: Map<string, number>;
+  invertidoPorCuenta: Map<string, number>;
+  retiros: Withdrawal[];
+  aportes: Investment[];
 }) {
   const filas = useMemo(() => {
     return cuentas.map((c) => {
       const pnl = pnlPorCuenta.get(c.id) ?? 0;
       const retirado = retiradoPorCuenta.get(c.id) ?? 0;
       const balanceActual = c.starting_balance + pnl - retirado;
-      // "Invertido" = lo que realmente pagaste por la cuenta (purchase_cost).
-      // Si no lo cargaste, usamos el balance inicial como aproximación.
-      const invertido = c.purchase_cost ?? c.starting_balance;
+      // "Invertido" = suma de aportes reales registrados en la tabla investments.
+      // Si no hay aportes cargados, cae en purchase_cost (cargado a mano al crear
+      // la cuenta) y si tampoco hay eso, usa el balance inicial como aproximación.
+      const aportesReales = invertidoPorCuenta.get(c.id);
+      const invertido = aportesReales ?? c.purchase_cost ?? c.starting_balance;
+      const tieneAportesReales = aportesReales !== undefined;
       const roi = invertido > 0 ? ((retirado - invertido) / invertido) * 100 : 0;
       const recuperado = retirado >= invertido;
       const diferencia = retirado - invertido;
@@ -4262,7 +4343,7 @@ function RoiCuentasView({
         balanceActual,
         roi,
         invertido,
-        costoSinCargar: c.purchase_cost === null,
+        costoSinCargar: !tieneAportesReales && c.purchase_cost === null,
         recuperado,
         diferencia,
       };
@@ -4333,7 +4414,7 @@ function RoiCuentasView({
                     {f.costoSinCargar && (
                       <span
                         className="ml-1.5 text-[10px] text-kb-accent"
-                        title="No cargaste el costo real de esta cuenta — se está usando el balance inicial como aproximación. Editala en Cuentas para corregirlo."
+                        title="No hay aportes registrados para esta cuenta ni purchase_cost — se está usando el balance inicial como aproximación. Cargá los aportes en la sección Aportes."
                       >
                         ⚠️ estimado
                       </span>
@@ -4365,7 +4446,7 @@ function RoiCuentasView({
         </div>
       </section>
 
-      <ReportesFiscalesSection trades={trades} cuentas={cuentas} />
+      <ReportesFiscalesSection trades={trades} cuentas={cuentas} retiros={retiros} aportes={aportes} />
     </div>
   );
 }
@@ -4377,20 +4458,76 @@ function RoiCuentasView({
 // el asesoramiento de un contador o abogado impositivo.
 // =====================================================================
 
-function ReportesFiscalesSection({ trades, cuentas }: { trades: Trade[]; cuentas: Account[] }) {
-  const [abierto, setAbierto] = useState(false);
+const MESES_CORTOS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 
+function ReportesFiscalesSection({
+  trades,
+  cuentas,
+  retiros,
+  aportes,
+}: {
+  trades: Trade[];
+  cuentas: Account[];
+  retiros: Withdrawal[];
+  aportes: Investment[];
+}) {
+  const [abierto, setAbierto] = useState(false);
+  const [tab, setTab] = useState<"retiros" | "pnl">("retiros");
+
+  // ── años con datos ─────────────────────────────────────────────────
   const añosDisponibles = useMemo(() => {
-    const set = new Set<number>();
+    const años = new Set<number>();
+    retiros.forEach((r) => años.add(new Date(r.withdrawal_date).getFullYear()));
     trades
       .filter((t) => t.status === "closed" && t.realized_pnl !== null)
-      .forEach((t) => set.add(new Date(t.entry_time).getFullYear()));
-    return Array.from(set).sort((a, b) => b - a);
-  }, [trades]);
+      .forEach((t) => años.add(new Date(t.entry_time).getFullYear()));
+    return Array.from(años).sort((a, b) => b - a);
+  }, [retiros, trades]);
 
   const [añoElegido, setAñoElegido] = useState<number>(() => new Date().getFullYear());
 
-  const filasPorCuenta = useMemo(() => {
+  // ── Tab "Retiros": tabla mes a mes ────────────────────────────────
+  const filasRetirosMes = useMemo(() => {
+    const retirosAño = retiros.filter(
+      (r) => new Date(r.withdrawal_date).getFullYear() === añoElegido
+    );
+    const porMes: Record<number, typeof retirosAño> = {};
+    retirosAño.forEach((r) => {
+      const mes = new Date(r.withdrawal_date).getMonth();
+      if (!porMes[mes]) porMes[mes] = [];
+      porMes[mes].push(r);
+    });
+
+    return Array.from({ length: 12 }, (_, mes) => {
+      const lista = porMes[mes] ?? [];
+      const bruto = lista.reduce((acc, r) => acc + r.amount, 0);
+      const fee = lista.reduce((acc, r) => acc + (r.platform_fee ?? 0), 0);
+      const neto = bruto - fee;
+      const brl = lista.reduce((acc, r) => acc + (r.brl_amount ?? 0), 0);
+      const ptaxList = lista.filter((r) => r.ptax_rate != null).map((r) => r.ptax_rate!);
+      const ptaxAvg = ptaxList.length > 0
+        ? ptaxList.reduce((a, b) => a + b, 0) / ptaxList.length
+        : null;
+      return { mes, qty: lista.length, bruto, fee, neto, brl, ptaxAvg };
+    }).filter((f) => f.qty > 0);
+  }, [retiros, añoElegido]);
+
+  const totalesRetiros = useMemo(() => ({
+    qty: filasRetirosMes.reduce((a, f) => a + f.qty, 0),
+    bruto: filasRetirosMes.reduce((a, f) => a + f.bruto, 0),
+    fee: filasRetirosMes.reduce((a, f) => a + f.fee, 0),
+    neto: filasRetirosMes.reduce((a, f) => a + f.neto, 0),
+    brl: filasRetirosMes.reduce((a, f) => a + f.brl, 0),
+  }), [filasRetirosMes]);
+
+  const totalAportadoAño = useMemo(() => {
+    return aportes
+      .filter((a) => new Date(a.investment_date).getFullYear() === añoElegido)
+      .reduce((acc, a) => acc + a.amount, 0);
+  }, [aportes, añoElegido]);
+
+  // ── Tab "P&L": tabla existente mejorada ───────────────────────────
+  const filasPnl = useMemo(() => {
     return cuentas
       .map((c) => {
         const cerrados = trades.filter(
@@ -4404,7 +4541,8 @@ function ReportesFiscalesSection({ trades, cuentas }: { trades: Trade[]; cuentas
           .filter((t) => (t.realized_pnl ?? 0) > 0)
           .reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0);
         const perdidaBruta = Math.abs(
-          cerrados.filter((t) => (t.realized_pnl ?? 0) < 0).reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0)
+          cerrados.filter((t) => (t.realized_pnl ?? 0) < 0)
+            .reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0)
         );
         const neto = gananciaBruta - perdidaBruta;
         const comisiones = cerrados.reduce((acc, t) => acc + (t.fees ?? 0), 0);
@@ -4413,49 +4551,88 @@ function ReportesFiscalesSection({ trades, cuentas }: { trades: Trade[]; cuentas
       .filter((f) => f.ops > 0);
   }, [trades, cuentas, añoElegido]);
 
-  const totalAño = useMemo(() => {
-    return filasPorCuenta.reduce(
-      (acc, f) => ({
-        gananciaBruta: acc.gananciaBruta + f.gananciaBruta,
-        perdidaBruta: acc.perdidaBruta + f.perdidaBruta,
-        neto: acc.neto + f.neto,
-        comisiones: acc.comisiones + f.comisiones,
-        ops: acc.ops + f.ops,
-      }),
-      { gananciaBruta: 0, perdidaBruta: 0, neto: 0, comisiones: 0, ops: 0 }
-    );
-  }, [filasPorCuenta]);
+  const totalPnl = useMemo(() => filasPnl.reduce(
+    (acc, f) => ({
+      ops: acc.ops + f.ops,
+      gananciaBruta: acc.gananciaBruta + f.gananciaBruta,
+      perdidaBruta: acc.perdidaBruta + f.perdidaBruta,
+      neto: acc.neto + f.neto,
+      comisiones: acc.comisiones + f.comisiones,
+    }),
+    { ops: 0, gananciaBruta: 0, perdidaBruta: 0, neto: 0, comisiones: 0 }
+  ), [filasPnl]);
 
+  // ── exportar CSV unificado ─────────────────────────────────────────
   function exportarCSV() {
-    const columnas = ["Cuenta", "Operaciones", "Ganancia bruta", "Pérdida bruta", "Comisiones", "Neto"];
-    const filas = filasPorCuenta.map((f) =>
-      [f.cuenta.name, f.ops, f.gananciaBruta.toFixed(2), f.perdidaBruta.toFixed(2), f.comisiones.toFixed(2), f.neto.toFixed(2)]
-        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-        .join(",")
-    );
-    const totalFila = [
+    const lineas: string[][] = [];
+
+    // Sección retiros
+    lineas.push([`REPORTE FISCAL ${añoElegido} — KeboTrader`]);
+    lineas.push([]);
+    lineas.push(["=== RETIROS / PAYOUTS ==="]);
+    lineas.push(["Mes", "Retiros", "Bruto (USD)", "Fee plataforma (USD)", "Neto (USD)", "PTAX promedio", "Equivalente BRL"]);
+    filasRetirosMes.forEach((f) => {
+      lineas.push([
+        MESES_CORTOS[f.mes],
+        String(f.qty),
+        f.bruto.toFixed(2),
+        f.fee.toFixed(2),
+        f.neto.toFixed(2),
+        f.ptaxAvg?.toFixed(4) ?? "",
+        f.brl > 0 ? f.brl.toFixed(2) : "",
+      ]);
+    });
+    lineas.push([
       "TOTAL",
-      totalAño.ops,
-      totalAño.gananciaBruta.toFixed(2),
-      totalAño.perdidaBruta.toFixed(2),
-      totalAño.comisiones.toFixed(2),
-      totalAño.neto.toFixed(2),
-    ].join(",");
-    const csv = [columnas.join(","), ...filas, totalFila].join("\n");
+      String(totalesRetiros.qty),
+      totalesRetiros.bruto.toFixed(2),
+      totalesRetiros.fee.toFixed(2),
+      totalesRetiros.neto.toFixed(2),
+      "",
+      totalesRetiros.brl > 0 ? totalesRetiros.brl.toFixed(2) : "",
+    ]);
+
+    lineas.push([]);
+    lineas.push(["=== P&L POR CUENTA ==="]);
+    lineas.push(["Cuenta", "Operaciones", "Ganancia bruta", "Pérdida bruta", "Comisiones", "Neto"]);
+    filasPnl.forEach((f) => {
+      lineas.push([
+        f.cuenta.name,
+        String(f.ops),
+        f.gananciaBruta.toFixed(2),
+        f.perdidaBruta.toFixed(2),
+        f.comisiones.toFixed(2),
+        f.neto.toFixed(2),
+      ]);
+    });
+    lineas.push([
+      "TOTAL", String(totalPnl.ops),
+      totalPnl.gananciaBruta.toFixed(2),
+      totalPnl.perdidaBruta.toFixed(2),
+      totalPnl.comisiones.toFixed(2),
+      totalPnl.neto.toFixed(2),
+    ]);
+
+    lineas.push([]);
+    lineas.push([`Total invertido en challenges ${añoElegido}`, `${totalAportadoAño.toFixed(2)} USD`]);
+    lineas.push(["Referencia legal (Brasil)", "Rendimentos Financeiros no Exterior — Lei 14.754/2023 — 15% flat"]);
+    lineas.push(["IMPORTANTE", "Este archivo es un resumen de datos. No reemplaza la asesoría de un contador."]);
+
+    const csv = lineas
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `kebotrader-reporte-fiscal-${añoElegido}.csv`;
+    a.download = `kebotrader-fiscal-${añoElegido}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
 
-  function imprimir() {
-    window.print();
-  }
+  const hayDatos = filasRetirosMes.length > 0 || filasPnl.length > 0;
 
   return (
     <section className="rounded-xl border border-kb-border bg-kb-surface">
@@ -4464,45 +4641,49 @@ function ReportesFiscalesSection({ trades, cuentas }: { trades: Trade[]; cuentas
         className="flex w-full items-center justify-between px-5 py-4 text-left"
       >
         <div>
-          <h2 className="font-display text-lg font-semibold">📄 Reportes fiscales</h2>
+          <h2 className="font-display text-lg font-semibold">📄 Reporte fiscal</h2>
           <p className="text-xs text-kb-text-secondary">
-            Resumen anual de ganancias y pérdidas, listo para llevarle a tu contador
+            Retiros, P&amp;L y aportes por año — listo para llevarle a tu contador
           </p>
         </div>
         <span className={`text-kb-text-muted transition-transform ${abierto ? "rotate-180" : ""}`}>⌄</span>
       </button>
 
       {abierto && (
-        <div className="border-t border-kb-border-soft px-5 py-5">
-          <div className="mb-4 rounded-lg border border-kb-accent/30 bg-kb-accent/10 p-3">
-            <p className="text-xs text-kb-accent">
-              <span className="font-semibold">Cómo usar esto:</span> acá te armamos los{" "}
-              <span className="font-semibold">números limpios</span> — cuánto ganaste, cuánto
-              perdiste y el neto de cada año, desglosado por cuenta. Cómo declarar esas
-              ganancias (qué formulario, qué categoría, qué % se paga) depende de las leyes
-              de cada país, y ahí es donde entra tu contador — nosotros no damos asesoría
-              impositiva, solo te ahorramos el trabajo de sumar todo a mano.
+        <div className="border-t border-kb-border-soft px-5 py-5 space-y-4">
+          {/* aviso legal */}
+          <div className="rounded-lg border border-kb-accent/30 bg-kb-accent/5 p-3 text-xs text-kb-text-secondary">
+            <p>
+              <span className="font-semibold text-kb-text">Para uso con tu contador:</span>{" "}
+              esta sección agrupa los números por año para simplificar la declaración.
+              En Brasil los rendimentos de prop firms del exterior tributan al{" "}
+              <span className="font-semibold text-kb-text">15% anual</span> bajo la{" "}
+              <span className="font-semibold text-kb-text">Lei 14.754/2023</span>, en la
+              ficha "Rendimentos Financeiros no Exterior" del IRPF — pero la declaración
+              final la hace un contador, no la app.
             </p>
           </div>
 
           {añosDisponibles.length === 0 ? (
             <p className="py-6 text-center text-sm text-kb-text-secondary">
-              Todavía no tenés operaciones cerradas para generar un reporte.
+              Todavía no hay retiros ni operaciones cerradas para generar un reporte.
             </p>
           ) : (
             <>
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <Campo etiqueta="Año">
+              {/* controles */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-kb-text-secondary">Año:</label>
                   <select
                     value={añoElegido}
                     onChange={(e) => setAñoElegido(Number(e.target.value))}
-                    className={inputClass}
+                    className={inputClass + " !w-auto"}
                   >
                     {añosDisponibles.map((a) => (
                       <option key={a} value={a}>{a}</option>
                     ))}
                   </select>
-                </Campo>
+                </div>
                 <div className="flex gap-2">
                   <button
                     onClick={exportarCSV}
@@ -4511,58 +4692,176 @@ function ReportesFiscalesSection({ trades, cuentas }: { trades: Trade[]; cuentas
                     📥 Exportar CSV
                   </button>
                   <button
-                    onClick={imprimir}
+                    onClick={() => window.print()}
                     className="rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
                   >
-                    🖨️ Imprimir / PDF
+                    🖨️ Imprimir
                   </button>
                 </div>
               </div>
 
-              {filasPorCuenta.length === 0 ? (
-                <p className="py-6 text-center text-sm text-kb-text-secondary">
-                  No hay operaciones cerradas en {añoElegido}.
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-kb-border-soft text-xs text-kb-text-secondary">
-                        <th className="px-3 py-2.5 font-medium">Cuenta</th>
-                        <th className="px-3 py-2.5 font-medium">Ops</th>
-                        <th className="px-3 py-2.5 font-medium">Ganancia bruta</th>
-                        <th className="px-3 py-2.5 font-medium">Pérdida bruta</th>
-                        <th className="px-3 py-2.5 font-medium">Comisiones</th>
-                        <th className="px-3 py-2.5 text-right font-medium">Neto</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filasPorCuenta.map((f) => (
-                        <tr key={f.cuenta.id} className="border-b border-kb-border-soft">
-                          <td className="px-3 py-2.5 font-medium text-kb-text">{f.cuenta.name}</td>
-                          <td className="px-3 py-2.5 font-mono text-kb-text-secondary">{f.ops}</td>
-                          <td className="px-3 py-2.5 font-mono text-kb-gain">{formatCurrency(f.gananciaBruta)}</td>
-                          <td className="px-3 py-2.5 font-mono text-kb-loss">{formatCurrency(f.perdidaBruta)}</td>
-                          <td className="px-3 py-2.5 font-mono text-kb-text-secondary">{formatCurrency(f.comisiones)}</td>
-                          <td className={`px-3 py-2.5 text-right font-mono font-semibold ${f.neto >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
-                            {formatCurrency(f.neto)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 border-kb-border-soft">
-                        <td className="px-3 py-3 font-bold text-kb-text">Total {añoElegido}</td>
-                        <td className="px-3 py-3 font-mono font-bold text-kb-text-secondary">{totalAño.ops}</td>
-                        <td className="px-3 py-3 font-mono font-bold text-kb-gain">{formatCurrency(totalAño.gananciaBruta)}</td>
-                        <td className="px-3 py-3 font-mono font-bold text-kb-loss">{formatCurrency(totalAño.perdidaBruta)}</td>
-                        <td className="px-3 py-3 font-mono font-bold text-kb-text-secondary">{formatCurrency(totalAño.comisiones)}</td>
-                        <td className={`px-3 py-3 text-right font-mono font-bold ${totalAño.neto >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
-                          {formatCurrency(totalAño.neto)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
+              {/* tabs */}
+              <div className="flex gap-1 rounded-lg border border-kb-border-soft bg-kb-bg p-1">
+                {(["retiros", "pnl"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTab(t)}
+                    className={`flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
+                      tab === t
+                        ? "bg-kb-surface text-kb-text shadow-sm"
+                        : "text-kb-text-secondary hover:text-kb-text"
+                    }`}
+                  >
+                    {t === "retiros" ? "💸 Retiros / Payouts" : "📊 P&L por cuenta"}
+                  </button>
+                ))}
+              </div>
+
+              {/* ── TAB: retiros ── */}
+              {tab === "retiros" && (
+                <div className="space-y-3">
+                  {filasRetirosMes.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-kb-text-secondary">
+                      No hay retiros registrados en {añoElegido}. Cargalos en la sección Retiros.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="overflow-x-auto rounded-lg border border-kb-border-soft">
+                        <table className="w-full text-left text-sm">
+                          <thead>
+                            <tr className="border-b border-kb-border-soft text-xs text-kb-text-secondary">
+                              <th className="px-4 py-3 font-medium">Mes</th>
+                              <th className="px-4 py-3 font-medium text-center">Retiros</th>
+                              <th className="px-4 py-3 font-medium text-right">Bruto (USD)</th>
+                              <th className="px-4 py-3 font-medium text-right">Fee</th>
+                              <th className="px-4 py-3 font-medium text-right">Neto (USD)</th>
+                              <th className="px-4 py-3 font-medium text-right">PTAX prom.</th>
+                              <th className="px-4 py-3 font-medium text-right">Neto (BRL)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filasRetirosMes.map((f) => (
+                              <tr key={f.mes} className="border-b border-kb-border-soft hover:bg-kb-bg/40">
+                                <td className="px-4 py-3 font-medium text-kb-text">{MESES_CORTOS[f.mes]}</td>
+                                <td className="px-4 py-3 text-center text-kb-text-secondary">{f.qty}</td>
+                                <td className="px-4 py-3 text-right font-mono text-kb-text">{formatCurrency(f.bruto)}</td>
+                                <td className="px-4 py-3 text-right font-mono text-kb-loss">
+                                  {f.fee > 0 ? `-${formatCurrency(f.fee)}` : "—"}
+                                </td>
+                                <td className="px-4 py-3 text-right font-mono font-semibold text-kb-gain">
+                                  {formatCurrency(f.neto)}
+                                </td>
+                                <td className="px-4 py-3 text-right font-mono text-kb-text-secondary text-xs">
+                                  {f.ptaxAvg ? f.ptaxAvg.toFixed(4) : "—"}
+                                </td>
+                                <td className="px-4 py-3 text-right font-mono text-kb-accent">
+                                  {f.brl > 0 ? `R$ ${f.brl.toFixed(2)}` : "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t-2 border-kb-border font-semibold">
+                              <td className="px-4 py-3 text-kb-text">Total {añoElegido}</td>
+                              <td className="px-4 py-3 text-center text-kb-text-secondary">{totalesRetiros.qty}</td>
+                              <td className="px-4 py-3 text-right font-mono text-kb-text">{formatCurrency(totalesRetiros.bruto)}</td>
+                              <td className="px-4 py-3 text-right font-mono text-kb-loss">
+                                {totalesRetiros.fee > 0 ? `-${formatCurrency(totalesRetiros.fee)}` : "—"}
+                              </td>
+                              <td className="px-4 py-3 text-right font-mono text-kb-gain">{formatCurrency(totalesRetiros.neto)}</td>
+                              <td className="px-4 py-3"></td>
+                              <td className="px-4 py-3 text-right font-mono text-kb-accent">
+                                {totalesRetiros.brl > 0 ? `R$ ${totalesRetiros.brl.toFixed(2)}` : "—"}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+
+                      {/* resumen + estimativa */}
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="rounded-lg border border-kb-border-soft bg-kb-bg p-3">
+                          <p className="text-[11px] text-kb-text-secondary">Neto recibido (USD)</p>
+                          <p className="mt-0.5 font-mono text-base font-bold text-kb-gain">{formatCurrency(totalesRetiros.neto)}</p>
+                        </div>
+                        <div className="rounded-lg border border-kb-border-soft bg-kb-bg p-3">
+                          <p className="text-[11px] text-kb-text-secondary">Equivalente BRL</p>
+                          <p className="mt-0.5 font-mono text-base font-bold text-kb-accent">
+                            {totalesRetiros.brl > 0 ? `R$ ${totalesRetiros.brl.toFixed(2)}` : "Cargar PTAX"}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-kb-gain/20 bg-kb-gain/5 p-3">
+                          <p className="text-[11px] text-kb-text-secondary">Estimativa IR (15% × BRL)</p>
+                          <p className="mt-0.5 font-mono text-base font-bold text-kb-text">
+                            {totalesRetiros.brl > 0
+                              ? `R$ ${(totalesRetiros.brl * 0.15).toFixed(2)}`
+                              : "—"}
+                          </p>
+                          <p className="mt-1 text-[10px] text-kb-text-muted">Lei 14.754/2023 · valor referencial</p>
+                        </div>
+                      </div>
+
+                      {totalAportadoAño > 0 && (
+                        <div className="rounded-lg border border-kb-border-soft bg-kb-bg/60 px-4 py-3 text-xs text-kb-text-secondary">
+                          <span className="font-medium text-kb-text">Total invertido en challenges {añoElegido}:</span>{" "}
+                          <span className="font-mono">{formatCurrency(totalAportadoAño)}</span>{" "}
+                          — este monto no es deducible automáticamente pero es relevante para calcular el lucro neto real; consultá con tu contador cómo declararlo.
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ── TAB: P&L ── */}
+              {tab === "pnl" && (
+                <div>
+                  {filasPnl.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-kb-text-secondary">
+                      No hay operaciones cerradas en {añoElegido}.
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border border-kb-border-soft">
+                      <table className="w-full text-left text-sm">
+                        <thead>
+                          <tr className="border-b border-kb-border-soft text-xs text-kb-text-secondary">
+                            <th className="px-4 py-3 font-medium">Cuenta</th>
+                            <th className="px-4 py-3 font-medium text-center">Ops</th>
+                            <th className="px-4 py-3 font-medium text-right">Ganancia</th>
+                            <th className="px-4 py-3 font-medium text-right">Pérdida</th>
+                            <th className="px-4 py-3 font-medium text-right">Comisiones</th>
+                            <th className="px-4 py-3 font-medium text-right">Neto</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filasPnl.map((f) => (
+                            <tr key={f.cuenta.id} className="border-b border-kb-border-soft hover:bg-kb-bg/40">
+                              <td className="px-4 py-3 font-medium text-kb-text">{f.cuenta.name}</td>
+                              <td className="px-4 py-3 text-center text-kb-text-secondary">{f.ops}</td>
+                              <td className="px-4 py-3 text-right font-mono text-kb-gain">{formatCurrency(f.gananciaBruta)}</td>
+                              <td className="px-4 py-3 text-right font-mono text-kb-loss">{formatCurrency(f.perdidaBruta)}</td>
+                              <td className="px-4 py-3 text-right font-mono text-kb-text-secondary">{formatCurrency(f.comisiones)}</td>
+                              <td className={`px-4 py-3 text-right font-mono font-semibold ${f.neto >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
+                                {formatCurrency(f.neto)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t-2 border-kb-border font-semibold">
+                            <td className="px-4 py-3 text-kb-text">Total {añoElegido}</td>
+                            <td className="px-4 py-3 text-center text-kb-text-secondary">{totalPnl.ops}</td>
+                            <td className="px-4 py-3 text-right font-mono text-kb-gain">{formatCurrency(totalPnl.gananciaBruta)}</td>
+                            <td className="px-4 py-3 text-right font-mono text-kb-loss">{formatCurrency(totalPnl.perdidaBruta)}</td>
+                            <td className="px-4 py-3 text-right font-mono text-kb-text-secondary">{formatCurrency(totalPnl.comisiones)}</td>
+                            <td className={`px-4 py-3 text-right font-mono ${totalPnl.neto >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
+                              {formatCurrency(totalPnl.neto)}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -4590,32 +4889,149 @@ function RetirosView({
   cargando: boolean;
   onCambio: () => void;
 }) {
+  // ── estado del formulario ──────────────────────────────────────────
   const cuentaParaRetiro = cuentaActivaId === "todas" ? "" : cuentaActivaId;
   const [accountId, setAccountId] = useState(cuentaParaRetiro || cuentas[0]?.id || "");
-  const [amount, setAmount] = useState("");
+  const [grossStr, setGrossStr] = useState("");          // monto bruto
+  const [feeStr, setFeeStr] = useState("");              // fee plataforma
+  const [paymentMethod, setPaymentMethod] = useState("Binance");
+  const [ptaxStr, setPtaxStr] = useState("");            // tasa PTAX
+  const [brlStr, setBrlStr] = useState("");              // BRL (editable)
+  const [receivedUsdtStr, setReceivedUsdtStr] = useState(""); // USDT recibidos en Binance
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofPreview, setProofPreview] = useState<string | null>(null);
+  const [proofPixFile, setProofPixFile] = useState<File | null>(null);
+  const [proofPixPreview, setProofPixPreview] = useState<string | null>(null);
+  const [subiendoPrueba, setSubiendoPrueba] = useState(false);
   const [fecha, setFecha] = useState(() => todayKey());
   const [notes, setNotes] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [buscandoPtax, setBuscandoPtax] = useState(false);
+  const [ptaxMensaje, setPtaxMensaje] = useState<string | null>(null);
+  const [mostrarGuia, setMostrarGuia] = useState(false);
 
-  const totalRetirado = useMemo(() => retiros.reduce((acc, r) => acc + r.amount, 0), [retiros]);
+  async function buscarPtax() {
+    if (!fecha) return;
+    setBuscandoPtax(true);
+    setPtaxMensaje(null);
+    try {
+      // API pública del Banco Central de Brasil — PTAX cotação dólar
+      // Formato de fecha requerido: MM-DD-YYYY
+      const [y, m, d] = fecha.split("-");
+      const dataFormatada = `${m}-${d}-${y}`;
+      const url =
+        `https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/` +
+        `CotacaoDolarDia(dataCotacao=@dataCotacao)?@dataCotacao='${dataFormatada}'` +
+        `&$top=1&$format=json&$select=cotacaoVenda`;
+      const res = await fetch(url);
+      const json = await res.json();
+      const cotacao: number | undefined = json?.value?.[0]?.cotacaoVenda;
+      if (cotacao) {
+        setPtaxStr(String(cotacao));
+        setPtaxMensaje(`✓ PTAX de venda: R$ ${cotacao.toFixed(4)}`);
+      } else {
+        // Fin de semana o feriado → no hay PTAX
+        setPtaxMensaje("Sin PTAX para esa fecha (feriado/fin de semana). Usá la del día hábil anterior.");
+      }
+    } catch {
+      setPtaxMensaje("No se pudo conectar al BCB. Ingresá la tasa manualmente.");
+    } finally {
+      setBuscandoPtax(false);
+    }
+  }
 
+  function seleccionarPrueba(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null;
+    setProofFile(f);
+    if (f) {
+      const url = URL.createObjectURL(f);
+      setProofPreview(url);
+    } else {
+      setProofPreview(null);
+    }
+  }
+
+  function seleccionarPruebaPix(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null;
+    setProofPixFile(f);
+    if (f) {
+      const url = URL.createObjectURL(f);
+      setProofPixPreview(url);
+    } else {
+      setProofPixPreview(null);
+    }
+  }
+
+  const gross = parseFloat(grossStr) || 0;
+  const fee = parseFloat(feeStr) || 0;
+  const neto = gross - fee;
+  const ptax = parseFloat(ptaxStr) || 0;
+
+  // ── auto-calcular BRL tributável (neto × PTAX) — siempre automático ──
+  useEffect(() => {
+    if (neto > 0 && ptax > 0) {
+      setBrlStr((neto * ptax).toFixed(2));
+    } else {
+      setBrlStr("");
+    }
+  }, [neto, ptax]);
+
+  // ── totales del historial ──────────────────────────────────────────
+  const totales = useMemo(() => {
+    const r = retiros;
+    const bruto = r.reduce((acc, x) => acc + x.amount, 0);
+    const feeTotal = r.reduce((acc, x) => acc + (x.platform_fee ?? 0), 0);
+    const neto = bruto - feeTotal;
+    const brl = r.reduce((acc, x) => acc + (x.brl_amount ?? 0), 0);
+    return { bruto, feeTotal, neto, brl };
+  }, [retiros]);
+
+  // ── envío ──────────────────────────────────────────────────────────
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
-    const monto = parseFloat(amount);
+    const monto = parseFloat(grossStr);
     if (!accountId || Number.isNaN(monto) || monto <= 0) {
-      setError("Selecciona una cuenta e ingresa un monto válido.");
+      setError("Seleccioná una cuenta e ingresá un monto bruto válido.");
       return;
     }
 
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData.user?.id;
     if (!userId) {
-      setError("Tu sesión expiró. Vuelve a iniciar sesión.");
+      setError("Tu sesión expiró. Volvé a iniciar sesión.");
       return;
     }
+
+    const feeVal = parseFloat(feeStr) || null;
+    const ptaxVal = parseFloat(ptaxStr) || null;
+    const brlVal = parseFloat(brlStr) || null;
+    const receivedUsdtVal = parseFloat(receivedUsdtStr) || null;
+
+    // ── subir comprobantes (Binance y PIX) ──────────────────────────
+    setSubiendoPrueba(true);
+    let proofUrl: string | null = null;
+    let proofPixUrl: string | null = null;
+
+    async function subirArchivo(file: File, sufijo: string): Promise<string | null> {
+      const ext = file.name.split(".").pop() ?? "jpg";
+      const path = `${userId}/${Date.now()}-${sufijo}.${ext}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("withdrawal-proofs")
+        .upload(path, file, { upsert: false });
+      if (uploadError) {
+        setError(`No se pudo subir el comprobante de ${sufijo} (${uploadError.message}), pero el retiro se guardará igual.`);
+        return null;
+      }
+      const { data: urlData } = supabase.storage.from("withdrawal-proofs").getPublicUrl(uploadData.path);
+      return urlData.publicUrl;
+    }
+
+    if (proofFile) proofUrl = await subirArchivo(proofFile, "binance");
+    if (proofPixFile) proofPixUrl = await subirArchivo(proofPixFile, "pix");
+    setSubiendoPrueba(false);
 
     setEnviando(true);
     const { error: insertError } = await conReintento(() =>
@@ -4623,6 +5039,13 @@ function RetirosView({
         user_id: userId,
         account_id: accountId,
         amount: monto,
+        platform_fee: feeVal,
+        payment_method: paymentMethod.trim() || null,
+        ptax_rate: ptaxVal,
+        brl_amount: brlVal,
+        received_usdt: receivedUsdtVal,
+        proof_url: proofUrl,
+        proof_pix_url: proofPixUrl,
         withdrawal_date: fecha,
         notes: notes.trim() === "" ? null : notes.trim(),
       })
@@ -4631,37 +5054,289 @@ function RetirosView({
 
     if (insertError) {
       setError(
-        `No se pudo registrar el retiro (lo intentamos dos veces). Revisa tu conexión e intenta de nuevo. Detalle: ${insertError.message}`
+        `No se pudo registrar el retiro. Revisá tu conexión e intentá de nuevo. Detalle: ${insertError.message}`
       );
       return;
     }
 
-    setAmount("");
+    // limpiar formulario
+    setGrossStr("");
+    setFeeStr("");
+    setPtaxStr("");
+    setBrlStr("");
+    setReceivedUsdtStr("");
+    setProofFile(null);
+    setProofPreview(null);
+    setProofPixFile(null);
+    setProofPixPreview(null);
     setNotes("");
     onCambio();
   }
 
   async function eliminar(id: string) {
-    await supabase.from("withdrawals").delete().eq("id", id);
+    const { error: deleteError } = await supabase.from("withdrawals").delete().eq("id", id);
+    if (deleteError) {
+      setError("No se pudo eliminar el retiro. Intenta de nuevo.");
+      return;
+    }
     onCambio();
+  }
+
+  // ── exportar CSV fiscal ────────────────────────────────────────────
+  function exportarCSV() {
+    // Cabecera en portugués para facilitar el trabajo con el contador
+    const header = [
+      "Data", "Conta", "Valor bruto (USD)", "Fee plataforma (USD)",
+      "Neto recebido (USD)", "USDT Binance", "Taxa PTAX (BRL/USD)",
+      "BRL tributável (Carnê-Leão)", "Método de recebimento", "Observações", "Comprovante Binance", "Comprovante PIX",
+    ];
+    const rows = retiros.map((r) => {
+      const conta = cuentas.find((c) => c.id === r.account_id)?.name ?? "—";
+      const fee = r.platform_fee ?? 0;
+      const neto = r.amount - fee;
+      return [
+        r.withdrawal_date,
+        conta,
+        r.amount.toFixed(2),
+        fee.toFixed(2),
+        neto.toFixed(2),
+        r.received_usdt?.toFixed(2) ?? "",
+        r.ptax_rate?.toFixed(4) ?? "",
+        r.brl_amount?.toFixed(2) ?? "",
+        r.payment_method ?? "",
+        r.notes ?? "",
+        r.proof_url ?? "",
+        r.proof_pix_url ?? "",
+      ];
+    });
+    const csv = [header, ...rows]
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, "\"\"\"")}"`).join(","))
+      .join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" }); // BOM para Excel
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `retiradas-kebotrader-${new Date().getFullYear()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="font-display text-xl font-bold text-kb-text">Retiros</h1>
-        <p className="mt-0.5 text-sm text-kb-text-secondary">
-          {retiros.length === 0
-            ? "Todavía no registraste ningún retiro."
-            : `${retiros.length} retiro${retiros.length === 1 ? "" : "s"} registrado${retiros.length === 1 ? "" : "s"} · ${formatCurrency(totalRetirado)} en total`}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-xl font-bold text-kb-text">Retiros</h1>
+          <p className="mt-0.5 text-sm text-kb-text-secondary">
+            {retiros.length === 0
+              ? "Todavía no registraste ningún retiro."
+              : `${retiros.length} retiro${retiros.length === 1 ? "" : "s"} · ${formatCurrency(totales.bruto)} bruto · ${formatCurrency(totales.neto)} neto`}
+          </p>
+        </div>
+        {retiros.length > 0 && (
+          <button
+            onClick={exportarCSV}
+            className="shrink-0 rounded-lg border border-kb-border-soft bg-kb-surface px-3 py-2 text-xs font-medium text-kb-text-secondary hover:text-kb-text hover:border-kb-gain/40 transition-colors"
+          >
+            📥 Exportar CSV fiscal
+          </button>
+        )}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
+      {/* ── guía contextual colapsable ────────────────────────── */}
+      <div className="rounded-xl border border-kb-border bg-kb-surface overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setMostrarGuia((v) => !v)}
+          className="flex w-full items-center justify-between px-5 py-3.5 text-left hover:bg-kb-bg/60 transition-colors"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="text-sm">📖</span>
+            <span className="text-sm font-semibold text-kb-text">¿Cómo funciona esta sección?</span>
+            <span className="text-[11px] text-kb-text-muted">— formulario, PTAX, CSV fiscal</span>
+          </div>
+          <span className="text-kb-text-muted transition-transform duration-200" style={{ display: "inline-block", transform: mostrarGuia ? "rotate(180deg)" : "rotate(0deg)" }}>
+            ▾
+          </span>
+        </button>
+
+        {mostrarGuia && (
+          <div className="border-t border-kb-border-soft px-5 py-5 space-y-8">
+
+            {/* ── Formulario 3 secciones ── */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2.5 pb-2.5 border-b border-kb-border-soft">
+                <span>💸</span>
+                <h3 className="font-display text-sm font-semibold text-kb-text">El formulario tiene 3 secciones con propósitos distintos</h3>
+              </div>
+
+              {/* Mock visual compacto del form */}
+              <div className="rounded-xl border border-kb-border bg-kb-bg overflow-hidden text-[12px]">
+                {/* A */}
+                <div className="p-3.5 space-y-2 border-b border-kb-border-soft">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-kb-text-muted">A — El retiro</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-lg bg-kb-surface border border-kb-border-soft px-2.5 py-1.5">
+                      <p className="text-[10px] text-kb-text-muted">Monto bruto (USD)</p>
+                      <p className="font-mono font-semibold text-kb-text">$500.00</p>
+                    </div>
+                    <div className="rounded-lg bg-kb-surface border border-kb-border-soft px-2.5 py-1.5">
+                      <p className="text-[10px] text-kb-text-muted">Fee plataforma</p>
+                      <p className="font-mono font-semibold text-kb-text">$50.00</p>
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-kb-gain/10 border border-kb-gain/20 px-2.5 py-1.5">
+                    <p className="text-[10px] text-kb-text-secondary">Neto que llega a tu billetera</p>
+                    <p className="font-mono font-bold text-kb-gain">$450.00</p>
+                  </div>
+                </div>
+                {/* B */}
+                <div className="p-3.5 space-y-2 border-b border-kb-border-soft bg-kb-accent/5">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-kb-accent">B — Para o Contador (Carnê-Leão)</p>
+                  <div className="flex gap-2 items-center">
+                    <div className="flex-1 rounded-lg bg-kb-surface border border-kb-accent/30 px-2.5 py-1.5">
+                      <p className="text-[10px] text-kb-text-muted">Taxa PTAX</p>
+                      <p className="font-mono font-semibold text-kb-accent">5.8850</p>
+                    </div>
+                    <div className="rounded-lg border border-kb-accent/30 bg-kb-accent/10 px-2.5 py-1.5 text-[11px] font-bold text-kb-accent">BCB</div>
+                  </div>
+                  <div className="rounded-lg bg-kb-gain/10 border border-kb-gain/20 px-2.5 py-1.5">
+                    <p className="text-[10px] text-kb-text-secondary">BRL tributável (base de cálculo IRPF)</p>
+                    <p className="font-mono text-base font-bold text-kb-gain">R$ 2.648,25</p>
+                    <p className="text-[10px] text-kb-text-muted mt-0.5">= $450.00 × 5.8850 PTAX</p>
+                  </div>
+                </div>
+                {/* C */}
+                <div className="p-3.5 space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#0EA5E9" }}>C — O que chegou na sua carteira</p>
+                  <div className="rounded-lg bg-kb-surface border border-kb-border-soft px-2.5 py-1.5">
+                    <p className="text-[10px] text-kb-text-muted">USDT recebidos no Binance</p>
+                    <p className="font-mono font-semibold" style={{ color: "#38BDF8" }}>448.20 USDT</p>
+                  </div>
+                  <div className="rounded-lg border border-dashed border-kb-border-soft px-2.5 py-1.5 text-[11px] text-kb-text-muted flex items-center gap-2">
+                    📷 Subir comprobante de recibo (opcional)
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {[
+                  { n: "A", t: "El retiro", d: "Bruto que pagó la prop firm, el fee que retuvieron (10% se calcula solo) y el neto. Siempre en USD." },
+                  { n: "B", t: "Para o Contador — Carnê-Leão", d: "Poné la fecha en A, hacé clic en BCB y la PTAX del Banco Central aparece sola. El BRL tributável se calcula automático. Ese número es lo que va en la declaración." },
+                  { n: "C", t: "O que chegou na sua carteira", d: "Cuántos USDT llegaron a Binance y la captura del comprobante. Registro personal y evidencia para el contador." },
+                ].map(({ n, t, d }) => (
+                  <div key={n} className="flex gap-3 items-start">
+                    <div className="shrink-0 mt-0.5 w-6 h-6 rounded-full bg-kb-bg border border-kb-border-soft flex items-center justify-center text-[11px] font-bold text-kb-text-muted">{n}</div>
+                    <div>
+                      <p className="text-sm font-semibold text-kb-text">{t}</p>
+                      <p className="text-[13px] text-kb-text-secondary mt-0.5 leading-relaxed">{d}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── PTAX ── */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2.5 pb-2.5 border-b border-kb-border-soft">
+                <span>🏦</span>
+                <h3 className="font-display text-sm font-semibold text-kb-text">PTAX automático del Banco Central</h3>
+              </div>
+              <div className="space-y-3">
+                {[
+                  { n: "1", t: "Poné la fecha en que recibiste el dinero", d: "El botón BCB usa esa fecha exacta para buscar la cotización oficial." },
+                  { n: "2", t: "Hacé clic en BCB", d: "Consulta la API pública del Banco Central de Brasil y trae el PTAX de venda del día." },
+                  { n: "3", t: "Si fue fin de semana o feriado", d: "El BCB no publica PTAX esos días. La app te avisa. En ese caso ingresás la tasa del último día hábil anterior manualmente." },
+                ].map(({ n, t, d }) => (
+                  <div key={n} className="flex gap-3 items-start">
+                    <div className="shrink-0 mt-0.5 w-6 h-6 rounded-full bg-kb-bg border border-kb-border-soft flex items-center justify-center text-[11px] font-bold text-kb-text-muted">{n}</div>
+                    <div>
+                      <p className="text-sm font-semibold text-kb-text">{t}</p>
+                      <p className="text-[13px] text-kb-text-secondary mt-0.5 leading-relaxed">{d}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-xl border border-kb-border-soft bg-kb-bg/60 px-4 py-3 text-[12px] text-kb-text-muted">
+                ⚠️ La PTAX que usa el Carnê-Leão es la <strong className="text-kb-text">de venda</strong>, no la de compra. El botón BCB ya trae la correcta.
+              </div>
+            </div>
+
+            {/* ── CSV fiscal ── */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2.5 pb-2.5 border-b border-kb-border-soft">
+                <span>📊</span>
+                <h3 className="font-display text-sm font-semibold text-kb-text">Exportar CSV para el contador</h3>
+              </div>
+              <div className="space-y-3">
+                {[
+                  { n: "1", t: "Hacé clic en \"📥 Exportar CSV fiscal\"", d: "Está en la esquina superior derecha de esta sección. Solo aparece cuando ya tenés retiros registrados." },
+                  { n: "2", t: "Mandáselo al contador", d: "Se descarga como retiradas-kebotrader-2026.csv. Abre en Excel con los caracteres en portugués correctos." },
+                ].map(({ n, t, d }) => (
+                  <div key={n} className="flex gap-3 items-start">
+                    <div className="shrink-0 mt-0.5 w-6 h-6 rounded-full bg-kb-bg border border-kb-border-soft flex items-center justify-center text-[11px] font-bold text-kb-text-muted">{n}</div>
+                    <div>
+                      <p className="text-sm font-semibold text-kb-text">{t}</p>
+                      <p className="text-[13px] text-kb-text-secondary mt-0.5 leading-relaxed">{d}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-kb-border bg-kb-bg">
+                <table className="w-full text-left text-[11px] font-mono">
+                  <thead>
+                    <tr className="border-b border-kb-border-soft text-[10px] text-kb-text-muted">
+                      {["Data","Conta","Bruto","Fee","Neto","USDT","PTAX","BRL tributável","Método"].map((h) => (
+                        <th key={h} className="px-3 py-2 whitespace-nowrap font-semibold">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="text-kb-text-secondary">
+                      <td className="px-3 py-2 whitespace-nowrap">2026-09-30</td>
+                      <td className="px-3 py-2 whitespace-nowrap">LucidFlex NQ</td>
+                      <td className="px-3 py-2 text-kb-gain font-semibold">500.00</td>
+                      <td className="px-3 py-2">50.00</td>
+                      <td className="px-3 py-2 text-kb-gain font-semibold">450.00</td>
+                      <td className="px-3 py-2">448.20</td>
+                      <td className="px-3 py-2">5.8850</td>
+                      <td className="px-3 py-2 text-kb-accent font-semibold">2648.25</td>
+                      <td className="px-3 py-2">Binance</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[12px] text-kb-text-muted">
+                La columna <span className="font-semibold text-kb-accent">BRL tributável</span> es lo que el contador usa directamente en el Carnê-Leão. No tiene que calcular nada.
+              </p>
+            </div>
+
+          </div>
+        )}
+      </div>
+
+      {/* totales rápidos */}
+      {retiros.length > 0 && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { label: "Total bruto (USD)", value: formatCurrency(totales.bruto), color: "text-kb-text" },
+            { label: "Total fee plataforma", value: formatCurrency(totales.feeTotal), color: "text-kb-loss" },
+            { label: "Total neto (USD)", value: formatCurrency(totales.neto), color: "text-kb-gain" },
+            { label: "Total en BRL", value: totales.brl > 0 ? `R$ ${totales.brl.toFixed(2)}` : "—", color: "text-kb-accent" },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="rounded-xl border border-kb-border-soft bg-kb-surface p-3">
+              <p className="text-[11px] text-kb-text-secondary">{label}</p>
+              <p className={`mt-0.5 font-mono text-base font-bold ${color}`}>{value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
+        {/* ── formulario ─────────────────────────────────────── */}
         <section className="h-fit rounded-xl border border-kb-border bg-kb-surface p-5">
-          <h2 className="font-display text-base font-semibold mb-1">Sacar ganancias</h2>
+          <h2 className="font-display text-base font-semibold mb-1">Registrar retiro</h2>
           <p className="mb-4 text-xs text-kb-text-secondary">
-            Cada retiro que cargues acá ajusta tu balance y tu rentabilidad automáticamente.
+            Cada retiro ajusta tu balance y tu rentabilidad automáticamente.
           </p>
 
           {cuentas.length === 0 ? (
@@ -4677,25 +5352,189 @@ function RetirosView({
                   ))}
                 </select>
               </Campo>
-              <Campo etiqueta="Monto retirado">
-                <input
-                  required
-                  type="number"
-                  step="any"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="Ej. 500"
-                  className={inputClass}
-                />
-              </Campo>
-              <Campo etiqueta="Fecha">
+
+              <Campo etiqueta="Fecha de recibo">
                 <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className={inputClass} />
               </Campo>
-              <Campo etiqueta="Notas (opcional)">
+
+              {/* fila bruto + fee */}
+              <div className="grid grid-cols-2 gap-2">
+                <Campo etiqueta="Monto bruto (USD)">
+                  <input
+                    required
+                    type="number"
+                    step="any"
+                    min="0.01"
+                    value={grossStr}
+                    onChange={(e) => setGrossStr(e.target.value)}
+                    placeholder="Ej. 500"
+                    className={inputClass}
+                  />
+                </Campo>
+                <Campo etiqueta="Fee plataforma (USD)">
+                  <div className="flex gap-1">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={feeStr}
+                      onChange={(e) => setFeeStr(e.target.value)}
+                      placeholder="Ej. 50"
+                      className={`${inputClass} flex-1`}
+                    />
+                    {gross > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setFeeStr((gross * 0.1).toFixed(2))}
+                        className="shrink-0 rounded-lg border border-kb-border-soft bg-kb-bg px-2 text-[11px] text-kb-text-muted hover:text-kb-text transition-colors"
+                        title="Aplicar 10% automático"
+                      >
+                        10%
+                      </button>
+                    )}
+                  </div>
+                </Campo>
+              </div>
+
+              {/* neto calculado */}
+              {gross > 0 && (
+                <div className="rounded-lg bg-kb-gain/10 border border-kb-gain/20 px-3 py-2">
+                  <p className="text-[11px] text-kb-text-secondary">Neto que llega a tu billetera</p>
+                  <p className="font-mono font-bold text-kb-gain">{formatCurrency(neto)}</p>
+                </div>
+              )}
+
+              {/* ── SECCIÓN B: Para o Contador (Carnê-Leão) ── */}
+              <div className="rounded-xl border border-kb-accent/20 bg-kb-accent/5 p-3 space-y-2.5">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-kb-text-secondary">
+                    📋 Para o contador — Carnê-Leão
+                  </p>
+                  <p className="text-[11px] text-kb-text-muted mt-0.5">
+                    Renda do exterior é declarada em BRL usando a PTAX do dia do recebimento.
+                  </p>
+                </div>
+
+                <Campo etiqueta="Taxa PTAX (BRL/USD)">
+                  <div className="flex gap-1">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={ptaxStr}
+                      onChange={(e) => { setPtaxStr(e.target.value); setPtaxMensaje(null); }}
+                      placeholder="Ej. 5.85"
+                      className={`${inputClass} flex-1`}
+                    />
+                    <button
+                      type="button"
+                      onClick={buscarPtax}
+                      disabled={buscandoPtax || !fecha}
+                      title="Buscar PTAX do Banco Central para a data selecionada"
+                      className="shrink-0 rounded-lg border border-kb-accent/40 bg-kb-accent/10 px-2 text-[11px] font-semibold text-kb-accent hover:bg-kb-accent/20 transition-colors disabled:opacity-50"
+                    >
+                      {buscandoPtax ? "…" : "BCB"}
+                    </button>
+                  </div>
+                </Campo>
+
+                {ptaxMensaje && (
+                  <p className={`text-[11px] -mt-1 ${ptaxMensaje.startsWith("✓") ? "text-kb-gain" : "text-kb-text-muted"}`}>
+                    {ptaxMensaje}
+                  </p>
+                )}
+
+                {/* BRL tributável — siempre auto-calculado, solo lectura */}
+                {brlStr ? (
+                  <div className="rounded-lg bg-kb-gain/10 border border-kb-gain/20 px-3 py-2">
+                    <p className="text-[11px] text-kb-text-secondary">BRL tributável (base de cálculo IRPF)</p>
+                    <p className="font-mono text-lg font-bold text-kb-gain">R$ {brlStr}</p>
+                    <p className="text-[11px] text-kb-text-muted mt-0.5">
+                      = {formatCurrency(neto)} neto × {ptaxStr} PTAX — este valor vai no Carnê-Leão
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-kb-text-muted">
+                    Clique em <span className="font-semibold text-kb-accent">BCB</span> para buscar a PTAX automaticamente e calcular a base tributável.
+                  </p>
+                )}
+              </div>
+
+              {/* ── SECCIÓN C: O que chegou na carteira ── */}
+              <div className="rounded-xl border border-kb-border-soft bg-kb-bg/60 p-3 space-y-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-kb-text-secondary">
+                  💰 O que chegou na sua carteira
+                </p>
+
+                <Campo etiqueta="Método de recebimento">
+                  <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className={inputClass}>
+                    <option value="Binance">Binance (USDT)</option>
+                    <option value="PayPal">PayPal</option>
+                    <option value="Transferencia bancaria">Transferência bancária</option>
+                    <option value="Wise">Wise</option>
+                    <option value="Otro">Outro</option>
+                  </select>
+                </Campo>
+
+                <Campo etiqueta="USDT recebidos no Binance" ayuda="Quantidade exata creditada na sua conta">
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={receivedUsdtStr}
+                    onChange={(e) => setReceivedUsdtStr(e.target.value)}
+                    placeholder="Ej. 448.20"
+                    className={inputClass}
+                  />
+                </Campo>
+
+                {/* Comprovantes — Binance y PIX */}
+                <div className="space-y-3">
+                  <p className="text-[11px] text-kb-text-secondary font-medium">Comprovantes (opcionais)</p>
+
+                  {/* Binance */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-kb-text-muted">📷 Binance — recibo USDT</p>
+                    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-kb-border-soft bg-kb-bg px-3 py-2.5 text-xs text-kb-text-secondary hover:border-kb-accent/50 hover:text-kb-accent transition-colors">
+                      <span>{proofFile ? "✓ " + proofFile.name : "Subir captura de Binance"}</span>
+                      <input type="file" accept="image/*,.pdf" className="hidden" onChange={seleccionarPrueba} />
+                    </label>
+                    {proofPreview && (
+                      <div className="relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={proofPreview} alt="Binance" className="w-full rounded-lg border border-kb-border-soft" style={{ maxHeight: "100px", objectFit: "contain" }} />
+                        <button type="button" onClick={() => { setProofFile(null); setProofPreview(null); }} className="absolute right-1.5 top-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white hover:bg-black/80">✕</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* PIX */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-kb-text-muted">🏦 PIX — comprovante bancário</p>
+                    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-kb-border-soft bg-kb-bg px-3 py-2.5 text-xs text-kb-text-secondary hover:border-kb-accent/50 hover:text-kb-accent transition-colors">
+                      <span>{proofPixFile ? "✓ " + proofPixFile.name : "Subir comprovante de PIX"}</span>
+                      <input type="file" accept="image/*,.pdf" className="hidden" onChange={seleccionarPruebaPix} />
+                    </label>
+                    {proofPixPreview && (
+                      <div className="relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={proofPixPreview} alt="PIX" className="w-full rounded-lg border border-kb-border-soft" style={{ maxHeight: "100px", objectFit: "contain" }} />
+                        <button type="button" onClick={() => { setProofPixFile(null); setProofPixPreview(null); }} className="absolute right-1.5 top-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white hover:bg-black/80">✕</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {subiendoPrueba && (
+                    <p className="text-[11px] text-kb-text-muted animate-pulse">Subindo comprovantes…</p>
+                  )}
+                </div>
+              </div>
+
+              <Campo etiqueta="Observações (opcional)">
                 <input
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Ej. Primer payout"
+                  placeholder="Ex. Primeiro payout LucidFlex"
                   className={inputClass}
                 />
               </Campo>
@@ -4717,12 +5556,13 @@ function RetirosView({
           )}
         </section>
 
+        {/* ── historial ──────────────────────────────────────── */}
         <section className="overflow-hidden rounded-xl border border-kb-border bg-kb-surface">
           <div className="flex items-center justify-between border-b border-kb-border-soft px-5 py-4">
             <h2 className="font-display text-base font-semibold">Historial</h2>
             {retiros.length > 0 && (
               <span className="rounded-full bg-kb-gain/10 px-3 py-1 text-xs font-semibold text-kb-gain">
-                Total {formatCurrency(totalRetirado)}
+                {formatCurrency(totales.neto)} neto recibido
               </span>
             )}
           </div>
@@ -4738,27 +5578,73 @@ function RetirosView({
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-kb-border-soft text-xs text-kb-text-secondary">
-                    <th className="px-5 py-3 font-medium">Fecha</th>
-                    <th className="px-5 py-3 font-medium">Cuenta</th>
-                    <th className="px-5 py-3 font-medium">Notas</th>
-                    <th className="px-5 py-3 font-medium text-right">Monto</th>
-                    <th className="px-5 py-3 font-medium"></th>
+                    <th className="px-4 py-3 font-medium">Fecha</th>
+                    <th className="px-4 py-3 font-medium">Cuenta</th>
+                    <th className="px-4 py-3 font-medium text-right">Bruto</th>
+                    <th className="px-4 py-3 font-medium text-right">Fee</th>
+                    <th className="px-4 py-3 font-medium text-right">Neto (USD)</th>
+                    <th className="px-4 py-3 font-medium text-right">USDT Binance</th>
+                    <th className="px-4 py-3 font-medium text-right">PTAX</th>
+                    <th className="px-4 py-3 font-medium text-right">BRL tributável</th>
+                    <th className="px-4 py-3 font-medium">Método</th>
+                    <th className="px-4 py-3 font-medium">Notas</th>
+                    <th className="px-4 py-3 font-medium text-center" title="Comprobante Binance">🪙</th>
+                    <th className="px-4 py-3 font-medium text-center" title="Comprobante PIX">🏦</th>
+                    <th className="px-4 py-3 font-medium"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {retiros.map((r) => {
                     const cuentaDelRetiro = cuentas.find((c) => c.id === r.account_id);
+                    const feeVal = r.platform_fee ?? 0;
+                    const netoVal = r.amount - feeVal;
                     return (
-                      <tr key={r.id} className="border-b border-kb-border-soft last:border-0">
-                        <td className="px-5 py-3 text-kb-text-secondary">{formatDateOnly(r.withdrawal_date)}</td>
-                        <td className="px-5 py-3 font-medium text-kb-text">
+                      <tr key={r.id} className="border-b border-kb-border-soft last:border-0 hover:bg-kb-bg/40 transition-colors">
+                        <td className="px-4 py-3 text-kb-text-secondary whitespace-nowrap">{formatDateOnly(r.withdrawal_date)}</td>
+                        <td className="px-4 py-3 font-medium text-kb-text whitespace-nowrap">
                           {cuentaDelRetiro?.name ?? "Cuenta eliminada"}
                         </td>
-                        <td className="px-5 py-3 text-kb-text-muted">{r.notes ?? "—"}</td>
-                        <td className="px-5 py-3 text-right font-mono font-semibold text-kb-gain">
-                          +{formatCurrency(r.amount)}
+                        <td className="px-4 py-3 text-right font-mono text-kb-text">
+                          {formatCurrency(r.amount)}
                         </td>
-                        <td className="px-5 py-3 text-right">
+                        <td className="px-4 py-3 text-right font-mono text-kb-loss">
+                          {feeVal > 0 ? `-${formatCurrency(feeVal)}` : <span className="text-kb-text-muted">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono font-semibold text-kb-gain">
+                          {formatCurrency(netoVal)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-kb-text-secondary text-xs">
+                          {r.received_usdt != null
+                            ? <span className="text-yellow-400 font-semibold">{r.received_usdt.toFixed(2)} <span className="font-normal text-kb-text-muted">USDT</span></span>
+                            : <span className="text-kb-text-muted">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-kb-text-secondary text-xs">
+                          {r.ptax_rate ? r.ptax_rate.toFixed(4) : <span className="text-kb-text-muted">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-kb-accent">
+                          {r.brl_amount ? `R$ ${r.brl_amount.toFixed(2)}` : <span className="text-kb-text-muted">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-kb-text-muted text-xs whitespace-nowrap">
+                          {r.payment_method ?? "—"}
+                        </td>
+                        <td className="px-4 py-3 text-kb-text-muted max-w-[140px] truncate text-xs">
+                          {r.notes ?? "—"}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {r.proof_url ? (
+                            <a href={r.proof_url} target="_blank" rel="noopener noreferrer" title="Comprobante Binance" className="text-base hover:opacity-70 transition-opacity">🖼️</a>
+                          ) : (
+                            <span className="text-kb-text-muted">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {r.proof_pix_url ? (
+                            <a href={r.proof_pix_url} target="_blank" rel="noopener noreferrer" title="Comprobante PIX" className="text-base hover:opacity-70 transition-opacity">🖼️</a>
+                          ) : (
+                            <span className="text-kb-text-muted">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
                           <button
                             onClick={() => eliminar(r.id)}
                             className="text-xs text-kb-text-muted hover:text-kb-loss transition-colors"
@@ -4770,6 +5656,301 @@ function RetirosView({
                     );
                   })}
                 </tbody>
+                {retiros.length > 1 && (
+                  <tfoot>
+                    <tr className="border-t border-kb-border bg-kb-bg/60 text-xs font-semibold">
+                      <td colSpan={2} className="px-4 py-3 text-kb-text-secondary">Total</td>
+                      <td className="px-4 py-3 text-right font-mono text-kb-text">{formatCurrency(totales.bruto)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-kb-loss">
+                        {totales.feeTotal > 0 ? `-${formatCurrency(totales.feeTotal)}` : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-kb-gain">{formatCurrency(totales.neto)}</td>
+                      <td className="px-4 py-3"></td>
+                      <td className="px-4 py-3"></td>
+                      <td className="px-4 py-3 text-right font-mono text-kb-accent">
+                        {totales.brl > 0 ? `R$ ${totales.brl.toFixed(2)}` : "—"}
+                      </td>
+                      <td colSpan={5}></td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+// =====================================================================
+// VISTA: APORTES — pagos de challenges, reintentos y cuentas nuevas.
+// Permite calcular el ROI real vs purchase_cost estimado.
+// =====================================================================
+
+function InversionesView({
+  cuentas,
+  cuentaActivaId,
+  aportes,
+  cargando,
+  onCambio,
+}: {
+  cuentas: Account[];
+  cuentaActivaId: CuentaSeleccion;
+  aportes: Investment[];
+  cargando: boolean;
+  onCambio: () => void;
+}) {
+  const cuentaParaAporte = cuentaActivaId === "todas" ? "" : cuentaActivaId;
+  const [accountId, setAccountId] = useState(cuentaParaAporte || cuentas[0]?.id || "");
+  const [amountStr, setAmountStr] = useState("");
+  const [tipo, setTipo] = useState<InvestmentType>("fase_1");
+  const [fecha, setFecha] = useState(() => todayKey());
+  const [notes, setNotes] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Aportes filtrados según la cuenta activa
+  const aportesVisibles = useMemo(() => {
+    if (cuentaActivaId === "todas") return aportes;
+    return aportes.filter((a) => a.account_id === cuentaActivaId);
+  }, [aportes, cuentaActivaId]);
+
+  const totalAportado = useMemo(
+    () => aportesVisibles.reduce((acc, a) => acc + a.amount, 0),
+    [aportesVisibles]
+  );
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    const monto = parseFloat(amountStr);
+    if (!accountId || Number.isNaN(monto) || monto <= 0) {
+      setError("Seleccioná una cuenta e ingresá un monto válido.");
+      return;
+    }
+
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) {
+      setError("Tu sesión expiró. Volvé a iniciar sesión.");
+      return;
+    }
+
+    setEnviando(true);
+    const { error: insertError } = await conReintento(() =>
+      supabase.from("investments").insert({
+        user_id: userId,
+        account_id: accountId,
+        amount: monto,
+        investment_date: fecha,
+        investment_type: tipo,
+        notes: notes.trim() === "" ? null : notes.trim(),
+      })
+    );
+    setEnviando(false);
+
+    if (insertError) {
+      setError(`No se pudo registrar el aporte. Detalle: ${insertError.message}`);
+      return;
+    }
+
+    setAmountStr("");
+    setNotes("");
+    onCambio();
+  }
+
+  async function eliminar(id: string) {
+    const { error: deleteError } = await supabase.from("investments").delete().eq("id", id);
+    if (deleteError) {
+      setError("No se pudo eliminar el aporte. Intenta de nuevo.");
+      return;
+    }
+    onCambio();
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="font-display text-xl font-bold text-kb-text">Aportes</h1>
+        <p className="mt-0.5 text-sm text-kb-text-secondary">
+          {aportesVisibles.length === 0
+            ? "Registrá los fees que pagaste por tus challenges para calcular tu ROI real."
+            : `${aportesVisibles.length} aporte${aportesVisibles.length === 1 ? "" : "s"} · ${formatCurrency(totalAportado)} invertido en total`}
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-kb-accent/30 bg-kb-accent/5 px-4 py-3 text-xs text-kb-text-secondary">
+        <p>
+          <span className="font-semibold text-kb-text">¿Para qué sirve esto?</span>{" "}
+          Cada fee que pagaste por un challenge va acá. La sección{" "}
+          <span className="font-medium text-kb-text">Rentabilidad</span> usa esta suma como
+          "Invertido real" en vez de un número estimado, así el ROI que ves refleja lo que
+          realmente costó operar cada cuenta.
+        </p>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
+        {/* ── formulario ─────────────────────────────────────── */}
+        <section className="h-fit rounded-xl border border-kb-border bg-kb-surface p-5">
+          <h2 className="font-display text-base font-semibold mb-1">Registrar aporte</h2>
+          <p className="mb-4 text-xs text-kb-text-secondary">
+            Cualquier monto que hayas pagado para operar esta cuenta.
+          </p>
+
+          {cuentas.length === 0 ? (
+            <p className="rounded-lg border border-kb-accent/30 bg-kb-accent/10 px-3 py-2 text-xs text-kb-accent">
+              Crea una cuenta primero para poder registrar aportes.
+            </p>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <Campo etiqueta="Cuenta">
+                <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className={inputClass}>
+                  {cuentas.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </Campo>
+
+              <Campo etiqueta="Tipo de aporte">
+                <select
+                  value={tipo}
+                  onChange={(e) => setTipo(e.target.value as InvestmentType)}
+                  className={inputClass}
+                >
+                  {(Object.entries(INVESTMENT_TYPE_LABELS) as [InvestmentType, string][]).map(
+                    ([k, v]) => (
+                      <option key={k} value={k}>{v}</option>
+                    )
+                  )}
+                </select>
+              </Campo>
+
+              <Campo etiqueta="Monto (USD)">
+                <input
+                  required
+                  type="number"
+                  step="any"
+                  min="0.01"
+                  value={amountStr}
+                  onChange={(e) => setAmountStr(e.target.value)}
+                  placeholder="Ej. 160"
+                  className={inputClass}
+                />
+              </Campo>
+
+              <Campo etiqueta="Fecha de pago">
+                <input
+                  type="date"
+                  value={fecha}
+                  onChange={(e) => setFecha(e.target.value)}
+                  className={inputClass}
+                />
+              </Campo>
+
+              <Campo etiqueta="Notas (opcional)">
+                <input
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Ej. Primer intento LucidFlex 50K"
+                  className={inputClass}
+                />
+              </Campo>
+
+              {error && (
+                <p className="rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={enviando}
+                className="w-full rounded-lg bg-kb-accent/80 py-2.5 text-sm font-semibold text-white hover:bg-kb-accent transition disabled:opacity-60"
+              >
+                {enviando ? "Guardando…" : "Registrar aporte"}
+              </button>
+            </form>
+          )}
+        </section>
+
+        {/* ── historial ──────────────────────────────────────── */}
+        <section className="overflow-hidden rounded-xl border border-kb-border bg-kb-surface">
+          <div className="flex items-center justify-between border-b border-kb-border-soft px-5 py-4">
+            <h2 className="font-display text-base font-semibold">Historial</h2>
+            {aportesVisibles.length > 0 && (
+              <span className="rounded-full bg-kb-accent/10 px-3 py-1 text-xs font-semibold text-kb-accent">
+                Total invertido {formatCurrency(totalAportado)}
+              </span>
+            )}
+          </div>
+
+          {cargando ? (
+            <SkeletonFilas filas={4} />
+          ) : aportesVisibles.length === 0 ? (
+            <p className="px-5 py-10 text-center text-sm text-kb-text-secondary">
+              Todavía no registraste ningún aporte.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-kb-border-soft text-xs text-kb-text-secondary">
+                    <th className="px-5 py-3 font-medium">Fecha</th>
+                    <th className="px-5 py-3 font-medium">Cuenta</th>
+                    <th className="px-5 py-3 font-medium">Tipo</th>
+                    <th className="px-5 py-3 font-medium">Notas</th>
+                    <th className="px-5 py-3 font-medium text-right">Monto</th>
+                    <th className="px-5 py-3 font-medium"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {aportesVisibles.map((a) => {
+                    const cuentaDelAporte = cuentas.find((c) => c.id === a.account_id);
+                    return (
+                      <tr
+                        key={a.id}
+                        className="border-b border-kb-border-soft last:border-0 hover:bg-kb-bg/40 transition-colors"
+                      >
+                        <td className="px-5 py-3 text-kb-text-secondary whitespace-nowrap">
+                          {formatDateOnly(a.investment_date)}
+                        </td>
+                        <td className="px-5 py-3 font-medium text-kb-text">
+                          {cuentaDelAporte?.name ?? "Cuenta eliminada"}
+                        </td>
+                        <td className="px-5 py-3">
+                          <span className="rounded-full bg-kb-accent/10 px-2 py-0.5 text-xs font-medium text-kb-accent">
+                            {INVESTMENT_TYPE_LABELS[a.investment_type]}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 text-kb-text-muted">{a.notes ?? "—"}</td>
+                        <td className="px-5 py-3 text-right font-mono font-semibold text-kb-loss">
+                          -{formatCurrency(a.amount)}
+                        </td>
+                        <td className="px-5 py-3 text-right">
+                          <button
+                            onClick={() => eliminar(a.id)}
+                            className="text-xs text-kb-text-muted hover:text-kb-loss transition-colors"
+                          >
+                            Eliminar
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {aportesVisibles.length > 1 && (
+                  <tfoot>
+                    <tr className="border-t border-kb-border bg-kb-bg/60 text-xs font-semibold">
+                      <td colSpan={4} className="px-5 py-3 text-kb-text-secondary">Total invertido</td>
+                      <td className="px-5 py-3 text-right font-mono text-kb-loss">
+                        -{formatCurrency(totalAportado)}
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           )}
@@ -4876,7 +6057,11 @@ function LogrosView({
       const ruta = extraerRutaStorage("achievements", logro.file_url);
       await supabase.storage.from("achievements").remove([ruta]);
     }
-    await supabase.from("achievements").delete().eq("id", logro.id);
+    const { error: deleteError } = await supabase.from("achievements").delete().eq("id", logro.id);
+    if (deleteError) {
+      setError("No se pudo eliminar el logro. Intenta de nuevo.");
+      return;
+    }
     onCambio();
   }
 
@@ -5651,6 +6836,18 @@ const CAMPOS_IMPORTACION: { campo: CampoDestino; etiqueta: string; requerido: bo
   { campo: "notes", etiqueta: "Notas / Comentario", requerido: false },
 ];
 
+interface TradeOcr {
+  symbol: string;
+  side: "long" | "short";
+  quantity: number;
+  entry_price: number;
+  exit_price: number | null;
+  entry_time: string;
+  exit_time: string | null;
+  realized_pnl: number | null;
+  fees: number;
+}
+
 function ImportarView({
   cuentas,
   estrategias,
@@ -5682,6 +6879,158 @@ function ImportarView({
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState<{ insertados: number; saltados: number } | null>(null);
   const [mostrarGuia, setMostrarGuia] = useState(true);
+
+  // ─── Estado para modo OCR ──────────────────────────────────────────
+  const [modoImportar, setModoImportar] = useState<"csv" | "ocr">("csv");
+  const [imagenOcrData, setImagenOcrData] = useState<string | null>(null);
+  const [imagenOcrMime, setImagenOcrMime] = useState<string>("image/png");
+  const [imagenOcrPreview, setImagenOcrPreview] = useState<string | null>(null);
+  const [procesandoOcr, setProcesandoOcr] = useState(false);
+  const [tradesOcr, setTradesOcr] = useState<TradeOcr[]>([]);
+  const [errorOcr, setErrorOcr] = useState<string | null>(null);
+  const [guardandoOcr, setGuardandoOcr] = useState(false);
+  const [resultadoOcr, setResultadoOcr] = useState<{ insertados: number } | null>(null);
+  const [accountIdOcr, setAccountIdOcr] = useState(cuentaActivaId !== "todas" ? cuentaActivaId : "");
+  const [strategyIdOcr, setStrategyIdOcr] = useState("");
+
+  function reiniciarOcr() {
+    setImagenOcrData(null);
+    setImagenOcrMime("image/png");
+    setImagenOcrPreview(null);
+    setTradesOcr([]);
+    setErrorOcr(null);
+    setResultadoOcr(null);
+  }
+
+  function manejarImagenOcr(archivo: File) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      // result es "data:image/png;base64,iVBOR..."
+      const comma = result.indexOf(",");
+      const base64 = result.slice(comma + 1);
+      setImagenOcrData(base64);
+      setImagenOcrMime(archivo.type || "image/png");
+      setImagenOcrPreview(result);
+      setTradesOcr([]);
+      setErrorOcr(null);
+      setResultadoOcr(null);
+    };
+    reader.readAsDataURL(archivo);
+  }
+
+  async function extraerConOCR() {
+    if (!imagenOcrData) return;
+    setProcesandoOcr(true);
+    setErrorOcr(null);
+    setTradesOcr([]);
+    try {
+      const res = await fetch("/api/ocr-trades", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: imagenOcrData, mimeType: imagenOcrMime }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorOcr(data.error ?? "Error inesperado al procesar la imagen.");
+      } else {
+        const trades = (data.trades ?? []) as TradeOcr[];
+        setTradesOcr(trades);
+        if (trades.length === 0) {
+          setErrorOcr("No se encontraron operaciones en la imagen. Intentá con una captura más clara de la tabla de trades.");
+        }
+      }
+    } catch {
+      setErrorOcr("No se pudo conectar con el servidor. Verificá tu conexión a internet.");
+    } finally {
+      setProcesandoOcr(false);
+    }
+  }
+
+  async function guardarTradesOcr() {
+    if (!accountIdOcr) {
+      setErrorOcr("Elegí a qué cuenta se van a guardar estas operaciones.");
+      return;
+    }
+    setGuardandoOcr(true);
+    setErrorOcr(null);
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) {
+      setGuardandoOcr(false);
+      setErrorOcr("Tu sesión expiró. Volvé a iniciar sesión.");
+      return;
+    }
+
+    // Agrega el offset de Brasil (-03:00) si el string no tiene timezone
+    const addBrTz = (dt: string | null): string | null => {
+      if (!dt) return null;
+      if (dt.includes("Z") || dt.includes("+") || dt.length > 19) return dt;
+      return dt + "-03:00";
+    };
+
+    // Borrar trades existentes para las mismas fechas + cuenta antes de insertar
+    const fechasUnicas = [...new Set(
+      tradesOcr
+        .filter((t) => t.entry_time)
+        .map((t) => t.entry_time!.substring(0, 10))
+    )];
+    for (const fecha of fechasUnicas) {
+      const { error: deleteError } = await supabase
+        .from("trades")
+        .delete()
+        .eq("account_id", accountIdOcr)
+        .eq("user_id", userId)
+        .gte("entry_time", `${fecha}T00:00:00${tzOffsetLocal()}`)
+        .lte("entry_time", `${fecha}T23:59:59${tzOffsetLocal()}`);
+
+      if (deleteError) {
+        setGuardandoOcr(false);
+        setErrorOcr(`No se pudo limpiar los trades del ${fecha} antes de importar. Operación cancelada para evitar duplicados. Intentá de nuevo.`);
+        return;
+      }
+    }
+
+    const filasParaInsertar: Record<string, unknown>[] = tradesOcr.map((t) => ({
+      user_id: userId,
+      account_id: accountIdOcr,
+      strategy_id: strategyIdOcr === "" ? null : strategyIdOcr,
+      symbol: t.symbol.toUpperCase(),
+      instrument_type: "futures",
+      side: t.side,
+      status: t.exit_price !== null || t.realized_pnl !== null ? "closed" : "open",
+      quantity: t.quantity,
+      entry_price: t.entry_price,
+      exit_price: t.exit_price,
+      fees: t.fees,
+      // El NET PNL de Lucid ya viene con fees descontados — NO restar fees de nuevo
+      realized_pnl:
+        t.exit_price !== null || t.realized_pnl !== null
+          ? (t.realized_pnl ?? 0)
+          : null,
+      result_type: t.exit_price !== null || t.realized_pnl !== null ? "manual" : null,
+      notes: null,
+      entry_time: addBrTz(t.entry_time),
+      exit_time: addBrTz(t.exit_time),
+      tradingview_links: [],
+      evidence_images: [],
+      mistake: "ninguno",
+    }));
+    let insertados = 0;
+    for (let i = 0; i < filasParaInsertar.length; i += 200) {
+      const tanda = filasParaInsertar.slice(i, i + 200);
+      const { error: err } = await supabase.from("trades").insert(tanda);
+      if (err) {
+        setGuardandoOcr(false);
+        setErrorOcr(`Error al insertar trades (tanda ${i / 200 + 1}): ${err.message}. Se importaron ${insertados} antes del error.`);
+        return;
+      }
+      insertados += tanda.length;
+    }
+    setGuardandoOcr(false);
+    setResultadoOcr({ insertados });
+    onImportado();
+  }
 
   function manejarArchivo(archivo: File) {
     setError(null);
@@ -5733,9 +7082,11 @@ function ImportarView({
           "sell time", "sold timestamp", "sell timestamp",
         ],
         realized_pnl: [
-          "profit", "pnl", "p&l", "p/l", "ganancia", "resultado", "ganancia neta", "realized",
-          "net p/l", "net pnl", "realized p/l", "realized pnl", "gain/loss", "closed pnl",
-          "total p/l",
+          // Aliases más específicos primero para evitar falsos positivos
+          // con columnas genéricas "Profit" en Tradovate (que es gross, no net).
+          "net profit", "net p/l", "net pnl", "realized p/l", "realized pnl",
+          "gain/loss", "closed pnl", "total p/l", "ganancia neta",
+          "pnl", "p&l", "p/l", "ganancia", "resultado", "realized",
         ],
         fees: ["commission", "comision", "comisión", "fee", "fees", "swap"],
         notes: ["comment", "comentario", "notes", "notas", "text"],
@@ -5945,7 +7296,259 @@ function ImportarView({
         )}
       </section>
 
-      {paso === "subir" && (
+      {/* ─── Selector de modo: CSV vs OCR ──────────────────────── */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setModoImportar("csv")}
+          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            modoImportar === "csv"
+              ? "bg-kb-accent text-kb-bg"
+              : "border border-kb-border text-kb-text-secondary hover:text-kb-text"
+          }`}
+        >
+          📄 Importar CSV
+        </button>
+        <button
+          onClick={() => setModoImportar("ocr")}
+          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            modoImportar === "ocr"
+              ? "bg-kb-accent text-kb-bg"
+              : "border border-kb-border text-kb-text-secondary hover:text-kb-text"
+          }`}
+        >
+          📷 OCR desde captura
+        </button>
+      </div>
+
+      {/* ─── Modo OCR ──────────────────────────────────────────────── */}
+      {modoImportar === "ocr" && (
+        <section className="space-y-4">
+          {resultadoOcr ? (
+            <div className="rounded-xl border border-kb-gain/30 bg-kb-gain/5 p-8 text-center">
+              <p className="text-3xl">✅</p>
+              <h2 className="mt-2 font-display text-lg font-semibold text-kb-text">¡Trades guardados!</h2>
+              <p className="mt-1 text-sm text-kb-text-secondary">
+                <span className="font-semibold text-kb-gain">{resultadoOcr.insertados}</span>{" "}
+                operaciones guardadas correctamente.
+              </p>
+              <button
+                onClick={reiniciarOcr}
+                className="mt-4 rounded-lg border border-kb-border px-5 py-2.5 text-sm font-medium text-kb-text-secondary hover:text-kb-text transition-colors"
+              >
+                Analizar otra captura
+              </button>
+            </div>
+          ) : (
+            <>
+              {!imagenOcrPreview ? (
+                <label className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-kb-accent/40 bg-kb-accent/5 p-8 text-center cursor-pointer hover:bg-kb-accent/10 transition">
+                  <span className="text-4xl">📷</span>
+                  <span className="text-sm font-semibold text-kb-text">
+                    Subí una captura de tu tabla de trades
+                  </span>
+                  <span className="text-xs text-kb-text-secondary">
+                    PNG, JPG o WebP · Funciona con Tradovate, Lucid, MT4/MT5, NinjaTrader y más
+                  </span>
+                  <span className="mt-1 rounded-lg bg-kb-accent px-4 py-2 text-sm font-semibold text-kb-bg">
+                    Elegir imagen
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) manejarImagenOcr(f);
+                    }}
+                  />
+                </label>
+              ) : (
+                <div className="rounded-xl border border-kb-border bg-kb-surface p-5 space-y-5">
+                  <div className="flex items-start gap-5">
+                    <img
+                      src={imagenOcrPreview}
+                      alt="Captura a analizar"
+                      className="max-h-52 max-w-xs rounded-lg object-contain border border-kb-border-soft shrink-0"
+                    />
+                    <div className="flex-1 space-y-3">
+                      <p className="text-sm font-semibold text-kb-text">Imagen lista para analizar</p>
+                      <p className="text-xs text-kb-text-secondary">
+                        La IA va a leer la tabla de operaciones de la captura y extraer los datos automáticamente.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={extraerConOCR}
+                          disabled={procesandoOcr}
+                          className="rounded-lg bg-kb-accent px-4 py-2 text-sm font-semibold text-kb-bg hover:brightness-110 transition disabled:opacity-60"
+                        >
+                          {procesandoOcr ? "Analizando…" : "✨ Extraer trades con IA"}
+                        </button>
+                        <button
+                          onClick={reiniciarOcr}
+                          className="rounded-lg border border-kb-border px-4 py-2 text-sm font-medium text-kb-text-secondary hover:text-kb-text transition-colors"
+                        >
+                          Cambiar imagen
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {procesandoOcr && (
+                    <div className="rounded-lg border border-kb-accent/20 bg-kb-accent/5 px-4 py-3 text-sm text-kb-accent">
+                      🤖 Leyendo la captura… Esto puede tardar unos segundos.
+                    </div>
+                  )}
+
+                  {errorOcr && (
+                    <p className="rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
+                      {errorOcr}
+                    </p>
+                  )}
+
+                  {tradesOcr.length > 0 && (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-kb-text">
+                          Se encontraron{" "}
+                          <span className="text-kb-gain">{tradesOcr.length}</span>{" "}
+                          operaci{tradesOcr.length === 1 ? "ón" : "ones"}
+                        </p>
+                        <p className="text-xs text-kb-text-muted">Podés borrar filas antes de guardar</p>
+                      </div>
+
+                      <div className="overflow-x-auto rounded-lg border border-kb-border-soft">
+                        <table className="w-full text-left text-xs">
+                          <thead>
+                            <tr className="border-b border-kb-border-soft bg-kb-bg text-kb-text-secondary">
+                              <th className="px-3 py-2 font-medium">Símbolo</th>
+                              <th className="px-3 py-2 font-medium">Dir.</th>
+                              <th className="px-3 py-2 font-medium">Qty</th>
+                              <th className="px-3 py-2 font-medium">Entrada</th>
+                              <th className="px-3 py-2 font-medium">Salida</th>
+                              <th className="px-3 py-2 font-medium">P&amp;L</th>
+                              <th className="px-3 py-2 font-medium">Fee</th>
+                              <th className="px-3 py-2 font-medium">Hora entrada</th>
+                              <th className="px-3 py-2"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {tradesOcr.map((t, i) => (
+                              <tr key={i} className="border-b border-kb-border-soft last:border-0">
+                                <td className="px-3 py-2 font-mono font-semibold text-kb-text">{t.symbol}</td>
+                                <td className="px-3 py-2">
+                                  <span
+                                    className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                                      t.side === "long"
+                                        ? "bg-kb-gain/20 text-kb-gain"
+                                        : "bg-kb-loss/20 text-kb-loss"
+                                    }`}
+                                  >
+                                    {t.side === "long" ? "L" : "S"}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-kb-text">{t.quantity}</td>
+                                <td className="px-3 py-2 font-mono text-kb-text">{t.entry_price}</td>
+                                <td className="px-3 py-2 font-mono text-kb-text">
+                                  {t.exit_price ?? "—"}
+                                </td>
+                                <td
+                                  className={`px-3 py-2 font-mono font-semibold ${
+                                    t.realized_pnl === null
+                                      ? "text-kb-text-secondary"
+                                      : t.realized_pnl >= 0
+                                      ? "text-kb-gain"
+                                      : "text-kb-loss"
+                                  }`}
+                                >
+                                  {t.realized_pnl !== null
+                                    ? (t.realized_pnl >= 0 ? "+" : "") + t.realized_pnl.toFixed(2)
+                                    : "—"}
+                                </td>
+                                <td className="px-3 py-2 font-mono text-kb-text-secondary">
+                                  {t.fees > 0 ? t.fees.toFixed(2) : "—"}
+                                </td>
+                                <td className="px-3 py-2 text-kb-text-secondary">
+                                  {t.entry_time
+                                    ? new Date(t.entry_time).toLocaleString("es-AR", {
+                                        dateStyle: "short",
+                                        timeStyle: "short",
+                                      })
+                                    : "—"}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <button
+                                    onClick={() =>
+                                      setTradesOcr((prev) => prev.filter((_, j) => j !== i))
+                                    }
+                                    className="text-kb-text-muted hover:text-kb-loss transition-colors"
+                                    title="Eliminar fila"
+                                  >
+                                    ✕
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Campo etiqueta="Guardar en la cuenta *">
+                          <select
+                            value={accountIdOcr}
+                            onChange={(e) => setAccountIdOcr(e.target.value)}
+                            className={inputClass}
+                          >
+                            <option value="">Elegí una cuenta…</option>
+                            {cuentas.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+                        </Campo>
+                        <Campo etiqueta="Estrategia (opcional)">
+                          <select
+                            value={strategyIdOcr}
+                            onChange={(e) => setStrategyIdOcr(e.target.value)}
+                            className={inputClass}
+                          >
+                            <option value="">Sin estrategia</option>
+                            {estrategias.map((e) => (
+                              <option key={e.id} value={e.id}>
+                                {e.name}
+                              </option>
+                            ))}
+                          </select>
+                        </Campo>
+                      </div>
+
+                      {errorOcr && (
+                        <p className="rounded-lg border border-kb-loss/30 bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
+                          {errorOcr}
+                        </p>
+                      )}
+
+                      <button
+                        onClick={guardarTradesOcr}
+                        disabled={guardandoOcr || tradesOcr.length === 0}
+                        className="rounded-lg bg-kb-accent px-5 py-2.5 text-sm font-semibold text-kb-bg hover:brightness-110 transition disabled:opacity-60"
+                      >
+                        {guardandoOcr
+                          ? "Guardando…"
+                          : `Guardar ${tradesOcr.length} operaci${tradesOcr.length === 1 ? "ón" : "ones"}`}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      )}
+
+      {/* ─── Modo CSV (flujo original) ──────────────────────────────── */}
+      {modoImportar === "csv" && paso === "subir" && (
         <section className="rounded-xl border border-dashed border-kb-accent/40 bg-kb-accent/5 p-8 text-center">
           <p className="mb-4 text-sm text-kb-text-secondary">
             Elegí un archivo .csv exportado de MT4, MT5, cTrader, o cualquier otra plataforma.
@@ -5965,7 +7568,7 @@ function ImportarView({
         </section>
       )}
 
-      {paso === "mapear" && (
+      {modoImportar === "csv" && paso === "mapear" && (
         <>
           <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
             <div className="mb-4 flex items-center justify-between">
@@ -6066,7 +7669,7 @@ function ImportarView({
         </>
       )}
 
-      {paso === "revisar" && (
+      {modoImportar === "csv" && paso === "revisar" && (
         <section className="rounded-xl border border-kb-border bg-kb-surface p-5">
           <h2 className="font-display text-lg font-semibold mb-1">Vista previa</h2>
           <p className="mb-4 text-xs text-kb-text-secondary">
@@ -6121,7 +7724,7 @@ function ImportarView({
         </section>
       )}
 
-      {paso === "listo" && resultado && (
+      {modoImportar === "csv" && paso === "listo" && resultado && (
         <section className="rounded-xl border border-kb-gain/30 bg-kb-gain/5 p-8 text-center">
           <p className="text-3xl">✅</p>
           <h2 className="mt-2 font-display text-lg font-semibold text-kb-text">Importación completa</h2>
@@ -6159,6 +7762,7 @@ function ConfiguracionView({
   trades,
   pnlPorCuenta,
   retiradoPorCuenta,
+  invertidoPorCuenta,
   historialFases,
   onCambio,
   onVerArchivadas,
@@ -6167,6 +7771,7 @@ function ConfiguracionView({
   trades: Trade[];
   pnlPorCuenta: Map<string, number>;
   retiradoPorCuenta: Map<string, number>;
+  invertidoPorCuenta: Map<string, number>;
   historialFases: PhaseHistoryEntry[];
   onCambio: () => void;
   onVerArchivadas: () => void;
@@ -6206,6 +7811,7 @@ function ConfiguracionView({
               trades={trades}
               pnl={pnlPorCuenta.get(c.id) ?? 0}
               retirado={retiradoPorCuenta.get(c.id) ?? 0}
+              invertido={invertidoPorCuenta.get(c.id) ?? c.purchase_cost ?? c.starting_balance}
               color={PALETA_ESTRATEGIA[i % PALETA_ESTRATEGIA.length]}
               historial={historialFases.filter((h) => h.account_id === c.id)}
               onEditar={() => setCuentaEditando(c)}
@@ -6348,6 +7954,7 @@ function TarjetaCuenta({
   trades,
   pnl,
   retirado,
+  invertido,
   color,
   historial,
   onEditar,
@@ -6357,18 +7964,21 @@ function TarjetaCuenta({
   trades: Trade[];
   pnl: number;
   retirado: number;
+  invertido: number;
   color: { barra: string; punto: string };
   historial: PhaseHistoryEntry[];
   onEditar: () => void;
   onCambio: () => void;
 }) {
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(false);
+  const [confirmandoQuemar, setConfirmandoQuemar] = useState(false);
   const [procesando, setProcesando] = useState(false);
   const [conteo, setConteo] = useState<{ trades: number; retiros: number } | null>(null);
   const [cargandoConteo, setCargandoConteo] = useState(false);
   const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
   useCerrarConEscape(() => {
     setConfirmandoEliminar(false);
+    setConfirmandoQuemar(false);
     setErrorEliminar(null);
   });
 
@@ -6378,7 +7988,8 @@ function TarjetaCuenta({
   );
   const ganadores = cerrados.filter((t) => (t.realized_pnl ?? 0) > 0).length;
   const winRate = cerrados.length > 0 ? (ganadores / cerrados.length) * 100 : null;
-  const invertido = cuenta.purchase_cost ?? cuenta.starting_balance;
+  // invertido viene como prop desde ConfiguracionView (usa la tabla investments,
+  // con purchase_cost como fallback y starting_balance como último recurso).
 
   // ---- Progreso hacia el objetivo de la fase actual (mismo cálculo que
   // en el Dashboard, para que también se vea acá sin tener que
@@ -6397,10 +8008,32 @@ function TarjetaCuenta({
       ? Math.min((pnlDesdeInicioFase / objetivoFaseMonto) * 100, 100)
       : 0;
 
+  async function fondearCuenta() {
+    setProcesando(true);
+    await supabase.from("accounts").update({ phase: "financiada" }).eq("id", cuenta.id);
+    setProcesando(false);
+    onCambio();
+  }
+
   async function archivar() {
     setProcesando(true);
     await supabase.from("accounts").update({ is_archived: true }).eq("id", cuenta.id);
     setProcesando(false);
+    onCambio();
+  }
+
+  async function quemar() {
+    setProcesando(true);
+    const { error: qErr } = await supabase
+      .from("accounts")
+      .update({ blown_at: new Date().toISOString(), is_archived: true })
+      .eq("id", cuenta.id);
+    setProcesando(false);
+    if (qErr) {
+      setConfirmandoQuemar(false);
+      return;
+    }
+    setConfirmandoQuemar(false);
     onCambio();
   }
 
@@ -6490,8 +8123,12 @@ function TarjetaCuenta({
             />
             <h3 className="font-display text-base font-semibold text-kb-text">{cuenta.name}</h3>
             {cuenta.phase !== "no_aplica" && (
-              <span className="rounded-full bg-kb-accent/10 px-2 py-0.5 text-[11px] font-medium text-kb-accent">
-                {PHASE_LABELS[cuenta.phase]}
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                cuenta.phase === "financiada"
+                  ? "bg-kb-gain/15 text-kb-gain"
+                  : "bg-kb-accent/10 text-kb-accent"
+              }`}>
+                {cuenta.phase === "financiada" ? "✓ FONDEADA" : PHASE_LABELS[cuenta.phase]}
               </span>
             )}
           </div>
@@ -6508,6 +8145,15 @@ function TarjetaCuenta({
             title="Editar"
           >
             ✎
+          </button>
+          <button
+            onClick={() => setConfirmandoQuemar(true)}
+            disabled={procesando}
+            className="rounded-lg border border-kb-border p-1.5 text-kb-text-secondary hover:border-orange-500 hover:text-orange-500 transition-colors disabled:opacity-60"
+            aria-label="Marcar como quemada"
+            title="Quemar cuenta"
+          >
+            🔥
           </button>
           <button
             onClick={archivar}
@@ -6529,6 +8175,33 @@ function TarjetaCuenta({
           </button>
         </div>
       </div>
+
+      {/* ── Confirmación de quemar ── */}
+      {confirmandoQuemar && (
+        <div className="mx-5 mb-3 rounded-xl border border-orange-500/40 bg-orange-500/8 p-4">
+          <p className="text-sm font-semibold text-orange-400">🔥 ¿Marcar como quemada?</p>
+          <p className="mt-1 text-xs text-kb-text-secondary">
+            La cuenta se archivará con estado <span className="font-medium text-orange-400">QUEMADA</span>.
+            Todos los trades, retiros e historial quedan guardados — podés consultarlos en "Cuentas archivadas".
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={quemar}
+              disabled={procesando}
+              className="rounded-lg bg-orange-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-orange-600 transition-colors disabled:opacity-60"
+            >
+              {procesando ? "Procesando…" : "Sí, quemar"}
+            </button>
+            <button
+              onClick={() => setConfirmandoQuemar(false)}
+              disabled={procesando}
+              className="rounded-lg border border-kb-border px-4 py-1.5 text-xs font-medium text-kb-text-secondary hover:text-kb-text transition-colors disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="px-5 pb-4 pt-3">
         <p className="text-[10px] uppercase tracking-wide text-kb-text-secondary">P&amp;L acumulado</p>
@@ -6601,6 +8274,16 @@ function TarjetaCuenta({
             ))}
           </div>
         </div>
+      )}
+
+      {cuenta.account_type === "real" && cuenta.phase !== "financiada" && cuenta.phase !== "no_aplica" && (
+        <button
+          onClick={fondearCuenta}
+          disabled={procesando}
+          className="flex w-full items-center justify-center gap-1.5 border-t border-kb-border-soft px-5 py-2.5 text-xs font-medium text-kb-gain hover:bg-kb-gain/5 transition-colors disabled:opacity-60"
+        >
+          🎯 Marcar como Fondeada
+        </button>
       )}
 
       {confirmandoEliminar && (
@@ -7228,7 +8911,7 @@ function ModalNuevaCuenta({
 }
 
 // =====================================================================
-// MODAL: cuentas archivadas (ver y reactivar)
+// MODAL: cuentas archivadas y quemadas (ver, reactivar)
 // =====================================================================
 
 function ModalCuentasArchivadas({
@@ -7238,41 +8921,56 @@ function ModalCuentasArchivadas({
   onClose: () => void;
   onReactivada: (cuenta: Account) => void;
 }) {
-  const [archivadas, setArchivadas] = useState<Account[]>([]);
+  const [todas, setTodas] = useState<Account[]>([]);
   const [cargando, setCargando] = useState(true);
   const [reactivandoId, setReactivandoId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"archivadas" | "quemadas">("archivadas");
   useCerrarConEscape(onClose);
 
-  async function cargarArchivadas() {
+  // Separamos por blown_at: quemadas tienen fecha, archivadas normales no.
+  const quemadas = todas.filter((c) => c.blown_at != null);
+  const archivadas = todas.filter((c) => c.blown_at == null);
+
+  async function cargarTodas() {
     setCargando(true);
     const { data } = await supabase
       .from("accounts")
       .select("*")
       .eq("is_archived", true)
       .order("created_at", { ascending: true });
-    setArchivadas((data as Account[]) ?? []);
+    setTodas((data as Account[]) ?? []);
     setCargando(false);
   }
 
   useEffect(() => {
-    cargarArchivadas();
+    cargarTodas();
   }, []);
 
   async function reactivar(cuenta: Account) {
     setReactivandoId(cuenta.id);
     const { data, error } = await supabase
       .from("accounts")
-      .update({ is_archived: false })
+      .update({ is_archived: false, blown_at: null })
       .eq("id", cuenta.id)
       .select()
       .single();
     setReactivandoId(null);
 
     if (!error && data) {
-      setArchivadas((prev) => prev.filter((c) => c.id !== cuenta.id));
+      setTodas((prev) => prev.filter((c) => c.id !== cuenta.id));
       onReactivada(data as Account);
     }
   }
+
+  function formatFechaCorta(iso: string) {
+    return new Date(iso).toLocaleDateString("es", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  }
+
+  const listaActual = tab === "quemadas" ? quemadas : archivadas;
 
   return (
     <div
@@ -7280,8 +8978,8 @@ function ModalCuentasArchivadas({
       onClick={(e) => manejarClickFondo(e, onClose)}
     >
       <div className="w-full max-h-[85vh] max-w-md overflow-y-auto rounded-2xl border border-kb-border bg-kb-surface p-7 shadow-2xl">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="font-display text-xl font-bold">Cuentas archivadas</h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-display text-xl font-bold">Historial de cuentas</h2>
           <button
             onClick={onClose}
             className="text-kb-text-muted hover:text-kb-text transition"
@@ -7291,38 +8989,102 @@ function ModalCuentasArchivadas({
           </button>
         </div>
 
+        {/* Tabs */}
+        <div className="mb-4 flex gap-1 rounded-xl border border-kb-border-soft bg-kb-bg p-1">
+          <button
+            onClick={() => setTab("archivadas")}
+            className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition-colors ${
+              tab === "archivadas"
+                ? "bg-kb-surface text-kb-text shadow-sm"
+                : "text-kb-text-secondary hover:text-kb-text"
+            }`}
+          >
+            🗂 Archivadas {!cargando && archivadas.length > 0 && `(${archivadas.length})`}
+          </button>
+          <button
+            onClick={() => setTab("quemadas")}
+            className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition-colors ${
+              tab === "quemadas"
+                ? "bg-kb-surface text-orange-400 shadow-sm"
+                : "text-kb-text-secondary hover:text-orange-400"
+            }`}
+          >
+            🔥 Quemadas {!cargando && quemadas.length > 0 && `(${quemadas.length})`}
+          </button>
+        </div>
+
         {cargando ? (
           <div className="space-y-2 py-2">
             <SkeletonBloque className="h-10 w-full" />
             <SkeletonBloque className="h-10 w-full" />
           </div>
-        ) : archivadas.length === 0 ? (
-          <p className="py-6 text-center text-sm text-kb-text-secondary">
-            No tienes ninguna cuenta archivada.
+        ) : listaActual.length === 0 ? (
+          <p className="py-8 text-center text-sm text-kb-text-secondary">
+            {tab === "quemadas"
+              ? "No tenés ninguna cuenta quemada registrada."
+              : "No tenés ninguna cuenta archivada."}
           </p>
         ) : (
           <div className="space-y-2">
-            {archivadas.map((c) => (
+            {listaActual.map((c) => (
               <div
                 key={c.id}
-                className="flex items-center justify-between rounded-lg border border-kb-border-soft bg-kb-bg px-3 py-2.5"
+                className={`rounded-xl border px-4 py-3 ${
+                  c.blown_at
+                    ? "border-orange-500/30 bg-orange-500/5"
+                    : "border-kb-border-soft bg-kb-bg"
+                }`}
               >
-                <div>
-                  <p className="text-sm font-medium text-kb-text">{c.name}</p>
-                  {c.broker && (
-                    <p className="text-xs text-kb-text-secondary">{c.broker}</p>
-                  )}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {c.blown_at && (
+                        <span className="rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-orange-400">
+                          🔥 QUEMADA
+                        </span>
+                      )}
+                      {c.phase !== "no_aplica" && (
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          c.phase === "financiada"
+                            ? "bg-kb-gain/15 text-kb-gain"
+                            : "bg-kb-accent/10 text-kb-accent"
+                        }`}>
+                          {c.phase === "financiada" ? "✓ Fondeada" : PHASE_LABELS[c.phase]}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm font-semibold text-kb-text">{c.name}</p>
+                    <p className="text-xs text-kb-text-muted">
+                      {c.broker ? `${c.broker} · ` : ""}
+                      {c.currency} {c.starting_balance.toLocaleString("es")}
+                    </p>
+                    {c.blown_at && (
+                      <p className="mt-0.5 text-[11px] text-orange-400/80">
+                        Quemada el {formatFechaCorta(c.blown_at)}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => reactivar(c)}
+                    disabled={reactivandoId === c.id}
+                    className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-60 ${
+                      c.blown_at
+                        ? "border-orange-500/40 text-orange-400 hover:bg-orange-500/10"
+                        : "border-kb-accent/40 text-kb-accent hover:bg-kb-accent/10"
+                    }`}
+                  >
+                    {reactivandoId === c.id ? "Reactivando…" : "Reactivar"}
+                  </button>
                 </div>
-                <button
-                  onClick={() => reactivar(c)}
-                  disabled={reactivandoId === c.id}
-                  className="shrink-0 rounded-lg border border-kb-accent/40 px-3 py-1.5 text-xs font-medium text-kb-accent hover:bg-kb-accent/10 transition-colors disabled:opacity-60"
-                >
-                  {reactivandoId === c.id ? "Reactivando…" : "Reactivar"}
-                </button>
               </div>
             ))}
           </div>
+        )}
+
+        {tab === "quemadas" && !cargando && quemadas.length > 0 && (
+          <p className="mt-4 text-center text-[11px] text-kb-text-muted">
+            Al reactivar una cuenta quemada se elimina la marca de quemada y vuelve al dashboard activo.
+          </p>
         )}
       </div>
     </div>
@@ -9506,25 +11268,23 @@ function FormularioTrade({
               </select>
             </Campo>
 
-            <Campo etiqueta="¿Cometiste algún error?" ayuda="Tildá todos los que apliquen — un trade malo suele tener más de una causa junta">
-              <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-kb-border bg-kb-bg p-2.5 sm:grid-cols-3">
+            <Campo etiqueta="¿Cometiste algún error?" ayuda="Tocá los que apliquen — podés marcar varios">
+              <div className="flex flex-wrap gap-1.5">
                 {(Object.entries(MISTAKE_LABELS) as [MistakeType, string][])
                   .filter(([valor]) => valor !== "ninguno")
                   .map(([valor, etiqueta]) => (
-                    <label
+                    <button
                       key={valor}
-                      className={`flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors ${
-                        mistakes.includes(valor) ? "bg-kb-loss/15 text-kb-loss" : "text-kb-text-secondary hover:bg-kb-surface"
+                      type="button"
+                      onClick={() => alternarError(valor)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+                        mistakes.includes(valor)
+                          ? "bg-kb-loss/20 text-kb-loss border border-kb-loss/50 shadow-sm"
+                          : "border border-kb-border bg-kb-surface text-kb-text-secondary hover:border-kb-loss/40 hover:text-kb-loss"
                       }`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={mistakes.includes(valor)}
-                        onChange={() => alternarError(valor)}
-                        className="accent-kb-loss"
-                      />
-                      {etiqueta}
-                    </label>
+                      {mistakes.includes(valor) ? "✕ " : ""}{etiqueta}
+                    </button>
                   ))}
               </div>
             </Campo>
@@ -10103,6 +11863,7 @@ function FormularioCierreParcial({
   const [cantidad, setCantidad] = useState(String(cantidadRestante));
   const [exitPrice, setExitPrice] = useState("");
   const [pnlManual, setPnlManual] = useState("");
+  const [fees, setFees] = useState("0");
   const [notas, setNotas] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -10114,6 +11875,7 @@ function FormularioCierreParcial({
     const cantidadNumero = parseFloat(cantidad);
     const precioSalida = parseFloat(exitPrice);
     const pnlNumero = parseFloat(pnlManual);
+    const comisiones = parseFloat(fees || "0");
 
     if (Number.isNaN(cantidadNumero) || cantidadNumero <= 0) {
       setError("La cantidad a cerrar debe ser un número mayor a cero.");
@@ -10144,7 +11906,7 @@ function FormularioCierreParcial({
         user_id: userId,
         quantity: cantidadNumero,
         exit_price: precioSalida,
-        pnl: pnlNumero,
+        pnl: Math.round((pnlNumero - comisiones) * 100) / 100,
         exit_time: ahora,
         notes: notas.trim() === "" ? null : notas.trim(),
       })
@@ -10238,7 +12000,7 @@ function FormularioCierreParcial({
             className={inputClass}
           />
         </Campo>
-        <Campo etiqueta="P&L de este tramo">
+        <Campo etiqueta="P&L bruto de este tramo" ayuda="Se resta la comisión al guardar">
           <input
             required
             type="number"
@@ -10246,6 +12008,16 @@ function FormularioCierreParcial({
             value={pnlManual}
             onChange={(e) => setPnlManual(e.target.value)}
             placeholder="Ej. 120 o -40"
+            className={inputClass}
+          />
+        </Campo>
+        <Campo etiqueta="Comisión de este tramo" ayuda="Se descuenta del P&L">
+          <input
+            type="number"
+            step="any"
+            value={fees}
+            onChange={(e) => setFees(e.target.value)}
+            placeholder="0"
             className={inputClass}
           />
         </Campo>
@@ -10357,8 +12129,14 @@ function FormularioEdicionTrade({
     const pnlNumero = parseFloat(pnlManual);
     const comisiones = parseFloat(fees || "0");
 
-    if (Number.isNaN(cantidad) || Number.isNaN(precioEntrada) || Number.isNaN(precioSalida) || Number.isNaN(pnlNumero)) {
-      setError("Cantidad, precios y P&L son obligatorios y deben ser números.");
+    const esAbierta = trade.status === "open";
+
+    if (Number.isNaN(cantidad) || Number.isNaN(precioEntrada)) {
+      setError("Cantidad y precio de entrada son obligatorios.");
+      return;
+    }
+    if (!esAbierta && (Number.isNaN(precioSalida) || Number.isNaN(pnlNumero))) {
+      setError("Para trades cerrados, el precio de salida y P&L son obligatorios.");
       return;
     }
 
@@ -10396,10 +12174,10 @@ function FormularioEdicionTrade({
         side,
         quantity: cantidad,
         entry_price: precioEntrada,
-        exit_price: precioSalida,
+        exit_price: esAbierta ? null : precioSalida,
         pips: pips.trim() === "" ? null : parseFloat(pips),
         fees: comisiones,
-        realized_pnl: Math.round((pnlNumero - comisiones) * 100) / 100,
+        realized_pnl: esAbierta ? null : Math.round((pnlNumero - comisiones) * 100) / 100,
         risk_amount: riskAmount.trim() === "" ? null : parseFloat(riskAmount),
         result_type: resultType,
         session: session === "" ? null : session,
@@ -10458,8 +12236,8 @@ function FormularioEdicionTrade({
         <Campo etiqueta="Entrada">
           <input required type="number" step="any" value={entryPrice} onChange={(e) => setEntryPrice(e.target.value)} className={inputClass} />
         </Campo>
-        <Campo etiqueta="Salida">
-          <input required type="number" step="any" value={exitPrice} onChange={(e) => setExitPrice(e.target.value)} className={inputClass} />
+        <Campo etiqueta="Salida" ayuda={trade.status === "open" ? "Opcional para trades abiertos" : undefined}>
+          <input type="number" step="any" value={exitPrice} onChange={(e) => setExitPrice(e.target.value)} className={inputClass} placeholder={trade.status === "open" ? "— trade abierto —" : ""} />
         </Campo>
         <Campo etiqueta="Pips">
           <input type="number" step="any" value={pips} onChange={(e) => setPips(e.target.value)} className={inputClass} />
@@ -10467,8 +12245,8 @@ function FormularioEdicionTrade({
         <Campo etiqueta="Comisión">
           <input type="number" step="any" value={fees} onChange={(e) => setFees(e.target.value)} className={inputClass} />
         </Campo>
-        <Campo etiqueta="P&L (bruto)" ayuda="Se resta la comisión automáticamente al guardar">
-          <input required type="number" step="any" value={pnlManual} onChange={(e) => setPnlManual(e.target.value)} className={inputClass} />
+        <Campo etiqueta="P&L (bruto)" ayuda={trade.status === "open" ? "Opcional para trades abiertos" : "Se resta la comisión automáticamente al guardar"}>
+          <input type="number" step="any" value={pnlManual} onChange={(e) => setPnlManual(e.target.value)} className={inputClass} placeholder={trade.status === "open" ? "— trade abierto —" : ""} />
         </Campo>
         <Campo etiqueta="Monto arriesgado (R)" ayuda="Para calcular el R-múltiplo">
           <input type="number" step="any" value={riskAmount} onChange={(e) => setRiskAmount(e.target.value)} placeholder="Ej. 100" className={inputClass} />
@@ -10504,25 +12282,23 @@ function FormularioEdicionTrade({
             ))}
           </select>
         </Campo>
-        <Campo etiqueta="Errores" ayuda="Tildá todos los que apliquen">
-          <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-kb-border bg-kb-bg p-2.5 sm:grid-cols-3">
+        <Campo etiqueta="Errores" ayuda="Tocá los que apliquen — podés marcar varios">
+          <div className="flex flex-wrap gap-1.5">
             {(Object.entries(MISTAKE_LABELS) as [MistakeType, string][])
               .filter(([valor]) => valor !== "ninguno")
               .map(([valor, etiqueta]) => (
-                <label
+                <button
                   key={valor}
-                  className={`flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors ${
-                    mistakes.includes(valor) ? "bg-kb-loss/15 text-kb-loss" : "text-kb-text-secondary hover:bg-kb-surface"
+                  type="button"
+                  onClick={() => alternarError(valor)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+                    mistakes.includes(valor)
+                      ? "bg-kb-loss/20 text-kb-loss border border-kb-loss/50 shadow-sm"
+                      : "border border-kb-border bg-kb-surface text-kb-text-secondary hover:border-kb-loss/40 hover:text-kb-loss"
                   }`}
                 >
-                  <input
-                    type="checkbox"
-                    checked={mistakes.includes(valor)}
-                    onChange={() => alternarError(valor)}
-                    className="accent-kb-loss"
-                  />
-                  {etiqueta}
-                </label>
+                  {mistakes.includes(valor) ? "✕ " : ""}{etiqueta}
+                </button>
               ))}
           </div>
         </Campo>

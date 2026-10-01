@@ -174,7 +174,7 @@ export type AccountPhase = "fase_1" | "fase_2" | "financiada" | "no_aplica";
 export const PHASE_LABELS: Record<AccountPhase, string> = {
   fase_1: "Fase 1",
   fase_2: "Fase 2",
-  financiada: "Financiada",
+  financiada: "Fondeada",
   no_aplica: "No aplica",
 };
 
@@ -207,6 +207,10 @@ export interface Account {
   max_daily_loss: number | null;
   max_total_loss: number | null;
   is_archived: boolean;
+  /** Fecha en que la cuenta fue marcada como "quemada" (blown). Si es null,
+   * la cuenta no ha sido quemada. Cuando se establece, is_archived también
+   * se pone en true para sacarla del dashboard activo. */
+  blown_at: string | null;
   /** Camino de fondeo de la cuenta (capital propio / instantánea / 1 o
    * 2 fases). Nula en cuentas viejas creadas antes de este campo. */
   challenge_type: AccountChallengeType | null;
@@ -241,7 +245,28 @@ export interface Withdrawal {
   id: string;
   user_id: string;
   account_id: string;
+  /** Monto bruto del payout (lo que sale de la cuenta de prop firm).
+   * Es el valor que se descuenta del balance de la cuenta en KeboTrader. */
   amount: number;
+  /** Fee retenido por la plataforma (ej. Lucid retiene ~10%).
+   * Monto neto recibido = amount - platform_fee. */
+  platform_fee: number | null;
+  /** Método por el que llegó el dinero (Binance, PayPal, transferencia…). */
+  payment_method: string | null;
+  /** Tasa PTAX del Banco Central de Brasil en la fecha de recibo.
+   * Usar la del día que llegó el dinero, no la del día que se carga. */
+  ptax_rate: number | null;
+  /** Equivalente en BRL = (amount - platform_fee) × ptax_rate. */
+  brl_amount: number | null;
+  /** Monto en USDT que llegó a Binance (o cripto equivalente).
+   * Distinto de 'amount' porque el neto en USD ≠ USDT por slippage/fees. */
+  received_usdt: number | null;
+  /** URL de la captura de pantalla del comprobante de Binance/USDT
+   * (almacenada en Supabase Storage bucket "withdrawal-proofs"). */
+  proof_url: string | null;
+  /** URL del comprobante del PIX al banco (transferencia BRL).
+   * Distinto de proof_url: este es el recibo bancario, no el de Binance. */
+  proof_pix_url: string | null;
   withdrawal_date: string;
   notes: string | null;
   created_at: string;
@@ -289,6 +314,40 @@ export interface Profile {
   /** Token único que forma parte del link público (kebotrader.vercel.app/p/{token}).
    * Regenerarlo invalida el link anterior al instante. */
   public_token: string | null;
+}
+
+// ── Inversiones / aportes ─────────────────────────────────────────────
+
+export type InvestmentType =
+  | "fase_1"
+  | "fase_2"
+  | "reintento"
+  | "cuenta_nueva"
+  | "otro";
+
+export const INVESTMENT_TYPE_LABELS: Record<InvestmentType, string> = {
+  fase_1:      "Fee Fase 1",
+  fase_2:      "Fee Fase 2",
+  reintento:   "Reintento / Reset",
+  cuenta_nueva:"Cuenta nueva",
+  otro:        "Otro",
+};
+
+/**
+ * Un aporte de capital: cualquier monto que Kei pagó para operar una cuenta
+ * (fee de challenge, reintento, etc.). La suma de aportes por cuenta es el
+ * "invertido real" que se muestra en Rentabilidad, más preciso que el campo
+ * purchase_cost que se cargaba a mano al crear la cuenta.
+ */
+export interface Investment {
+  id: string;
+  user_id: string;
+  account_id: string | null;
+  amount: number;
+  investment_date: string;
+  investment_type: InvestmentType;
+  notes: string | null;
+  created_at: string;
 }
 
 export interface ChecklistItem {
