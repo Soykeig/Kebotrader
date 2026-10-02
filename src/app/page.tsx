@@ -9826,31 +9826,42 @@ const FIRMAS_PROP: { id: string; nombre: string; planes: PlanPropFirm[] }[] = [
     ],
   },
   // ── Take Profit Trader ───────────────────────────────────────────────
-  // Trailing drawdown EOD, sin DLL. Pago único.
+  // Trailing drawdown EOD, sin DLL. Suscripción mensual.
   {
     id: "tpt",
     nombre: "Take Profit Trader",
     planes: [
-      { nombre: "25K", balance: 25000, objetivoPct: 5, drawdownTotal: 1500, perdidaDiaria: null, challengeType: "una_fase", costo: 150, tipoCosto: "único" },
-      { nombre: "50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 170, tipoCosto: "único" },
-      { nombre: "75K", balance: 75000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 245, tipoCosto: "único" },
-      { nombre: "100K", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: null, challengeType: "una_fase", costo: 330, tipoCosto: "único" },
-      { nombre: "150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 360, tipoCosto: "único" },
+      { nombre: "25K", balance: 25000, objetivoPct: 5, drawdownTotal: 1500, perdidaDiaria: null, challengeType: "una_fase", costo: 150, tipoCosto: "mensual" },
+      { nombre: "50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 170, tipoCosto: "mensual" },
+      { nombre: "75K", balance: 75000, objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: null, challengeType: "una_fase", costo: 245, tipoCosto: "mensual" },
+      { nombre: "100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 330, tipoCosto: "mensual" },
+      { nombre: "150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 360, tipoCosto: "mensual" },
     ],
   },
   // ── Alpha Futures ────────────────────────────────────────────────────
-  // Standard: trailing EOD, sin DLL. Zero: mismas reglas, precio mayor. Suscripción mensual.
+  // Standard/Advanced: trailing EOD, sin DLL. Zero: con DLL incluido. Suscripción mensual.
+  // Direct: cuenta instantánea (ya fondeada), pago único.
   {
     id: "alpha",
     nombre: "Alpha Futures",
     planes: [
-      // Standard
-      { nombre: "Standard 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 79, tipoCosto: "mensual" },
-      { nombre: "Standard 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: null, challengeType: "una_fase", costo: 159, tipoCosto: "mensual" },
-      { nombre: "Standard 150K", balance: 150000, objetivoPct: 6, drawdownTotal: 6000, perdidaDiaria: null, challengeType: "una_fase", costo: 239, tipoCosto: "mensual" },
-      // Zero (sin comisiones en cuenta fondeada)
-      { nombre: "Zero 50K", balance: 50000, objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 99, tipoCosto: "mensual" },
-      { nombre: "Zero 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: null, challengeType: "una_fase", costo: 199, tipoCosto: "mensual" },
+      // Standard (sin DLL)
+      { nombre: "Standard 50K",  balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 129, tipoCosto: "mensual" },
+      { nombre: "Standard 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 239, tipoCosto: "mensual" },
+      { nombre: "Standard 150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 349, tipoCosto: "mensual" },
+      // Advanced (sin DLL, mayor objetivo)
+      { nombre: "Advanced 50K",  balance: 50000,  objetivoPct: 8, drawdownTotal: 1750, perdidaDiaria: null, challengeType: "una_fase", costo: 209, tipoCosto: "mensual" },
+      { nombre: "Advanced 100K", balance: 100000, objetivoPct: 8, drawdownTotal: 3500, perdidaDiaria: null, challengeType: "una_fase", costo: 349, tipoCosto: "mensual" },
+      { nombre: "Advanced 150K", balance: 150000, objetivoPct: 8, drawdownTotal: 5250, perdidaDiaria: null, challengeType: "una_fase", costo: 489, tipoCosto: "mensual" },
+      // Zero (con DLL — sin comisiones en cuenta fondeada)
+      { nombre: "Zero 25K",  balance: 25000,  objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: 500,  challengeType: "una_fase", costo: 89,  tipoCosto: "mensual" },
+      { nombre: "Zero 50K",  balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1000, challengeType: "una_fase", costo: 139, tipoCosto: "mensual" },
+      { nombre: "Zero 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 2000, challengeType: "una_fase", costo: 279, tipoCosto: "mensual" },
+      // Direct (cuenta ya fondeada — instantánea, pago único)
+      { nombre: "Direct 25K",  balance: 25000,  objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "instantanea", costo: 349, tipoCosto: "único" },
+      { nombre: "Direct 50K",  balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "instantanea", costo: 519, tipoCosto: "único" },
+      { nombre: "Direct 100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "instantanea", costo: 689, tipoCosto: "único" },
+      { nombre: "Direct 150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "instantanea", costo: 859, tipoCosto: "único" },
     ],
   },
   // ── FundedNext Futures ───────────────────────────────────────────────
@@ -10029,18 +10040,18 @@ function ModalNuevaCuenta({
 
             {/* Grid visual de firmas con ícono + nombre */}
             {(() => {
-              const FIRMA_META: Record<string, { abbr: string; color: string; bg: string }> = {
-                apex:       { abbr: "ATF", color: "#f97316", bg: "rgba(249,115,22,0.15)" },
-                topstep:    { abbr: "TS",  color: "#3b82f6", bg: "rgba(59,130,246,0.15)" },
-                tradeify:   { abbr: "TF",  color: "#10b981", bg: "rgba(16,185,129,0.15)" },
-                tradeday:   { abbr: "TD",  color: "#8b5cf6", bg: "rgba(139,92,246,0.15)" },
-                mff:        { abbr: "MFF", color: "#f59e0b", bg: "rgba(245,158,11,0.15)" },
-                earn2trade: { abbr: "E2T", color: "#ef4444", bg: "rgba(239,68,68,0.15)"  },
-                lucid:      { abbr: "LT",  color: "#06b6d4", bg: "rgba(6,182,212,0.15)"  },
-                bulenox:    { abbr: "BX",  color: "#6366f1", bg: "rgba(99,102,241,0.15)" },
-                tpt:        { abbr: "TPT", color: "#22c55e", bg: "rgba(34,197,94,0.15)"  },
-                alpha:      { abbr: "AF",  color: "#a855f7", bg: "rgba(168,85,247,0.15)" },
-                fundednext: { abbr: "FNF", color: "#fb923c", bg: "rgba(251,146,60,0.15)" },
+              const FIRMA_META: Record<string, { abbr: string; color: string; bg: string; domain: string }> = {
+                apex:       { abbr: "ATF", color: "#f97316", bg: "rgba(249,115,22,0.15)", domain: "apextraderfunding.com" },
+                topstep:    { abbr: "TS",  color: "#3b82f6", bg: "rgba(59,130,246,0.15)", domain: "topstep.com" },
+                tradeify:   { abbr: "TF",  color: "#10b981", bg: "rgba(16,185,129,0.15)", domain: "tradeify.com" },
+                tradeday:   { abbr: "TD",  color: "#8b5cf6", bg: "rgba(139,92,246,0.15)", domain: "tradeday.com" },
+                mff:        { abbr: "MFF", color: "#f59e0b", bg: "rgba(245,158,11,0.15)", domain: "myfundedfutures.com" },
+                earn2trade: { abbr: "E2T", color: "#ef4444", bg: "rgba(239,68,68,0.15)",  domain: "earn2trade.com" },
+                lucid:      { abbr: "LT",  color: "#06b6d4", bg: "rgba(6,182,212,0.15)",  domain: "lucidtrading.com" },
+                bulenox:    { abbr: "BX",  color: "#6366f1", bg: "rgba(99,102,241,0.15)", domain: "bulenox.com" },
+                tpt:        { abbr: "TPT", color: "#22c55e", bg: "rgba(34,197,94,0.15)",  domain: "takeprofittrader.com" },
+                alpha:      { abbr: "AF",  color: "#a855f7", bg: "rgba(168,85,247,0.15)", domain: "alphafutures.com" },
+                fundednext: { abbr: "FNF", color: "#fb923c", bg: "rgba(251,146,60,0.15)", domain: "fundednext.com" },
               };
               return (
                 <div className="grid grid-cols-2 gap-1.5">
@@ -10059,14 +10070,29 @@ function ModalNuevaCuenta({
                         }`}
                       >
                         <span
-                          className="flex-shrink-0 flex items-center justify-center rounded-md text-[9px] font-bold"
-                          style={{
-                            width: 28, height: 28,
-                            backgroundColor: meta.bg,
-                            color: meta.color,
-                          }}
+                          className="flex-shrink-0 flex items-center justify-center rounded-md overflow-hidden"
+                          style={{ width: 28, height: 28, backgroundColor: meta.bg }}
                         >
-                          {meta.abbr}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={`https://logo.clearbit.com/${meta.domain}`}
+                            alt={f.nombre}
+                            width={20}
+                            height={20}
+                            style={{ objectFit: "contain" }}
+                            onError={(e) => {
+                              const img = e.currentTarget;
+                              img.style.display = "none";
+                              const fallback = img.nextElementSibling as HTMLElement | null;
+                              if (fallback) fallback.style.display = "flex";
+                            }}
+                          />
+                          <span
+                            className="items-center justify-center text-[9px] font-bold w-full h-full"
+                            style={{ color: meta.color, display: "none" }}
+                          >
+                            {meta.abbr}
+                          </span>
                         </span>
                         <span className={`text-[11px] font-medium leading-tight ${sel ? "text-kb-accent" : "text-kb-text-secondary"}`}>
                           {f.nombre}
