@@ -10004,13 +10004,14 @@ function FirmaLogo({
 }) {
   // Cascade de fuentes de logo. t0.gstatic.com/faviconV2 queda descartado: devuelve un globo
   // genérico de Google (sin onError) para dominios sin favicon indexado, lo que hace que
-  // el logo "cargue" sin mostrar nada real. Orden actual:
+  // el logo "cargue" sin mostrar nada real. Clearbit también queda descartado: ahora es
+  // servicio de pago y devuelve imagen vacía (HTTP 200) en vez de 404, lo que impide que
+  // onError se dispare y el logo queda invisible. Orden actual:
   //   1. Google Favicons clásico (?sz=64) — no inventa íconos, dispara onError si no hay nada
   //   2. DuckDuckGo — amplio caché de favicons reales
-  //   3. Clearbit Logo API — base de datos amplia de logos de empresas financieras/tech
-  //   4. icon.horse — agregador con cobertura muy amplia para sitios sin favicon propio
-  //   5. Favicon.ico directo en el dominio — último recurso antes de la abreviatura
-  //   6. Abreviatura con color de marca (siempre visible)
+  //   3. icon.horse — agregador con cobertura muy amplia para sitios sin favicon propio
+  //   4. Favicon.ico directo en el dominio — último recurso antes de la abreviatura
+  //   5. Abreviatura con color de marca (siempre visible)
   const [src, setSrc] = useState(
     domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : ""
   );
@@ -10022,10 +10023,8 @@ function FirmaLogo({
     if (intento.current === 1 && domain) {
       setSrc(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
     } else if (intento.current === 2 && domain) {
-      setSrc(`https://logo.clearbit.com/${domain}`);
-    } else if (intento.current === 3 && domain) {
       setSrc(`https://icon.horse/icon/${domain}`);
-    } else if (intento.current === 4 && domain) {
+    } else if (intento.current === 3 && domain) {
       setSrc(`https://${domain}/favicon.ico`);
     } else {
       setFallback(true);
