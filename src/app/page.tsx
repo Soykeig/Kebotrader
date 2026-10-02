@@ -3596,6 +3596,7 @@ function TarjetaEstrategia({
   const [guardando, setGuardando] = useState(false);
   const [confirmandoEliminar, setConfirmandoEliminar] = useState(false);
   const [confirmandoEliminarRegla, setConfirmandoEliminarRegla] = useState<number | null>(null);
+  const [errorAccion, setErrorAccion] = useState<string | null>(null);
   useCerrarConEscape(() => { setConfirmandoEliminar(false); setConfirmandoEliminarRegla(null); });
 
   async function guardarNombre() {
@@ -3605,7 +3606,13 @@ function TarjetaEstrategia({
       setNombreEditado(estrategia.name);
       return;
     }
-    await supabase.from("strategies").update({ name: nombreLimpio }).eq("id", estrategia.id);
+    const { error } = await supabase.from("strategies").update({ name: nombreLimpio }).eq("id", estrategia.id);
+    if (error) {
+      setNombreEditado(estrategia.name); // revertir visualmente
+      setErrorAccion(`No se pudo guardar el nombre: ${error.message}`);
+    } else {
+      setErrorAccion(null);
+    }
     setEditandoNombre(false);
     onCambio();
   }
@@ -3615,33 +3622,59 @@ function TarjetaEstrategia({
     const texto = nuevaRegla.trim();
     if (!texto) return;
     setGuardando(true);
-    await supabase
+    const { error } = await supabase
       .from("strategies")
       .update({ rules: [...reglas, texto] })
       .eq("id", estrategia.id);
     setGuardando(false);
-    setNuevaRegla("");
-    setMostrarFormRegla(false);
+    if (error) {
+      setErrorAccion(`No se pudo agregar la regla: ${error.message}`);
+    } else {
+      setNuevaRegla("");
+      setMostrarFormRegla(false);
+      setErrorAccion(null);
+    }
     onCambio();
   }
 
   async function eliminarRegla(indice: number) {
     const nuevasReglas = reglas.filter((_, i) => i !== indice);
-    await supabase.from("strategies").update({ rules: nuevasReglas }).eq("id", estrategia.id);
+    const { error } = await supabase.from("strategies").update({ rules: nuevasReglas }).eq("id", estrategia.id);
+    if (error) {
+      setErrorAccion(`No se pudo eliminar la regla: ${error.message}`);
+    } else {
+      setConfirmandoEliminarRegla(null);
+      setErrorAccion(null);
+    }
     onCambio();
   }
 
   async function eliminarEstrategia() {
     // No borramos los trades: solo desvinculamos la estrategia de ellos
     // (quedan como "Sin estrategia"), y después borramos la estrategia.
-    await supabase.from("trades").update({ strategy_id: null }).eq("strategy_id", estrategia.id);
-    await supabase.from("strategies").delete().eq("id", estrategia.id);
+    const { error: errorDesvincular } = await supabase.from("trades").update({ strategy_id: null }).eq("strategy_id", estrategia.id);
+    if (errorDesvincular) {
+      setErrorAccion(`No se pudo desvincular los trades: ${errorDesvincular.message}`);
+      setConfirmandoEliminar(false);
+      return;
+    }
+    const { error: errorEliminar } = await supabase.from("strategies").delete().eq("id", estrategia.id);
+    if (errorEliminar) {
+      setErrorAccion(`No se pudo eliminar la estrategia: ${errorEliminar.message}`);
+      setConfirmandoEliminar(false);
+      return;
+    }
     onCambio();
   }
 
   return (
     <section className="overflow-hidden rounded-xl border border-kb-border bg-kb-surface">
       <div className={`h-1 w-full ${color.barra}`} />
+      {errorAccion && (
+        <p className="mx-5 mt-3 rounded-md bg-kb-loss/10 px-3 py-2 text-xs text-kb-loss">
+          {errorAccion}
+        </p>
+      )}
 
       <div className="flex items-start justify-between gap-3 px-5 pt-4">
         <div className="min-w-0">
@@ -9923,7 +9956,7 @@ const FIRMAS_PROP: { id: string; nombre: string; planes: PlanPropFirm[] }[] = [
 const FIRMA_META: Record<string, { abbr: string; color: string; bg: string; domain: string }> = {
   apex:       { abbr: "ATF", color: "#f97316", bg: "rgba(249,115,22,0.15)",  domain: "apextraderfunding.com" },
   topstep:    { abbr: "TS",  color: "#3b82f6", bg: "rgba(59,130,246,0.15)",  domain: "topstep.com" },
-  tradeify:   { abbr: "TF",  color: "#10b981", bg: "rgba(16,185,129,0.15)",  domain: "tradeify.com" },
+  tradeify:   { abbr: "TF",  color: "#10b981", bg: "rgba(16,185,129,0.15)",  domain: "tradeify.io" },
   tradeday:   { abbr: "TD",  color: "#8b5cf6", bg: "rgba(139,92,246,0.15)",  domain: "tradeday.com" },
   mff:        { abbr: "MFF", color: "#f59e0b", bg: "rgba(245,158,11,0.15)",  domain: "myfundedfutures.com" },
   earn2trade: { abbr: "E2T", color: "#ef4444", bg: "rgba(239,68,68,0.15)",   domain: "earn2trade.com" },
@@ -9933,6 +9966,60 @@ const FIRMA_META: Record<string, { abbr: string; color: string; bg: string; doma
   alpha:      { abbr: "AF",  color: "#a855f7", bg: "rgba(168,85,247,0.15)",  domain: "alphafutures.com" },
   fundednext: { abbr: "FNF", color: "#fb923c", bg: "rgba(251,146,60,0.15)",  domain: "fundednext.com" },
 };
+
+// Componente logo de prop firm: intenta Clearbit → Google Favicons → DuckDuckGo → fallback con abreviatura.
+// Usar un componente con estado propio es necesario para el cascade de fuentes sin mutar el DOM directamente.
+function FirmaLogo({
+  domain, abbr, color, bg, alt,
+}: {
+  domain: string; abbr: string; color: string; bg: string; alt: string;
+}) {
+  const [src, setSrc] = useState(
+    domain ? `https://logo.clearbit.com/${domain}` : ""
+  );
+  const [fallback, setFallback] = useState(!domain);
+  const intento = useRef(0);
+
+  function handleError() {
+    intento.current += 1;
+    if (intento.current === 1 && domain) {
+      // Segundo intento: Google Favicons (alta cobertura, funciona en producción)
+      setSrc(`https://www.google.com/s2/favicons?domain=${domain}&sz=64`);
+    } else if (intento.current === 2 && domain) {
+      // Tercer intento: DuckDuckGo (siempre disponible, menor calidad)
+      setSrc(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
+    } else {
+      // Fallback final: abreviatura con color de marca
+      setFallback(true);
+    }
+  }
+
+  return (
+    <span
+      className="flex-shrink-0 flex items-center justify-center rounded-md overflow-hidden"
+      style={{ width: 28, height: 28, backgroundColor: bg }}
+    >
+      {fallback ? (
+        <span
+          className="flex items-center justify-center text-[9px] font-bold w-full h-full"
+          style={{ color }}
+        >
+          {abbr}
+        </span>
+      ) : (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={src}
+          alt={alt}
+          width={20}
+          height={20}
+          style={{ objectFit: "contain" }}
+          onError={handleError}
+        />
+      )}
+    </span>
+  );
+}
 
 // =====================================================================
 // MODAL: crear nueva cuenta
@@ -10104,31 +10191,13 @@ function ModalNuevaCuenta({
                         : "border-kb-border hover:border-kb-text-secondary"
                     }`}
                   >
-                    <span
-                      className="flex-shrink-0 flex items-center justify-center rounded-md overflow-hidden"
-                      style={{ width: 28, height: 28, backgroundColor: meta.bg }}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={`https://logo.clearbit.com/${meta.domain}`}
-                        alt={f.nombre}
-                        width={20}
-                        height={20}
-                        style={{ objectFit: "contain" }}
-                        onError={(e) => {
-                          const img = e.currentTarget;
-                          img.style.display = "none";
-                          const fallback = img.nextElementSibling as HTMLElement | null;
-                          if (fallback) fallback.style.display = "flex";
-                        }}
-                      />
-                      <span
-                        className="items-center justify-center text-[9px] font-bold w-full h-full"
-                        style={{ color: meta.color, display: "none" }}
-                      >
-                        {meta.abbr}
-                      </span>
-                    </span>
+                    <FirmaLogo
+                      domain={meta.domain}
+                      abbr={meta.abbr}
+                      color={meta.color}
+                      bg={meta.bg}
+                      alt={f.nombre}
+                    />
                     <span className={`text-[11px] font-medium leading-tight ${sel ? "text-kb-accent" : "text-kb-text-secondary"}`}>
                       {f.nombre}
                     </span>
