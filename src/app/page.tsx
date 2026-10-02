@@ -10160,8 +10160,12 @@ function ModalNuevaCuenta({
     const plan = candidatos[0];
     const idx = firma.planes.indexOf(plan);
     aplicarPlan(firma, idx);
-    setUsarDailyLoss(conDLL);
-    if (!conDLL) setMaxDailyLoss("");
+    // Solo sobreescribir DLL cuando el usuario eligió explícitamente entre variantes.
+    // Si no hay toggle (plan único o firma sin variante), aplicarPlan ya setea el estado correcto.
+    if (ofreceDLLToggle) {
+      setUsarDailyLoss(conDLL);
+      if (!conDLL) setMaxDailyLoss("");
+    }
   }
 
   function toggleDailyLoss(checked: boolean) {
