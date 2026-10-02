@@ -9981,7 +9981,7 @@ const FIRMAS_PROP: { id: string; nombre: string; planes: PlanPropFirm[] }[] = [
 const FIRMA_META: Record<string, { abbr: string; color: string; bg: string; domain: string }> = {
   apex:       { abbr: "ATF", color: "#f97316", bg: "rgba(249,115,22,0.15)",  domain: "apextraderfunding.com" },
   topstep:    { abbr: "TS",  color: "#3b82f6", bg: "rgba(59,130,246,0.15)",  domain: "topstep.com" },
-  tradeify:   { abbr: "TF",  color: "#10b981", bg: "rgba(16,185,129,0.15)",  domain: "tradeify.io" },
+  tradeify:   { abbr: "TF",  color: "#10b981", bg: "rgba(16,185,129,0.15)",  domain: "tradeify.com" },
   tradeday:   { abbr: "TD",  color: "#8b5cf6", bg: "rgba(139,92,246,0.15)",  domain: "tradeday.com" },
   mff:        { abbr: "MFF", color: "#f59e0b", bg: "rgba(245,158,11,0.15)",  domain: "myfundedfutures.com" },
   earn2trade: { abbr: "E2T", color: "#ef4444", bg: "rgba(239,68,68,0.15)",   domain: "earn2trade.com" },
@@ -10139,12 +10139,51 @@ function ModalNuevaCuenta({
     setGrupoSel(null);
     setPlanIdx(null);
     setPlantillaAplicada(false);
+    if (!firma) return;
+    const grupos = [...new Set(
+      firma.planes
+        .filter((p) => p.balance === balance && p.grupo)
+        .map((p) => p.grupo as string)
+    )];
+    if (grupos.length === 0) {
+      // Sin grupos — auto-aplicar si no hay elección de DLL
+      const candidatos = firma.planes.filter((p) => p.balance === balance);
+      const hayDLL = candidatos.some((p) => p.perdidaDiaria !== null);
+      const haySinDLL = candidatos.some((p) => p.perdidaDiaria === null);
+      if (!(hayDLL && haySinDLL) && candidatos.length > 0) {
+        aplicarPlan(firma, firma.planes.indexOf(candidatos[0]));
+      }
+    } else if (grupos.length === 1) {
+      // Un solo grupo — auto-seleccionar y auto-aplicar si no hay elección de DLL
+      const grupo = grupos[0];
+      setGrupoSel(grupo);
+      const candidatos = firma.planes.filter(
+        (p) => p.balance === balance && p.grupo === grupo
+      );
+      const hayDLL = candidatos.some((p) => p.perdidaDiaria !== null);
+      const haySinDLL = candidatos.some((p) => p.perdidaDiaria === null);
+      if (!(hayDLL && haySinDLL) && candidatos.length > 0) {
+        aplicarPlan(firma, firma.planes.indexOf(candidatos[0]));
+      }
+    }
   }
 
   function elegirGrupo(grupo: string) {
     setGrupoSel(grupo);
     setPlanIdx(null);
     setPlantillaAplicada(false);
+    if (!firma || montoSel === null) return;
+    const candidatos = firma.planes.filter(
+      (p) => p.balance === montoSel && p.grupo === grupo
+    );
+    const hayDLL = candidatos.some((p) => p.perdidaDiaria !== null);
+    const haySinDLL = candidatos.some((p) => p.perdidaDiaria === null);
+    // Auto-aplicar si no hay elección de DLL que hacer
+    if (!(hayDLL && haySinDLL) && candidatos.length > 0) {
+      const plan = candidatos[0];
+      const idx = firma.planes.indexOf(plan);
+      aplicarPlan(firma, idx);
+    }
   }
 
   // Aplica el plan que corresponde al monto + grupo + preferencia DLL actual
