@@ -10144,7 +10144,9 @@ function ModalNuevaCuenta({
   const challengeType: AccountChallengeType =
     tipoCapital === "capital_propio" ? "capital_propio" :
     estado === "fondeada" ? "instantanea" : "dos_fases";
-  const accountType: AccountType = estado === "fondeada" ? "real" : "demo";
+  const accountType: AccountType =
+    tipoCapital === "capital_propio" ? "real" :
+    estado === "fondeada" ? "real" : "demo";
   const faseInicial: AccountPhase =
     tipoCapital === "capital_propio" ? "no_aplica" :
     estado === "fondeada" ? "financiada" : "fase_1";
