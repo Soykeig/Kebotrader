@@ -9994,26 +9994,23 @@ const FIRMA_META: Record<string, { abbr: string; color: string; bg: string; doma
 };
 
 // Componente logo de prop firm.
-// Cascade: Google Favicons (alta resolución) → DuckDuckGo → abreviatura con color de marca.
-// Clearbit se omite: ahora es servicio de pago y devuelve imagen vacía en vez de 404,
-// lo que impide que onError se dispare y el logo queda invisible.
+// Cascade: DuckDuckGo → icon.horse → favicon.ico directo → abreviatura con color de marca.
+// Google Favicons (s2/favicons y faviconV2) ELIMINADOS: ambos devuelven HTTP 200 con un globo
+// gris genérico para dominios no indexados, impidiendo que onError se dispare — el logo queda
+// "cargado" pero muestra el globo placeholder en vez del ícono real o la abreviatura de marca.
+// DuckDuckGo sí devuelve 404 para dominios sin favicon, lo que dispara onError correctamente.
 function FirmaLogo({
   domain, abbr, color, bg, alt,
 }: {
   domain: string; abbr: string; color: string; bg: string; alt: string;
 }) {
-  // Cascade de fuentes de logo. t0.gstatic.com/faviconV2 queda descartado: devuelve un globo
-  // genérico de Google (sin onError) para dominios sin favicon indexado, lo que hace que
-  // el logo "cargue" sin mostrar nada real. Clearbit también queda descartado: ahora es
-  // servicio de pago y devuelve imagen vacía (HTTP 200) en vez de 404, lo que impide que
-  // onError se dispare y el logo queda invisible. Orden actual:
-  //   1. Google Favicons clásico (?sz=64) — no inventa íconos, dispara onError si no hay nada
-  //   2. DuckDuckGo — amplio caché de favicons reales
-  //   3. icon.horse — agregador con cobertura muy amplia para sitios sin favicon propio
-  //   4. Favicon.ico directo en el dominio — último recurso antes de la abreviatura
-  //   5. Abreviatura con color de marca (siempre visible)
+  // Cascade de fuentes de logo. Orden actual:
+  //   1. DuckDuckGo — amplio caché de favicons reales, devuelve 404 si no hay nada (dispara onError)
+  //   2. icon.horse — agregador con cobertura muy amplia para sitios sin favicon propio
+  //   3. Favicon.ico directo en el dominio — último recurso antes de la abreviatura
+  //   4. Abreviatura con color de marca (siempre visible)
   const [src, setSrc] = useState(
-    domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : ""
+    domain ? `https://icons.duckduckgo.com/ip3/${domain}.ico` : ""
   );
   const [fallback, setFallback] = useState(!domain);
   const intento = useRef(0);
@@ -10021,10 +10018,8 @@ function FirmaLogo({
   function handleError() {
     intento.current += 1;
     if (intento.current === 1 && domain) {
-      setSrc(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
-    } else if (intento.current === 2 && domain) {
       setSrc(`https://icon.horse/icon/${domain}`);
-    } else if (intento.current === 3 && domain) {
+    } else if (intento.current === 2 && domain) {
       setSrc(`https://${domain}/favicon.ico`);
     } else {
       setFallback(true);
