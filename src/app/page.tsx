@@ -9796,50 +9796,49 @@ const FIRMAS_PROP: { id: string; nombre: string; planes: PlanPropFirm[] }[] = [
     ],
   },
   // ── Topstep ─────────────────────────────────────────────────────────
-  // DLL opcional que afecta el precio: con DLL es $10/20/30 más barato.
-  // Sin DLL: $95/$149/$229/mes. Con DLL: $85/$129/$199/mes.
+  // Trailing EOD, sin DLL (DLL eliminado para cuentas nuevas desde 2026).
+  // Precios estándar: $49/$99/$149/mes. Suscripción mensual.
   {
     id: "topstep",
     nombre: "Topstep",
     planes: [
-      { nombre: "50K sin DLL",  balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 95,  tipoCosto: "mensual" },
-      { nombre: "50K con DLL",  balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1000, challengeType: "una_fase", costo: 85,  tipoCosto: "mensual" },
-      { nombre: "100K sin DLL", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 149, tipoCosto: "mensual" },
-      { nombre: "100K con DLL", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 2000, challengeType: "una_fase", costo: 129, tipoCosto: "mensual" },
-      { nombre: "150K sin DLL", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 229, tipoCosto: "mensual" },
-      { nombre: "150K con DLL", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 3000, challengeType: "una_fase", costo: 199, tipoCosto: "mensual" },
+      { nombre: "50K",  balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 49,  tipoCosto: "mensual" },
+      { nombre: "100K", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 99,  tipoCosto: "mensual" },
+      { nombre: "150K", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 149, tipoCosto: "mensual" },
     ],
   },
   // ── Tradeify ─────────────────────────────────────────────────────────
   // Select: sin DLL, suscripción mensual. Growth: con DLL, suscripción mensual.
+  // Select 50K: objetivo 5% (no 6%). Drawdowns corregidos según datos reales.
   {
     id: "tradeify",
     nombre: "Tradeify",
     planes: [
       // Select (sin DLL)
-      { nombre: "Select 50K",  grupo: "Select", balance: 50000,  objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: null, challengeType: "una_fase", costo: 159, tipoCosto: "mensual" },
-      { nombre: "Select 100K", grupo: "Select", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: null, challengeType: "una_fase", costo: 259, tipoCosto: "mensual" },
-      { nombre: "Select 150K", grupo: "Select", balance: 150000, objetivoPct: 6, drawdownTotal: 5000, perdidaDiaria: null, challengeType: "una_fase", costo: 359, tipoCosto: "mensual" },
+      { nombre: "Select 50K",  grupo: "Select", balance: 50000,  objetivoPct: 5, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 159, tipoCosto: "mensual" },
+      { nombre: "Select 100K", grupo: "Select", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 259, tipoCosto: "mensual" },
+      { nombre: "Select 150K", grupo: "Select", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 359, tipoCosto: "mensual" },
       // Growth (con DLL — más barato que Select)
-      { nombre: "Growth 50K",  grupo: "Growth", balance: 50000,  objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: 1250, challengeType: "una_fase", costo: 139, tipoCosto: "mensual" },
-      { nombre: "Growth 100K", grupo: "Growth", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: 2500, challengeType: "una_fase", costo: 249, tipoCosto: "mensual" },
+      { nombre: "Growth 50K",  grupo: "Growth", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1250, challengeType: "una_fase", costo: 139, tipoCosto: "mensual" },
+      { nombre: "Growth 100K", grupo: "Growth", balance: 100000, objetivoPct: 6, drawdownTotal: 3500, perdidaDiaria: 2500, challengeType: "una_fase", costo: 249, tipoCosto: "mensual" },
       { nombre: "Growth 150K", grupo: "Growth", balance: 150000, objetivoPct: 6, drawdownTotal: 5000, perdidaDiaria: 3750, challengeType: "una_fase", costo: 359, tipoCosto: "mensual" },
     ],
   },
   // ── TradeDay ─────────────────────────────────────────────────────────
   // Intraday: trailing intraday, sin DLL. EOD: trailing EOD, sin DLL. Ambos pago único.
+  // Precios reales: Intraday $87/$140/$210, EOD $122/$192/$262.
   {
     id: "tradeday",
     nombre: "TradeDay",
     planes: [
       // Intraday
-      { nombre: "50K Intraday",  grupo: "Intraday", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 125, tipoCosto: "único" },
-      { nombre: "100K Intraday", grupo: "Intraday", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 200, tipoCosto: "único" },
-      { nombre: "150K Intraday", grupo: "Intraday", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 300, tipoCosto: "único" },
+      { nombre: "50K Intraday",  grupo: "Intraday", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 87,  tipoCosto: "único" },
+      { nombre: "100K Intraday", grupo: "Intraday", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 140, tipoCosto: "único" },
+      { nombre: "150K Intraday", grupo: "Intraday", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 210, tipoCosto: "único" },
       // EOD
-      { nombre: "50K EOD",  grupo: "EOD", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 175, tipoCosto: "único" },
-      { nombre: "100K EOD", grupo: "EOD", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 275, tipoCosto: "único" },
-      { nombre: "150K EOD", grupo: "EOD", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 375, tipoCosto: "único" },
+      { nombre: "50K EOD",  grupo: "EOD", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 122, tipoCosto: "único" },
+      { nombre: "100K EOD", grupo: "EOD", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 192, tipoCosto: "único" },
+      { nombre: "150K EOD", grupo: "EOD", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 262, tipoCosto: "único" },
     ],
   },
   // ── MyFundedFutures ──────────────────────────────────────────────────
@@ -9855,34 +9854,43 @@ const FIRMAS_PROP: { id: string; nombre: string; planes: PlanPropFirm[] }[] = [
     ],
   },
   // ── Earn2Trade ───────────────────────────────────────────────────────
-  // Gauntlet Mini: 1 fase, trailing EOD + DLL fijo. TCP: 2 fases, sin DLL. Ambos pago único.
+  // Gauntlet Mini: 1 fase, trailing EOD + DLL fijo. TCP: 2 fases, DLL opcional (2.2%). Ambos pago único.
+  // TCP precios reales: $150/$190/$350. TCP 25K objetivo 7% (no 6%).
   {
     id: "earn2trade",
     nombre: "Earn2Trade",
     planes: [
-      // Gauntlet Mini (con DLL)
+      // Gauntlet Mini (con DLL fijo)
       { nombre: "Gauntlet Mini 50K",  grupo: "Gauntlet Mini", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1100, challengeType: "una_fase", costo: 170, tipoCosto: "único" },
       { nombre: "Gauntlet Mini 100K", grupo: "Gauntlet Mini", balance: 100000, objetivoPct: 6, drawdownTotal: 3500, perdidaDiaria: 2200, challengeType: "una_fase", costo: 315, tipoCosto: "único" },
       { nombre: "Gauntlet Mini 150K", grupo: "Gauntlet Mini", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 3300, challengeType: "una_fase", costo: 375, tipoCosto: "único" },
       { nombre: "Gauntlet Mini 200K", grupo: "Gauntlet Mini", balance: 200000, objetivoPct: 5, drawdownTotal: 6000, perdidaDiaria: 4400, challengeType: "una_fase", costo: 550, tipoCosto: "único" },
-      // TCP - The Trader Career Path (2 fases, sin DLL)
-      { nombre: "TCP 25K",  grupo: "TCP", balance: 25000,  objetivoPct: 6, drawdownTotal: 1500, perdidaDiaria: null, challengeType: "dos_fases", costo: 60,  tipoCosto: "único" },
-      { nombre: "TCP 50K",  grupo: "TCP", balance: 50000,  objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: null, challengeType: "dos_fases", costo: 76,  tipoCosto: "único" },
-      { nombre: "TCP 100K", grupo: "TCP", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: null, challengeType: "dos_fases", costo: 140, tipoCosto: "único" },
+      // TCP - The Trader Career Path (2 fases, DLL opcional — mismo precio con o sin)
+      { nombre: "TCP 25K sin DLL",  grupo: "TCP", balance: 25000,  objetivoPct: 7, drawdownTotal: 1500, perdidaDiaria: null, challengeType: "dos_fases", costo: 150, tipoCosto: "único" },
+      { nombre: "TCP 25K con DLL",  grupo: "TCP", balance: 25000,  objetivoPct: 7, drawdownTotal: 1500, perdidaDiaria: 550,  challengeType: "dos_fases", costo: 150, tipoCosto: "único" },
+      { nombre: "TCP 50K sin DLL",  grupo: "TCP", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "dos_fases", costo: 190, tipoCosto: "único" },
+      { nombre: "TCP 50K con DLL",  grupo: "TCP", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1100, challengeType: "dos_fases", costo: 190, tipoCosto: "único" },
+      { nombre: "TCP 100K sin DLL", grupo: "TCP", balance: 100000, objetivoPct: 6, drawdownTotal: 3500, perdidaDiaria: null, challengeType: "dos_fases", costo: 350, tipoCosto: "único" },
+      { nombre: "TCP 100K con DLL", grupo: "TCP", balance: 100000, objetivoPct: 6, drawdownTotal: 3500, perdidaDiaria: 2200, challengeType: "dos_fases", costo: 350, tipoCosto: "único" },
     ],
   },
   // ── Lucid Trading ────────────────────────────────────────────────────
-  // LucidFlex: sin DLL. LucidPro: DLL opcional (mismo precio con o sin).
+  // LucidFlex: DLL opcional (mismo precio con o sin). LucidPro: DLL opcional (mismo precio).
   // LucidDirect: cuenta instantánea (ya fondeada). Todos pago único.
+  // Precios Flex confirmados desde dashboard: 25K=$89, 50K=$146, 100K=$283, 150K=$420.
   {
     id: "lucid",
     nombre: "Lucid Trading",
     planes: [
-      // LucidFlex (sin DLL siempre)
-      { nombre: "LucidFlex 25K",  grupo: "Flex", balance: 25000,  objetivoPct: 5, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase",   costo: 100, tipoCosto: "único" },
-      { nombre: "LucidFlex 50K",  grupo: "Flex", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase",   costo: 140, tipoCosto: "único" },
-      { nombre: "LucidFlex 100K", grupo: "Flex", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase",   costo: 225, tipoCosto: "único" },
-      { nombre: "LucidFlex 150K", grupo: "Flex", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase",   costo: 420, tipoCosto: "único" },
+      // LucidFlex (DLL opcional — mismo precio con o sin)
+      { nombre: "LucidFlex 25K sin DLL",  grupo: "Flex", balance: 25000,  objetivoPct: 5, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 89,  tipoCosto: "único" },
+      { nombre: "LucidFlex 25K con DLL",  grupo: "Flex", balance: 25000,  objetivoPct: 5, drawdownTotal: 1000, perdidaDiaria: 600,  challengeType: "una_fase", costo: 89,  tipoCosto: "único" },
+      { nombre: "LucidFlex 50K sin DLL",  grupo: "Flex", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 146, tipoCosto: "único" },
+      { nombre: "LucidFlex 50K con DLL",  grupo: "Flex", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1200, challengeType: "una_fase", costo: 146, tipoCosto: "único" },
+      { nombre: "LucidFlex 100K sin DLL", grupo: "Flex", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 283, tipoCosto: "único" },
+      { nombre: "LucidFlex 100K con DLL", grupo: "Flex", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 1800, challengeType: "una_fase", costo: 283, tipoCosto: "único" },
+      { nombre: "LucidFlex 150K sin DLL", grupo: "Flex", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 420, tipoCosto: "único" },
+      { nombre: "LucidFlex 150K con DLL", grupo: "Flex", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 2700, challengeType: "una_fase", costo: 420, tipoCosto: "único" },
       // LucidPro sin DLL (toggle OFF — mismo precio)
       { nombre: "LucidPro 25K sin DLL",  grupo: "Pro", balance: 25000,  objetivoPct: 5, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "una_fase", costo: 123, tipoCosto: "único" },
       { nombre: "LucidPro 50K sin DLL",  grupo: "Pro", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 192, tipoCosto: "único" },
@@ -9901,21 +9909,20 @@ const FIRMAS_PROP: { id: string; nombre: string; planes: PlanPropFirm[] }[] = [
     ],
   },
   // ── Bulenox ──────────────────────────────────────────────────────────
-  // Trailing EOD. DLL opcional (mismo precio con o sin). Suscripción mensual.
+  // Trailing EOD. DLL opcional (mismo precio con o sin). Pago ÚNICO desde ago 2026.
+  // Precios: $145/$175/$215/$325. Plan 250K discontinuado.
   {
     id: "bulenox",
     nombre: "Bulenox",
     planes: [
-      { nombre: "25K sin DLL", balance: 25000, objetivoPct: 6, drawdownTotal: 1500, perdidaDiaria: null, challengeType: "una_fase", costo: 15.95, tipoCosto: "mensual" },
-      { nombre: "25K con DLL", balance: 25000, objetivoPct: 6, drawdownTotal: 1500, perdidaDiaria: 500, challengeType: "una_fase", costo: 15.95, tipoCosto: "mensual" },
-      { nombre: "50K sin DLL", balance: 50000, objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: null, challengeType: "una_fase", costo: 19.25, tipoCosto: "mensual" },
-      { nombre: "50K con DLL", balance: 50000, objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: 1100, challengeType: "una_fase", costo: 19.25, tipoCosto: "mensual" },
-      { nombre: "100K sin DLL", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 23.65, tipoCosto: "mensual" },
-      { nombre: "100K con DLL", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 2200, challengeType: "una_fase", costo: 23.65, tipoCosto: "mensual" },
-      { nombre: "150K sin DLL", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 35.75, tipoCosto: "mensual" },
-      { nombre: "150K con DLL", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 3300, challengeType: "una_fase", costo: 35.75, tipoCosto: "mensual" },
-      { nombre: "250K sin DLL", balance: 250000, objetivoPct: 6, drawdownTotal: 5500, perdidaDiaria: null, challengeType: "una_fase", costo: 58.85, tipoCosto: "mensual" },
-      { nombre: "250K con DLL", balance: 250000, objetivoPct: 6, drawdownTotal: 5500, perdidaDiaria: 4500, challengeType: "una_fase", costo: 58.85, tipoCosto: "mensual" },
+      { nombre: "25K sin DLL",  balance: 25000,  objetivoPct: 6, drawdownTotal: 1500, perdidaDiaria: null, challengeType: "una_fase", costo: 145, tipoCosto: "único" },
+      { nombre: "25K con DLL",  balance: 25000,  objetivoPct: 6, drawdownTotal: 1500, perdidaDiaria: 500,  challengeType: "una_fase", costo: 145, tipoCosto: "único" },
+      { nombre: "50K sin DLL",  balance: 50000,  objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: null, challengeType: "una_fase", costo: 175, tipoCosto: "único" },
+      { nombre: "50K con DLL",  balance: 50000,  objetivoPct: 6, drawdownTotal: 2500, perdidaDiaria: 1100, challengeType: "una_fase", costo: 175, tipoCosto: "único" },
+      { nombre: "100K sin DLL", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase", costo: 215, tipoCosto: "único" },
+      { nombre: "100K con DLL", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 2200, challengeType: "una_fase", costo: 215, tipoCosto: "único" },
+      { nombre: "150K sin DLL", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase", costo: 325, tipoCosto: "único" },
+      { nombre: "150K con DLL", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: 3300, challengeType: "una_fase", costo: 325, tipoCosto: "único" },
     ],
   },
   // ── Take Profit Trader ───────────────────────────────────────────────
@@ -9933,28 +9940,22 @@ const FIRMAS_PROP: { id: string; nombre: string; planes: PlanPropFirm[] }[] = [
   },
   // ── Alpha Futures ────────────────────────────────────────────────────
   // Standard/Advanced: trailing EOD, sin DLL. Zero: con DLL incluido. Suscripción mensual.
-  // Direct: cuenta instantánea (ya fondeada), pago único.
+  // Direct: DISCONTINUADO — eliminado del sitio. Precios corregidos desde alphafutures.com.
   {
     id: "alpha",
     nombre: "Alpha Futures",
     planes: [
-      // Standard (sin DLL)
-      { nombre: "Standard 50K",  grupo: "Standard", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase",   costo: 129, tipoCosto: "mensual" },
-      { nombre: "Standard 100K", grupo: "Standard", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "una_fase",   costo: 239, tipoCosto: "mensual" },
-      { nombre: "Standard 150K", grupo: "Standard", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "una_fase",   costo: 349, tipoCosto: "mensual" },
-      // Advanced (sin DLL, mayor objetivo)
-      { nombre: "Advanced 50K",  grupo: "Advanced", balance: 50000,  objetivoPct: 8, drawdownTotal: 1750, perdidaDiaria: null, challengeType: "una_fase",   costo: 209, tipoCosto: "mensual" },
-      { nombre: "Advanced 100K", grupo: "Advanced", balance: 100000, objetivoPct: 8, drawdownTotal: 3500, perdidaDiaria: null, challengeType: "una_fase",   costo: 349, tipoCosto: "mensual" },
-      { nombre: "Advanced 150K", grupo: "Advanced", balance: 150000, objetivoPct: 8, drawdownTotal: 5250, perdidaDiaria: null, challengeType: "una_fase",   costo: 489, tipoCosto: "mensual" },
-      // Zero (con DLL — sin comisiones en cuenta fondeada)
-      { nombre: "Zero 25K",  grupo: "Zero", balance: 25000,  objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: 500,  challengeType: "una_fase", costo: 89,  tipoCosto: "mensual" },
-      { nombre: "Zero 50K",  grupo: "Zero", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1000, challengeType: "una_fase", costo: 139, tipoCosto: "mensual" },
-      { nombre: "Zero 100K", grupo: "Zero", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 2000, challengeType: "una_fase", costo: 279, tipoCosto: "mensual" },
-      // Direct (cuenta ya fondeada — instantánea, pago único)
-      { nombre: "Direct 25K",  grupo: "Direct", balance: 25000,  objetivoPct: 6, drawdownTotal: 1000, perdidaDiaria: null, challengeType: "instantanea", costo: 349, tipoCosto: "único" },
-      { nombre: "Direct 50K",  grupo: "Direct", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "instantanea", costo: 519, tipoCosto: "único" },
-      { nombre: "Direct 100K", grupo: "Direct", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: null, challengeType: "instantanea", costo: 689, tipoCosto: "único" },
-      { nombre: "Direct 150K", grupo: "Direct", balance: 150000, objetivoPct: 6, drawdownTotal: 4500, perdidaDiaria: null, challengeType: "instantanea", costo: 859, tipoCosto: "único" },
+      // Standard (sin DLL) — precios reales: $79/$159/$239. Drawdowns 100K/150K corregidos.
+      { nombre: "Standard 50K",  grupo: "Standard", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: null, challengeType: "una_fase", costo: 79,  tipoCosto: "mensual" },
+      { nombre: "Standard 100K", grupo: "Standard", balance: 100000, objetivoPct: 6, drawdownTotal: 4000, perdidaDiaria: null, challengeType: "una_fase", costo: 159, tipoCosto: "mensual" },
+      { nombre: "Standard 150K", grupo: "Standard", balance: 150000, objetivoPct: 6, drawdownTotal: 6000, perdidaDiaria: null, challengeType: "una_fase", costo: 239, tipoCosto: "mensual" },
+      // Advanced (sin DLL, mayor objetivo) — precios reales: $139/$279/$419
+      { nombre: "Advanced 50K",  grupo: "Advanced", balance: 50000,  objetivoPct: 8, drawdownTotal: 1750, perdidaDiaria: null, challengeType: "una_fase", costo: 139, tipoCosto: "mensual" },
+      { nombre: "Advanced 100K", grupo: "Advanced", balance: 100000, objetivoPct: 8, drawdownTotal: 3500, perdidaDiaria: null, challengeType: "una_fase", costo: 279, tipoCosto: "mensual" },
+      { nombre: "Advanced 150K", grupo: "Advanced", balance: 150000, objetivoPct: 8, drawdownTotal: 5250, perdidaDiaria: null, challengeType: "una_fase", costo: 419, tipoCosto: "mensual" },
+      // Zero (con DLL — sin comisiones en cuenta fondeada) — precios reales: $99/$199. Sin plan 25K.
+      { nombre: "Zero 50K",  grupo: "Zero", balance: 50000,  objetivoPct: 6, drawdownTotal: 2000, perdidaDiaria: 1000, challengeType: "una_fase", costo: 99,  tipoCosto: "mensual" },
+      { nombre: "Zero 100K", grupo: "Zero", balance: 100000, objetivoPct: 6, drawdownTotal: 3000, perdidaDiaria: 2000, challengeType: "una_fase", costo: 199, tipoCosto: "mensual" },
     ],
   },
   // ── FundedNext Futures ───────────────────────────────────────────────
@@ -10006,8 +10007,9 @@ function FirmaLogo({
   // el logo "cargue" sin mostrar nada real. Orden actual:
   //   1. Google Favicons clásico (?sz=64) — no inventa íconos, dispara onError si no hay nada
   //   2. DuckDuckGo — amplio caché de favicons reales
-  //   3. Favicon.ico directo en el dominio — siempre existe si el sitio tiene uno
-  //   4. Abreviatura con color de marca (siempre visible)
+  //   3. icon.horse — agregador con cobertura amplia, incluye sitios sin favicon propio
+  //   4. Favicon.ico directo en el dominio — último recurso antes de la abreviatura
+  //   5. Abreviatura con color de marca (siempre visible)
   const [src, setSrc] = useState(
     domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : ""
   );
@@ -10019,6 +10021,8 @@ function FirmaLogo({
     if (intento.current === 1 && domain) {
       setSrc(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
     } else if (intento.current === 2 && domain) {
+      setSrc(`https://icon.horse/icon/${domain}`);
+    } else if (intento.current === 3 && domain) {
       setSrc(`https://${domain}/favicon.ico`);
     } else {
       setFallback(true);
@@ -10084,6 +10088,9 @@ function ModalNuevaCuenta({
   // Cascading selector: paso 1 = monto, paso 2 = grupo, paso 3 = DLL
   const [montoSel, setMontoSel] = useState<number | null>(null);
   const [grupoSel, setGrupoSel] = useState<string | null>(null);
+  // Estado explícito para el toggle DLL: evita depender de valores derivados en render
+  // (que pueden quedar desincronizados con los state updates recién aplicados)
+  const [dllToggleDisponible, setDllToggleDisponible] = useState(false);
 
   const firma = FIRMAS_PROP.find((f) => f.id === firmaId) ?? null;
 
@@ -10120,25 +10127,17 @@ function ModalNuevaCuenta({
       )]
     : [];
 
-  // Planes candidatos según monto + grupo elegidos
-  const planesCandidatos = firma
-    ? firma.planes.filter(
-        (p) =>
-          (montoSel === null || p.balance === montoSel) &&
-          (grupoSel === null || !p.grupo || p.grupo === grupoSel)
-      )
-    : [];
-
-  // ¿El conjunto candidato tiene tanto "con DLL" como "sin DLL"?
-  const tieneDLL = planesCandidatos.some((p) => p.perdidaDiaria !== null);
-  const tieneSinDLL = planesCandidatos.some((p) => p.perdidaDiaria === null);
-  const ofreceDLLToggle = tieneDLL && tieneSinDLL;
+  // dllToggleDisponible es estado explícito (ver useState arriba).
+  // Se setea en elegirMonto / elegirGrupo al calcular los candidatos con la data
+  // correcta en ese momento, evitando que el render use valores derivados potencialmente
+  // desactualizados cuando hay batching de state updates.
 
   function elegirMonto(balance: number) {
     setMontoSel(balance);
     setGrupoSel(null);
     setPlanIdx(null);
     setPlantillaAplicada(false);
+    setDllToggleDisponible(false); // reset; se re-evaluará según el grupo elegido
     if (!firma) return;
     const grupos = [...new Set(
       firma.planes
@@ -10150,11 +10149,13 @@ function ModalNuevaCuenta({
       const candidatos = firma.planes.filter((p) => p.balance === balance);
       const hayDLL = candidatos.some((p) => p.perdidaDiaria !== null);
       const haySinDLL = candidatos.some((p) => p.perdidaDiaria === null);
-      if (!(hayDLL && haySinDLL) && candidatos.length > 0) {
+      if (hayDLL && haySinDLL) {
+        setDllToggleDisponible(true);
+      } else if (candidatos.length > 0) {
         aplicarPlan(firma, firma.planes.indexOf(candidatos[0]));
       }
     } else if (grupos.length === 1) {
-      // Un solo grupo — auto-seleccionar y auto-aplicar si no hay elección de DLL
+      // Un solo grupo — auto-seleccionar y calcular DLL
       const grupo = grupos[0];
       setGrupoSel(grupo);
       const candidatos = firma.planes.filter(
@@ -10162,10 +10163,13 @@ function ModalNuevaCuenta({
       );
       const hayDLL = candidatos.some((p) => p.perdidaDiaria !== null);
       const haySinDLL = candidatos.some((p) => p.perdidaDiaria === null);
-      if (!(hayDLL && haySinDLL) && candidatos.length > 0) {
+      if (hayDLL && haySinDLL) {
+        setDllToggleDisponible(true);
+      } else if (candidatos.length > 0) {
         aplicarPlan(firma, firma.planes.indexOf(candidatos[0]));
       }
     }
+    // grupos.length > 1: usuario debe elegir grupo primero; dllToggleDisponible queda false
   }
 
   function elegirGrupo(grupo: string) {
@@ -10178,11 +10182,17 @@ function ModalNuevaCuenta({
     );
     const hayDLL = candidatos.some((p) => p.perdidaDiaria !== null);
     const haySinDLL = candidatos.some((p) => p.perdidaDiaria === null);
-    // Auto-aplicar si no hay elección de DLL que hacer
-    if (!(hayDLL && haySinDLL) && candidatos.length > 0) {
-      const plan = candidatos[0];
-      const idx = firma.planes.indexOf(plan);
-      aplicarPlan(firma, idx);
+    if (hayDLL && haySinDLL) {
+      // Hay variantes con y sin DLL — mostrar toggle al usuario
+      setDllToggleDisponible(true);
+    } else {
+      // Un solo sabor — auto-aplicar directamente
+      setDllToggleDisponible(false);
+      if (candidatos.length > 0) {
+        const plan = candidatos[0];
+        const idx = firma.planes.indexOf(plan);
+        aplicarPlan(firma, idx);
+      }
     }
   }
 
@@ -10193,7 +10203,7 @@ function ModalNuevaCuenta({
       (p) =>
         p.balance === montoSel &&
         (grupoSel === null || !p.grupo || p.grupo === grupoSel) &&
-        (ofreceDLLToggle ? (conDLL ? p.perdidaDiaria !== null : p.perdidaDiaria === null) : true)
+        (dllToggleDisponible ? (conDLL ? p.perdidaDiaria !== null : p.perdidaDiaria === null) : true)
     );
     if (candidatos.length === 0) return;
     const plan = candidatos[0];
@@ -10201,7 +10211,7 @@ function ModalNuevaCuenta({
     aplicarPlan(firma, idx);
     // Solo sobreescribir DLL cuando el usuario eligió explícitamente entre variantes.
     // Si no hay toggle (plan único o firma sin variante), aplicarPlan ya setea el estado correcto.
-    if (ofreceDLLToggle) {
+    if (dllToggleDisponible) {
       setUsarDailyLoss(conDLL);
       if (!conDLL) setMaxDailyLoss("");
     }
@@ -10222,12 +10232,14 @@ function ModalNuevaCuenta({
       setPlantillaAplicada(false);
       setMontoSel(null);
       setGrupoSel(null);
+      setDllToggleDisponible(false);
     } else {
       setFirmaId(id);
       setPlanIdx(null);
       setPlantillaAplicada(false);
       setMontoSel(null);
       setGrupoSel(null);
+      setDllToggleDisponible(false);
     }
   }
 
@@ -10398,13 +10410,13 @@ function ModalNuevaCuenta({
                   </div>
                 )}
 
-                {/* Paso 3 — DLL (solo si aplica y hay monto y grupo elegidos) */}
+                {/* Paso 2/3 — DLL (solo si aplica y hay monto y grupo elegidos) */}
                 {montoSel !== null &&
                   (gruposDisponibles.length <= 1 || grupoSel !== null) &&
-                  ofreceDLLToggle && (
+                  dllToggleDisponible && (
                   <div>
                     <p className="mb-1.5 text-[11px] text-kb-text-muted font-medium">
-                      3 · Daily loss limit
+                      {gruposDisponibles.length > 1 ? "3" : "2"} · Daily loss limit
                     </p>
                     <div className="flex gap-2">
                       <button
@@ -10436,7 +10448,7 @@ function ModalNuevaCuenta({
                 {/* Botón confirmar cuando monto+grupo ya definen el plan (sin DLL toggle) */}
                 {montoSel !== null &&
                   (gruposDisponibles.length <= 1 || grupoSel !== null) &&
-                  !ofreceDLLToggle && (
+                  !dllToggleDisponible && (
                   <button
                     type="button"
                     onClick={() => confirmarPlanCascada(false)}
@@ -14539,4 +14551,3 @@ function TablaTrades({
     </div>
   );
 }
-
