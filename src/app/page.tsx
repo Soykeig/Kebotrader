@@ -9979,10 +9979,12 @@ const FIRMAS_PROP: { id: string; nombre: string; planes: PlanPropFirm[] }[] = [
 ];
 
 // Metadatos visuales de cada prop firm (abbr, colores, dominio para logo)
-const FIRMA_META: Record<string, { abbr: string; color: string; bg: string; domain: string }> = {
+// logoUrl opcional: URL directa al logo cuando Clearbit/DDG no indexan el dominio
+const FIRMA_META: Record<string, { abbr: string; color: string; bg: string; domain: string; logoUrl?: string }> = {
   apex:       { abbr: "ATF", color: "#f97316", bg: "rgba(249,115,22,0.15)",  domain: "apextraderfunding.com" },
   topstep:    { abbr: "TS",  color: "#3b82f6", bg: "rgba(59,130,246,0.15)",  domain: "topstep.com" },
-  tradeify:   { abbr: "TF",  color: "#10b981", bg: "rgba(16,185,129,0.15)",  domain: "tradeify.com" },
+  tradeify:   { abbr: "TF",  color: "#10b981", bg: "rgba(16,185,129,0.15)",  domain: "tradeify.co",
+                logoUrl: "https://storage.googleapis.com/simplify-imgs/companies/570a9f67-18d0-4b9d-8b81-e66aaa1497a4/logo.png" },
   tradeday:   { abbr: "TD",  color: "#8b5cf6", bg: "rgba(139,92,246,0.15)",  domain: "tradeday.com" },
   mff:        { abbr: "MFF", color: "#f59e0b", bg: "rgba(245,158,11,0.15)",  domain: "myfundedfutures.com" },
   earn2trade: { abbr: "E2T", color: "#ef4444", bg: "rgba(239,68,68,0.15)",   domain: "earn2trade.com" },
@@ -9994,37 +9996,31 @@ const FIRMA_META: Record<string, { abbr: string; color: string; bg: string; doma
 };
 
 // Componente logo de prop firm.
-// Cascade: Clearbit → DuckDuckGo → icon.horse → favicon.ico directo → abreviatura con color de marca.
-// Google Favicons (s2/favicons y faviconV2) ELIMINADOS: ambos devuelven HTTP 200 con un globo
-// gris genérico para dominios no indexados, impidiendo que onError se dispare — el logo queda
-// "cargado" pero muestra el globo placeholder en vez del ícono real o la abreviatura de marca.
-// Clearbit Logo API: devuelve logos de empresa de alta calidad (no favicons) y 404 real para
-// dominios desconocidos. DuckDuckGo como respaldo para sitios que Clearbit no indexa.
+// Cascade: logoUrl directo (si se provee) → Clearbit → DuckDuckGo → icon.horse → favicon.ico → abreviatura.
+// Google Favicons ELIMINADOS: devuelven HTTP 200 con globo gris genérico, nunca disparan onError.
+// logoUrl: URL hardcodeada para firmas que Clearbit/DDG no indexan (ej. tradeify.co).
 function FirmaLogo({
-  domain, abbr, color, bg, alt,
+  domain, abbr, color, bg, alt, logoUrl,
 }: {
-  domain: string; abbr: string; color: string; bg: string; alt: string;
+  domain: string; abbr: string; color: string; bg: string; alt: string; logoUrl?: string;
 }) {
-  // Cascade de fuentes de logo. Orden actual:
-  //   1. Clearbit Logo API — logos de empresa de alta calidad, 404 real si no está indexado
-  //   2. DuckDuckGo — amplio caché de favicons reales, devuelve 404 si no hay nada (dispara onError)
-  //   3. icon.horse — agregador con cobertura muy amplia para sitios sin favicon propio
-  //   4. Favicon.ico directo en el dominio — último recurso antes de la abreviatura
-  //   5. Abreviatura con color de marca (siempre visible)
-  const [src, setSrc] = useState(
-    domain ? `https://logo.clearbit.com/${domain}` : ""
-  );
-  const [fallback, setFallback] = useState(!domain);
-  const intento = useRef(0);
+  // Lista ordenada de URLs a intentar. Se construye una sola vez al montar.
+  const urls = useRef<string[]>([
+    ...(logoUrl ? [logoUrl] : []),
+    ...(domain ? [
+      `https://logo.clearbit.com/${domain}`,
+      `https://icons.duckduckgo.com/ip3/${domain}.ico`,
+      `https://icon.horse/icon/${domain}`,
+      `https://${domain}/favicon.ico`,
+    ] : []),
+  ]);
+  const [idx, setIdx] = useState(0);
+  const [fallback, setFallback] = useState(urls.current.length === 0);
 
   function handleError() {
-    intento.current += 1;
-    if (intento.current === 1 && domain) {
-      setSrc(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
-    } else if (intento.current === 2 && domain) {
-      setSrc(`https://icon.horse/icon/${domain}`);
-    } else if (intento.current === 3 && domain) {
-      setSrc(`https://${domain}/favicon.ico`);
+    const next = idx + 1;
+    if (next < urls.current.length) {
+      setIdx(next);
     } else {
       setFallback(true);
     }
@@ -10045,7 +10041,7 @@ function FirmaLogo({
       ) : (
         /* eslint-disable-next-line @next/next/no-img-element */
         <img
-          src={src}
+          src={urls.current[idx]}
           alt={alt}
           width={20}
           height={20}
@@ -10350,6 +10346,7 @@ function ModalNuevaCuenta({
                       color={meta.color}
                       bg={meta.bg}
                       alt={f.nombre}
+                      logoUrl={meta.logoUrl}
                     />
                     <span className={`text-[11px] font-medium leading-tight ${sel ? "text-kb-accent" : "text-kb-text-secondary"}`}>
                       {f.nombre}
