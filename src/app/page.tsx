@@ -9994,7 +9994,9 @@ const FIRMA_META: Record<string, { abbr: string; color: string; bg: string; doma
   alpha:      { abbr: "AF",  color: "#a855f7", bg: "rgba(168,85,247,0.15)",  domain: "alphafutures.com" },
   fundednext: { abbr: "FNF", color: "#fb923c", bg: "rgba(251,146,60,0.15)",  domain: "fundednext.com" },
   // ── CFD / Forex firms ──────────────────────────────────────────────────
-  alpha_capital:  { abbr: "ACG", color: "#6366f1", bg: "rgba(99,102,241,0.15)",  domain: "alphacapitalgroup.uk" },
+  // logoUrl hardcodeado para firmas que Clearbit no indexa (dominio .uk, .io, etc.)
+  alpha_capital:  { abbr: "ACG", color: "#6366f1", bg: "rgba(99,102,241,0.15)",  domain: "alphacapitalgroup.uk",
+                    logoUrl: "https://alphacapitalgroup.uk/wp-content/uploads/2022/09/acg-logo.svg" },
   blue_guardian:  { abbr: "BG",  color: "#3b82f6", bg: "rgba(59,130,246,0.15)",  domain: "blueguardianfunding.com" },
   blueberry:      { abbr: "BBF", color: "#8b5cf6", bg: "rgba(139,92,246,0.15)",  domain: "blueberryfunded.com" },
   breakout:       { abbr: "BRK", color: "#f97316", bg: "rgba(249,115,22,0.15)",  domain: "breakoutprop.com" },
@@ -10046,9 +10048,10 @@ const FIRMAS_CFD: { id: string; nombre: string }[] = [
 ];
 
 // Componente logo de prop firm.
-// Cascade: logoUrl directo (si se provee) → Clearbit → DuckDuckGo → icon.horse → favicon.ico → abreviatura.
+// Cascade: logoUrl directo → Clearbit → DuckDuckGo → icon.horse → unavatar.io
+//          → apple-touch-icon.png → apple-touch-icon-precomposed.png → favicon.ico → abreviatura.
 // Google Favicons ELIMINADOS: devuelven HTTP 200 con globo gris genérico, nunca disparan onError.
-// logoUrl: URL hardcodeada para firmas que Clearbit/DDG no indexan (ej. tradeify.co).
+// logoUrl: URL hardcodeada para firmas que Clearbit/DDG no indexan.
 function FirmaLogo({
   domain, abbr, color, bg, alt, logoUrl,
 }: {
@@ -10061,6 +10064,9 @@ function FirmaLogo({
       `https://logo.clearbit.com/${domain}`,
       `https://icons.duckduckgo.com/ip3/${domain}.ico`,
       `https://icon.horse/icon/${domain}`,
+      `https://unavatar.io/${domain}`,
+      `https://${domain}/apple-touch-icon.png`,
+      `https://${domain}/apple-touch-icon-precomposed.png`,
       `https://${domain}/favicon.ico`,
     ] : []),
   ]);
