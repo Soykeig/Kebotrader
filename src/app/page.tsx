@@ -10007,9 +10007,10 @@ function FirmaLogo({
   // el logo "cargue" sin mostrar nada real. Orden actual:
   //   1. Google Favicons clásico (?sz=64) — no inventa íconos, dispara onError si no hay nada
   //   2. DuckDuckGo — amplio caché de favicons reales
-  //   3. icon.horse — agregador con cobertura amplia, incluye sitios sin favicon propio
-  //   4. Favicon.ico directo en el dominio — último recurso antes de la abreviatura
-  //   5. Abreviatura con color de marca (siempre visible)
+  //   3. Clearbit Logo API — base de datos amplia de logos de empresas financieras/tech
+  //   4. icon.horse — agregador con cobertura muy amplia para sitios sin favicon propio
+  //   5. Favicon.ico directo en el dominio — último recurso antes de la abreviatura
+  //   6. Abreviatura con color de marca (siempre visible)
   const [src, setSrc] = useState(
     domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : ""
   );
@@ -10021,8 +10022,10 @@ function FirmaLogo({
     if (intento.current === 1 && domain) {
       setSrc(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
     } else if (intento.current === 2 && domain) {
-      setSrc(`https://icon.horse/icon/${domain}`);
+      setSrc(`https://logo.clearbit.com/${domain}`);
     } else if (intento.current === 3 && domain) {
+      setSrc(`https://icon.horse/icon/${domain}`);
+    } else if (intento.current === 4 && domain) {
       setSrc(`https://${domain}/favicon.ico`);
     } else {
       setFallback(true);
@@ -10418,30 +10421,34 @@ function ModalNuevaCuenta({
                     <p className="mb-1.5 text-[11px] text-kb-text-muted font-medium">
                       {gruposDisponibles.length > 1 ? "3" : "2"} · Daily loss limit
                     </p>
-                    <div className="flex gap-2">
+                    {plantillaAplicada && planIdx !== null && firma ? (
+                      /* Plan aplicado — muestra solo la opción elegida con ✓ (clic para re-elegir) */
                       <button
                         type="button"
-                        onClick={() => confirmarPlanCascada(false)}
-                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                          plantillaAplicada && planIdx !== null && firma.planes[planIdx]?.perdidaDiaria === null
-                            ? "border-kb-gain bg-kb-gain/10 text-kb-gain"
-                            : "border-kb-border text-kb-text hover:border-kb-text-secondary"
-                        }`}
+                        onClick={() => setPlantillaAplicada(false)}
+                        className="rounded-lg border border-kb-gain bg-kb-gain/10 px-3 py-1.5 text-xs font-semibold text-kb-gain"
                       >
-                        Sin DLL
+                        ✓ {firma.planes[planIdx]?.perdidaDiaria !== null ? "Con DLL" : "Sin DLL"}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => confirmarPlanCascada(true)}
-                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                          plantillaAplicada && planIdx !== null && firma.planes[planIdx]?.perdidaDiaria !== null
-                            ? "border-kb-gain bg-kb-gain/10 text-kb-gain"
-                            : "border-kb-border text-kb-text hover:border-kb-text-secondary"
-                        }`}
-                      >
-                        Con DLL
-                      </button>
-                    </div>
+                    ) : (
+                      /* Pendiente — muestra ambas opciones */
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => confirmarPlanCascada(false)}
+                          className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-semibold text-kb-text transition-colors hover:border-kb-text-secondary"
+                        >
+                          Sin DLL
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => confirmarPlanCascada(true)}
+                          className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-semibold text-kb-text transition-colors hover:border-kb-text-secondary"
+                        >
+                          Con DLL
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -14551,3 +14558,4 @@ function TablaTrades({
     </div>
   );
 }
+
