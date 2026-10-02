@@ -1316,6 +1316,7 @@ function Dashboard({
     const { data, error } = await supabase
       .from("accounts")
       .select("*")
+      .eq("user_id", session.user.id)
       .eq("is_archived", false)
       .order("created_at", { ascending: true });
 
@@ -1329,6 +1330,7 @@ function Dashboard({
     const { data, error } = await supabase
       .from("phase_history")
       .select("*")
+      .eq("user_id", session.user.id)
       .order("completado_en", { ascending: false });
     if (!error) {
       setHistorialFases((data as PhaseHistoryEntry[]) ?? []);
@@ -1389,7 +1391,10 @@ function Dashboard({
   }
 
   async function cargarEstrategiasDashboard() {
-    const { data } = await supabase.from("strategies").select("*");
+    const { data } = await supabase
+      .from("strategies")
+      .select("*")
+      .eq("user_id", session.user.id);
     if (data) setEstrategias(data as Strategy[]);
   }
 
@@ -1400,6 +1405,7 @@ function Dashboard({
     const { data, error } = await supabase
       .from("trades")
       .select("*")
+      .eq("user_id", session.user.id)
       .order("entry_time", { ascending: false });
 
     if (error) {
@@ -1415,6 +1421,7 @@ function Dashboard({
     const { data, error } = await supabase
       .from("withdrawals")
       .select("*")
+      .eq("user_id", session.user.id)
       .order("withdrawal_date", { ascending: false });
     if (!error) {
       setRetiros((data as Withdrawal[]) ?? []);
@@ -1427,6 +1434,7 @@ function Dashboard({
     const { data, error } = await supabase
       .from("investments")
       .select("*")
+      .eq("user_id", session.user.id)
       .order("investment_date", { ascending: false });
     if (!error) {
       setAportes((data as Investment[]) ?? []);
@@ -1439,6 +1447,7 @@ function Dashboard({
     const { data, error } = await supabase
       .from("achievements")
       .select("*")
+      .eq("user_id", session.user.id)
       .order("achieved_date", { ascending: false });
     if (!error) {
       setLogros((data as Achievement[]) ?? []);
@@ -3630,7 +3639,7 @@ function TarjetaEstrategia({
   async function agregarRegla(e: FormEvent) {
     e.preventDefault();
     const texto = nuevaRegla.trim();
-    if (!texto) return;
+    if (!texto || guardando) return; // evitar doble-submit
     setGuardando(true);
     const { error } = await supabase
       .from("strategies")
@@ -3670,7 +3679,9 @@ function TarjetaEstrategia({
     }
     const { error: errorEliminar } = await supabase.from("strategies").delete().eq("id", estrategia.id);
     if (errorEliminar) {
-      setErrorAccion(`No se pudo eliminar la estrategia: ${errorEliminar.message}`);
+      // Los trades ya quedaron desvinculados (strategy_id = null), pero la estrategia
+      // todavía existe en la DB. El usuario puede reintentar eliminarla.
+      setErrorAccion(`Los trades fueron desvinculados, pero no se pudo eliminar la estrategia: ${errorEliminar.message}. Intentá de nuevo.`);
       setConfirmandoEliminar(false);
       return;
     }
@@ -5385,6 +5396,11 @@ function RetirosView({
   // ── estado del formulario ──────────────────────────────────────────
   const cuentaParaRetiro = cuentaActivaId === "todas" ? "" : cuentaActivaId;
   const [accountId, setAccountId] = useState(cuentaParaRetiro || cuentas[0]?.id || "");
+  // Sincronizar accountId cuando cambia la cuenta activa desde fuera
+  useEffect(() => {
+    const nuevo = cuentaActivaId === "todas" ? (cuentas[0]?.id || "") : cuentaActivaId;
+    setAccountId(nuevo);
+  }, [cuentaActivaId]);
   const [grossStr, setGrossStr] = useState("");          // monto bruto
   const [feeStr, setFeeStr] = useState("");              // fee plataforma
   const [paymentMethod, setPaymentMethod] = useState("Binance");
@@ -5560,9 +5576,9 @@ function RetirosView({
     setBrlStr("");
     setReceivedUsdtStr("");
     setProofFile(null);
-    setProofPreview(null);
+    setProofPreview((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
     setProofPixFile(null);
-    setProofPixPreview(null);
+    setProofPixPreview((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
     setNotes("");
     setExitoRetiro(true);
     if (exitoRetiroTimerRef.current) clearTimeout(exitoRetiroTimerRef.current);
@@ -5571,6 +5587,16 @@ function RetirosView({
   }
 
   async function eliminar(id: string) {
+    // Limpiar archivos del bucket antes de borrar el registro
+    const retiro = retiros.find((r) => r.id === id);
+    if (retiro) {
+      const rutasABorrar: string[] = [];
+      if (retiro.proof_url) rutasABorrar.push(extraerRutaStorage("withdrawal-proofs", retiro.proof_url));
+      if (retiro.proof_pix_url) rutasABorrar.push(extraerRutaStorage("withdrawal-proofs", retiro.proof_pix_url));
+      if (rutasABorrar.length > 0) {
+        await supabase.storage.from("withdrawal-proofs").remove(rutasABorrar);
+      }
+    }
     const { error: deleteError } = await supabase.from("withdrawals").delete().eq("id", id);
     if (deleteError) {
       setError("No se pudo eliminar el retiro. Intenta de nuevo.");
@@ -6000,7 +6026,7 @@ function RetirosView({
                       <div className="relative">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={proofPreview} alt="Binance" className="w-full rounded-lg border border-kb-border-soft" style={{ maxHeight: "100px", objectFit: "contain" }} />
-                        <button type="button" onClick={() => { setProofFile(null); setProofPreview(null); }} className="absolute right-1.5 top-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white hover:bg-black/80">✕</button>
+                        <button type="button" onClick={() => { setProofFile(null); setProofPreview((prev) => { if (prev) URL.revokeObjectURL(prev); return null; }); }} className="absolute right-1.5 top-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white hover:bg-black/80">✕</button>
                       </div>
                     )}
                   </div>
@@ -6016,7 +6042,7 @@ function RetirosView({
                       <div className="relative">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={proofPixPreview} alt="PIX" className="w-full rounded-lg border border-kb-border-soft" style={{ maxHeight: "100px", objectFit: "contain" }} />
-                        <button type="button" onClick={() => { setProofPixFile(null); setProofPixPreview(null); }} className="absolute right-1.5 top-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white hover:bg-black/80">✕</button>
+                        <button type="button" onClick={() => { setProofPixFile(null); setProofPixPreview((prev) => { if (prev) URL.revokeObjectURL(prev); return null; }); }} className="absolute right-1.5 top-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white hover:bg-black/80">✕</button>
                       </div>
                     )}
                   </div>
@@ -6224,6 +6250,11 @@ function InversionesView({
 }) {
   const cuentaParaAporte = cuentaActivaId === "todas" ? "" : cuentaActivaId;
   const [accountId, setAccountId] = useState(cuentaParaAporte || cuentas[0]?.id || "");
+  // Sincronizar accountId cuando cambia la cuenta activa desde fuera
+  useEffect(() => {
+    const nuevo = cuentaActivaId === "todas" ? (cuentas[0]?.id || "") : cuentaActivaId;
+    setAccountId(nuevo);
+  }, [cuentaActivaId]);
   const [amountStr, setAmountStr] = useState("");
   const [tipo, setTipo] = useState<InvestmentType>("fase_1");
   const [fecha, setFecha] = useState(() => todayKey());
@@ -7509,6 +7540,7 @@ function ImportarView({
   const [resultadoMt, setResultadoMt] = useState<{ insertados: number } | null>(null);
   const [accountIdMt, setAccountIdMt] = useState(cuentaActivaId !== "todas" ? cuentaActivaId : "");
   const [strategyIdMt, setStrategyIdMt] = useState("");
+  const [instrumentTypeMt, setInstrumentTypeMt] = useState<InstrumentType>("forex");
 
   function reiniciarOcr() {
     setImagenOcrData(null);
@@ -7660,7 +7692,7 @@ function ImportarView({
       account_id: accountIdMt,
       strategy_id: strategyIdMt === "" ? null : strategyIdMt,
       symbol: t.symbol.toUpperCase(),
-      instrument_type: "forex" as InstrumentType,
+      instrument_type: instrumentTypeMt,
       side: t.side,
       status: t.exit_price !== null || t.realized_pnl !== null ? "closed" : "open",
       quantity: t.quantity,
@@ -8271,6 +8303,18 @@ function ImportarView({
                         <option value="">Sin estrategia</option>
                         {estrategias.map((e) => (
                           <option key={e.id} value={e.id}>{e.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Tipo de instrumento</label>
+                      <select
+                        value={instrumentTypeMt}
+                        onChange={(e) => setInstrumentTypeMt(e.target.value as InstrumentType)}
+                        className={inputClass}
+                      >
+                        {Object.entries(INSTRUMENT_LABELS).map(([valor, etiqueta]) => (
+                          <option key={valor} value={valor}>{etiqueta}</option>
                         ))}
                       </select>
                     </div>
@@ -10149,7 +10193,9 @@ function ModalNuevaCuenta({
   const firma = mercado === "futuros" ? (FIRMAS_PROP.find((f) => f.id === firmaId) ?? null) : null;
   const challengeType: AccountChallengeType =
     tipoCapital === "capital_propio" ? "capital_propio" :
-    estado === "fondeada" ? "instantanea" : "dos_fases";
+    estado === "fondeada" ? "instantanea" :
+    (firma !== null && planIdx !== null) ? firma.planes[planIdx].challengeType :
+    "dos_fases";
   const accountType: AccountType =
     tipoCapital === "capital_propio" ? "real" :
     estado === "fondeada" ? "real" : "demo";
@@ -13431,6 +13477,7 @@ function ModalDetalleTrade({
     const { data } = await supabase
       .from("trade_exits")
       .select("*")
+      .eq("user_id", trade.user_id)
       .eq("trade_id", trade.id)
       .order("exit_time", { ascending: true });
     setExits((data as TradeExit[]) ?? []);
@@ -13689,6 +13736,7 @@ function ModalDetalleTrade({
           <FormularioEdicionTrade
             trade={trade}
             estrategias={estrategias}
+            tieneParciales={tieneParciales}
             onCancelar={() => setModo("ver")}
             onGuardado={onActualizado}
           />
@@ -13969,6 +14017,7 @@ function FormularioCierreParcial({
       const { data: todosLosExits, error: exitsError } = await supabase
         .from("trade_exits")
         .select("*")
+        .eq("user_id", userId)
         .eq("trade_id", trade.id);
 
       if (exitsError) {
@@ -14126,11 +14175,13 @@ function DatoDetalle({ etiqueta, valor }: { etiqueta: string; valor: string }) {
 function FormularioEdicionTrade({
   trade,
   estrategias,
+  tieneParciales = false,
   onCancelar,
   onGuardado,
 }: {
   trade: Trade;
   estrategias: Strategy[];
+  tieneParciales?: boolean;
   onCancelar: () => void;
   onGuardado: () => void;
 }) {
@@ -14339,8 +14390,31 @@ function FormularioEdicionTrade({
             placeholder={trade.status === "open" ? "— trade abierto —" : ""}
           />
         </Campo>
-        <Campo etiqueta="P&L (bruto)" ayuda={trade.status === "open" ? "Opcional para trades abiertos" : "Se resta la comisión automáticamente al guardar"}>
-          <input type="number" step="any" value={pnlManual} onChange={(e) => setPnlManual(e.target.value)} className={inputClass} placeholder={trade.status === "open" ? "— trade abierto —" : ""} />
+        <Campo
+          etiqueta="P&L (bruto)"
+          ayuda={
+            tieneParciales
+              ? "Este trade tiene cierres parciales — el P&L se calcula de la suma de cada cierre"
+              : trade.status === "open"
+              ? "Opcional para trades abiertos"
+              : "Se resta la comisión automáticamente al guardar"
+          }
+        >
+          <input
+            type="number"
+            step="any"
+            value={pnlManual}
+            onChange={(e) => setPnlManual(e.target.value)}
+            className={inputClass}
+            placeholder={trade.status === "open" ? "— trade abierto —" : ""}
+            disabled={tieneParciales}
+            title={tieneParciales ? "Editá el P&L en cada cierre parcial (sección de cierres parciales)" : undefined}
+          />
+          {tieneParciales && (
+            <p className="mt-1 text-[10px] text-yellow-500">
+              ⚠️ P&L no editable aquí — tiene cierres parciales registrados
+            </p>
+          )}
         </Campo>
         <Campo etiqueta="Monto arriesgado (R)" ayuda="Para calcular el R-múltiplo">
           <input type="number" step="any" value={riskAmount} onChange={(e) => setRiskAmount(e.target.value)} placeholder="Ej. 100" className={inputClass} />
