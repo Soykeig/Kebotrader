@@ -9967,15 +9967,20 @@ const FIRMA_META: Record<string, { abbr: string; color: string; bg: string; doma
   fundednext: { abbr: "FNF", color: "#fb923c", bg: "rgba(251,146,60,0.15)",  domain: "fundednext.com" },
 };
 
-// Componente logo de prop firm: intenta Clearbit → Google Favicons → DuckDuckGo → fallback con abreviatura.
-// Usar un componente con estado propio es necesario para el cascade de fuentes sin mutar el DOM directamente.
+// Componente logo de prop firm.
+// Cascade: Google Favicons (alta resolución) → DuckDuckGo → abreviatura con color de marca.
+// Clearbit se omite: ahora es servicio de pago y devuelve imagen vacía en vez de 404,
+// lo que impide que onError se dispare y el logo queda invisible.
 function FirmaLogo({
   domain, abbr, color, bg, alt,
 }: {
   domain: string; abbr: string; color: string; bg: string; alt: string;
 }) {
+  // Primer intento: Google Favicons API a 64 px — gratuita, amplia cobertura, siempre retorna algo.
   const [src, setSrc] = useState(
-    domain ? `https://logo.clearbit.com/${domain}` : ""
+    domain
+      ? `https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${domain}&size=64`
+      : ""
   );
   const [fallback, setFallback] = useState(!domain);
   const intento = useRef(0);
@@ -9983,13 +9988,10 @@ function FirmaLogo({
   function handleError() {
     intento.current += 1;
     if (intento.current === 1 && domain) {
-      // Segundo intento: Google Favicons (alta cobertura, funciona en producción)
-      setSrc(`https://www.google.com/s2/favicons?domain=${domain}&sz=64`);
-    } else if (intento.current === 2 && domain) {
-      // Tercer intento: DuckDuckGo (siempre disponible, menor calidad)
+      // Segundo intento: DuckDuckGo — funciona para la mayoría de dominios conocidos.
       setSrc(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
     } else {
-      // Fallback final: abreviatura con color de marca
+      // Fallback final: abreviatura con color de marca (siempre visible).
       setFallback(true);
     }
   }
