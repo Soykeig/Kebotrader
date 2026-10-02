@@ -9993,7 +9993,57 @@ const FIRMA_META: Record<string, { abbr: string; color: string; bg: string; doma
   tpt:        { abbr: "TPT", color: "#22c55e", bg: "rgba(34,197,94,0.15)",   domain: "takeprofittrader.com" },
   alpha:      { abbr: "AF",  color: "#a855f7", bg: "rgba(168,85,247,0.15)",  domain: "alphafutures.com" },
   fundednext: { abbr: "FNF", color: "#fb923c", bg: "rgba(251,146,60,0.15)",  domain: "fundednext.com" },
+  // ── CFD / Forex firms ──────────────────────────────────────────────────
+  alpha_capital:  { abbr: "ACG", color: "#6366f1", bg: "rgba(99,102,241,0.15)",  domain: "alphacapitalgroup.uk" },
+  blue_guardian:  { abbr: "BG",  color: "#3b82f6", bg: "rgba(59,130,246,0.15)",  domain: "blueguardianfunding.com" },
+  blueberry:      { abbr: "BBF", color: "#8b5cf6", bg: "rgba(139,92,246,0.15)",  domain: "blueberryfunded.com" },
+  breakout:       { abbr: "BRK", color: "#f97316", bg: "rgba(249,115,22,0.15)",  domain: "breakoutprop.com" },
+  e8markets:      { abbr: "E8",  color: "#10b981", bg: "rgba(16,185,129,0.15)",  domain: "e8funding.com" },
+  eightcap:       { abbr: "8C",  color: "#0ea5e9", bg: "rgba(14,165,233,0.15)",  domain: "eightcap.com" },
+  elevate:        { abbr: "ELV", color: "#f59e0b", bg: "rgba(245,158,11,0.15)",  domain: "elevatechallenge.com" },
+  exness:         { abbr: "EX",  color: "#22c55e", bg: "rgba(34,197,94,0.15)",   domain: "exness.com" },
+  for_traders:    { abbr: "FT",  color: "#a855f7", bg: "rgba(168,85,247,0.15)",  domain: "fortraders.com" },
+  ftmo:           { abbr: "FM",  color: "#06b6d4", bg: "rgba(6,182,212,0.15)",   domain: "ftmo.com" },
+  fundingpips:    { abbr: "FP",  color: "#fb923c", bg: "rgba(251,146,60,0.15)",  domain: "fundingpips.com" },
+  fxify:          { abbr: "FXI", color: "#ef4444", bg: "rgba(239,68,68,0.15)",   domain: "fxify.com" },
+  goat_funded:    { abbr: "GFT", color: "#84cc16", bg: "rgba(132,204,22,0.15)",  domain: "goatfundedtrader.com" },
+  hola_prime:     { abbr: "HP",  color: "#f43f5e", bg: "rgba(244,63,94,0.15)",   domain: "holaprime.com" },
+  instant_funding:{ abbr: "IF",  color: "#64748b", bg: "rgba(100,116,139,0.15)", domain: "instantfunding.io" },
+  litefinance:    { abbr: "LF",  color: "#0284c7", bg: "rgba(2,132,199,0.15)",   domain: "litefinance.org" },
+  maven_trading:  { abbr: "MVN", color: "#7c3aed", bg: "rgba(124,58,237,0.15)",  domain: "maventrading.io" },
+  nys_markets:    { abbr: "NYS", color: "#dc2626", bg: "rgba(220,38,38,0.15)",   domain: "nysmarkets.com" },
+  orion_funded:   { abbr: "OF",  color: "#d97706", bg: "rgba(217,119,6,0.15)",   domain: "orionfunded.com" },
+  the5ers:        { abbr: "5ER", color: "#059669", bg: "rgba(5,150,105,0.15)",   domain: "the5ers.com" },
+  tradestation:   { abbr: "TST", color: "#1d4ed8", bg: "rgba(29,78,216,0.15)",   domain: "tradestation.com" },
+  wall_street:    { abbr: "WSF", color: "#78350f", bg: "rgba(120,53,15,0.15)",   domain: "wallstreetfunded.com" },
 };
+
+// Firmas de CFD/Forex (sin plan cascade — sólo logo y nombre)
+const FIRMAS_CFD: { id: string; nombre: string }[] = [
+  { id: "alpha_capital",   nombre: "Alpha Capital Group" },
+  { id: "blue_guardian",   nombre: "Blue Guardian" },
+  { id: "blueberry",       nombre: "Blueberry Funded" },
+  { id: "breakout",        nombre: "Breakout" },
+  { id: "e8markets",       nombre: "E8 Markets" },
+  { id: "eightcap",        nombre: "Eightcap" },
+  { id: "elevate",         nombre: "Elevate Challenge" },
+  { id: "exness",          nombre: "Exness" },
+  { id: "for_traders",     nombre: "For Traders" },
+  { id: "ftmo",            nombre: "FTMO" },
+  { id: "fundednext",      nombre: "FundedNext" },
+  { id: "fundingpips",     nombre: "FundingPips" },
+  { id: "fxify",           nombre: "FXIFY" },
+  { id: "goat_funded",     nombre: "Goat Funded Trader" },
+  { id: "hola_prime",      nombre: "Hola Prime" },
+  { id: "instant_funding", nombre: "Instant Funding" },
+  { id: "litefinance",     nombre: "LiteFinance" },
+  { id: "maven_trading",   nombre: "Maven Trading" },
+  { id: "nys_markets",     nombre: "NYS Markets" },
+  { id: "orion_funded",    nombre: "Orion Funded" },
+  { id: "the5ers",         nombre: "The 5%ers" },
+  { id: "tradestation",    nombre: "TradeStation" },
+  { id: "wall_street",     nombre: "Wall Street Funded" },
+];
 
 // Componente logo de prop firm.
 // Cascade: logoUrl directo (si se provee) → Clearbit → DuckDuckGo → icon.horse → favicon.ico → abreviatura.
@@ -10064,39 +10114,88 @@ function ModalNuevaCuenta({
   onClose: () => void;
   onCreada: (cuenta: Account) => void;
 }) {
+  // ── Campos generales ──────────────────────────────────────────
   const [name, setName] = useState("");
-  const [broker, setBroker] = useState("");
-  const [accountType, setAccountType] = useState<AccountType>("demo");
-  const [challengeType, setChallengeType] = useState<AccountChallengeType>("dos_fases");
+  const [tipoCapital, setTipoCapital] = useState<"prop_firm" | "capital_propio">("prop_firm");
+  const [mercado, setMercado] = useState<"futuros" | "cfd_forex">("futuros");
+  const [estado, setEstado] = useState<"en_reto" | "fondeada">("en_reto");
+  const [idCuenta, setIdCuenta] = useState("");
   const [startingBalance, setStartingBalance] = useState("10000");
   const [purchaseCost, setPurchaseCost] = useState("");
   const [maxDailyLoss, setMaxDailyLoss] = useState("");
   const [maxTotalLoss, setMaxTotalLoss] = useState("");
-  const [description, setDescription] = useState("");
+  const [notas, setNotas] = useState("");
   const [phaseTargetPercent, setPhaseTargetPercent] = useState("");
+  const [broker, setBroker] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Selector de prop firm
+  // ── Selector de firma ─────────────────────────────────────────
   const [firmaId, setFirmaId] = useState<string | null>(null);
   const [planIdx, setPlanIdx] = useState<number | null>(null);
   const [plantillaAplicada, setPlantillaAplicada] = useState(false);
   const [usarDailyLoss, setUsarDailyLoss] = useState(true);
-  // Cascading selector: paso 1 = monto, paso 2 = grupo, paso 3 = DLL
   const [montoSel, setMontoSel] = useState<number | null>(null);
   const [grupoSel, setGrupoSel] = useState<string | null>(null);
-  // Estado explícito para el toggle DLL: evita depender de valores derivados en render
-  // (que pueden quedar desincronizados con los state updates recién aplicados)
   const [dllToggleDisponible, setDllToggleDisponible] = useState(false);
 
-  const firma = FIRMAS_PROP.find((f) => f.id === firmaId) ?? null;
+  // ── Valores derivados ─────────────────────────────────────────
+  const firma = mercado === "futuros" ? (FIRMAS_PROP.find((f) => f.id === firmaId) ?? null) : null;
+  const challengeType: AccountChallengeType =
+    tipoCapital === "capital_propio" ? "capital_propio" :
+    estado === "fondeada" ? "instantanea" : "dos_fases";
+  const accountType: AccountType = estado === "fondeada" ? "real" : "demo";
+  const faseInicial: AccountPhase =
+    tipoCapital === "capital_propio" ? "no_aplica" :
+    estado === "fondeada" ? "financiada" : "fase_1";
+  const necesitaObjetivo = tipoCapital === "prop_firm" && estado === "en_reto";
+  const firmasActuales = mercado === "futuros"
+    ? FIRMAS_PROP.map((f) => ({ id: f.id, nombre: f.nombre }))
+    : FIRMAS_CFD;
 
+  // ── Reset firma ───────────────────────────────────────────────
+  function resetFirma() {
+    setFirmaId(null);
+    setPlanIdx(null);
+    setPlantillaAplicada(false);
+    setMontoSel(null);
+    setGrupoSel(null);
+    setDllToggleDisponible(false);
+    setBroker("");
+    setStartingBalance("10000");
+    setPurchaseCost("");
+    setMaxDailyLoss("");
+    setMaxTotalLoss("");
+    setPhaseTargetPercent("");
+  }
+
+  function cambiarTipoCapital(tipo: "prop_firm" | "capital_propio") {
+    setTipoCapital(tipo);
+    resetFirma();
+  }
+
+  function cambiarMercado(m: "futuros" | "cfd_forex") {
+    setMercado(m);
+    resetFirma();
+  }
+
+  // ── Selector CFD (simple, sin cascada) ────────────────────────
+  function seleccionarFirmaCFD(id: string) {
+    if (firmaId === id) {
+      setFirmaId(null);
+      setBroker("");
+    } else {
+      setFirmaId(id);
+      const f = FIRMAS_CFD.find((x) => x.id === id);
+      if (f) setBroker(f.nombre);
+    }
+  }
+
+  // ── Helpers cascada futuros ───────────────────────────────────
   function aplicarPlan(f: (typeof FIRMAS_PROP)[0], idx: number) {
     const plan = f.planes[idx];
     setBroker(f.nombre);
     setStartingBalance(String(plan.balance));
-    setChallengeType(plan.challengeType);
-    setAccountType("demo");
     setPhaseTargetPercent(String(plan.objetivoPct));
     setMaxTotalLoss(String(plan.drawdownTotal));
     setUsarDailyLoss(true);
@@ -10109,13 +10208,10 @@ function ModalNuevaCuenta({
     setPlantillaAplicada(true);
   }
 
-  // ── Helpers para el selector en cascada ────────────────────────────
-  // Todos los montos únicos disponibles para la firma seleccionada
   const montosDisponibles: number[] = firma
     ? [...new Set(firma.planes.map((p) => p.balance))].sort((a, b) => a - b)
     : [];
 
-  // Grupos únicos para el monto seleccionado (solo si hay más de uno)
   const gruposDisponibles: string[] = (firma && montoSel !== null)
     ? [...new Set(
         firma.planes
@@ -10124,17 +10220,12 @@ function ModalNuevaCuenta({
       )]
     : [];
 
-  // dllToggleDisponible es estado explícito (ver useState arriba).
-  // Se setea en elegirMonto / elegirGrupo al calcular los candidatos con la data
-  // correcta en ese momento, evitando que el render use valores derivados potencialmente
-  // desactualizados cuando hay batching de state updates.
-
   function elegirMonto(balance: number) {
     setMontoSel(balance);
     setGrupoSel(null);
     setPlanIdx(null);
     setPlantillaAplicada(false);
-    setDllToggleDisponible(false); // reset; se re-evaluará según el grupo elegido
+    setDllToggleDisponible(false);
     if (!firma) return;
     const grupos = [...new Set(
       firma.planes
@@ -10142,7 +10233,6 @@ function ModalNuevaCuenta({
         .map((p) => p.grupo as string)
     )];
     if (grupos.length === 0) {
-      // Sin grupos — auto-aplicar si no hay elección de DLL
       const candidatos = firma.planes.filter((p) => p.balance === balance);
       const hayDLL = candidatos.some((p) => p.perdidaDiaria !== null);
       const haySinDLL = candidatos.some((p) => p.perdidaDiaria === null);
@@ -10152,7 +10242,6 @@ function ModalNuevaCuenta({
         aplicarPlan(firma, firma.planes.indexOf(candidatos[0]));
       }
     } else if (grupos.length === 1) {
-      // Un solo grupo — auto-seleccionar y calcular DLL
       const grupo = grupos[0];
       setGrupoSel(grupo);
       const candidatos = firma.planes.filter(
@@ -10166,7 +10255,6 @@ function ModalNuevaCuenta({
         aplicarPlan(firma, firma.planes.indexOf(candidatos[0]));
       }
     }
-    // grupos.length > 1: usuario debe elegir grupo primero; dllToggleDisponible queda false
   }
 
   function elegirGrupo(grupo: string) {
@@ -10180,20 +10268,15 @@ function ModalNuevaCuenta({
     const hayDLL = candidatos.some((p) => p.perdidaDiaria !== null);
     const haySinDLL = candidatos.some((p) => p.perdidaDiaria === null);
     if (hayDLL && haySinDLL) {
-      // Hay variantes con y sin DLL — mostrar toggle al usuario
       setDllToggleDisponible(true);
     } else {
-      // Un solo sabor — auto-aplicar directamente
       setDllToggleDisponible(false);
       if (candidatos.length > 0) {
-        const plan = candidatos[0];
-        const idx = firma.planes.indexOf(plan);
-        aplicarPlan(firma, idx);
+        aplicarPlan(firma, firma.planes.indexOf(candidatos[0]));
       }
     }
   }
 
-  // Aplica el plan que corresponde al monto + grupo + preferencia DLL actual
   function confirmarPlanCascada(conDLL: boolean) {
     if (!firma || montoSel === null) return;
     const candidatos = firma.planes.filter(
@@ -10203,11 +10286,7 @@ function ModalNuevaCuenta({
         (dllToggleDisponible ? (conDLL ? p.perdidaDiaria !== null : p.perdidaDiaria === null) : true)
     );
     if (candidatos.length === 0) return;
-    const plan = candidatos[0];
-    const idx = firma.planes.indexOf(plan);
-    aplicarPlan(firma, idx);
-    // Solo sobreescribir DLL cuando el usuario eligió explícitamente entre variantes.
-    // Si no hay toggle (plan único o firma sin variante), aplicarPlan ya setea el estado correcto.
+    aplicarPlan(firma, firma.planes.indexOf(candidatos[0]));
     if (dllToggleDisponible) {
       setUsarDailyLoss(conDLL);
       if (!conDLL) setMaxDailyLoss("");
@@ -10222,14 +10301,9 @@ function ModalNuevaCuenta({
     }
   }
 
-  function seleccionarFirma(id: string) {
+  function seleccionarFirmaFuturos(id: string) {
     if (firmaId === id) {
-      setFirmaId(null);
-      setPlanIdx(null);
-      setPlantillaAplicada(false);
-      setMontoSel(null);
-      setGrupoSel(null);
-      setDllToggleDisponible(false);
+      resetFirma();
     } else {
       setFirmaId(id);
       setPlanIdx(null);
@@ -10241,18 +10315,6 @@ function ModalNuevaCuenta({
   }
 
   useCerrarConEscape(onClose);
-
-  // La fase inicial queda determinada por el tipo de cuenta elegido, para
-  // que quede todo configurado de una sola vez: capital propio no tiene
-  // fases, una cuenta instantánea ya nace fondeada, y los challenges
-  // arrancan en Fase 1 (después la app misma detecta cuándo avanzan).
-  const faseInicial: AccountPhase =
-    challengeType === "capital_propio"
-      ? "no_aplica"
-      : challengeType === "instantanea"
-      ? "financiada"
-      : "fase_1";
-  const necesitaObjetivo = challengeType === "una_fase" || challengeType === "dos_fases";
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -10271,6 +10333,11 @@ function ModalNuevaCuenta({
       return;
     }
 
+    const desc = [
+      idCuenta.trim() ? `ID: ${idCuenta.trim()}` : "",
+      notas.trim(),
+    ].filter(Boolean).join("\n\n") || null;
+
     setEnviando(true);
     const { data, error: insertError } = await supabase
       .from("accounts")
@@ -10285,7 +10352,7 @@ function ModalNuevaCuenta({
         purchase_cost: purchaseCost.trim() === "" ? null : parseFloat(purchaseCost),
         max_daily_loss: maxDailyLoss.trim() === "" ? null : parseFloat(maxDailyLoss),
         max_total_loss: maxTotalLoss.trim() === "" ? null : parseFloat(maxTotalLoss),
-        description: description.trim() === "" ? null : description.trim(),
+        description: desc,
         phase_target_percent: necesitaObjetivo && phaseTargetPercent.trim() !== "" ? parseFloat(phaseTargetPercent) : null,
       })
       .select()
@@ -10317,318 +10384,305 @@ function ModalNuevaCuenta({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* ── Selector de prop firm ─────────────────────────── */}
-          <div className="rounded-lg border border-kb-border-soft bg-kb-bg p-3 space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-kb-text-secondary">
-              Usar plantilla de prop firm
-            </p>
+        <form onSubmit={handleSubmit} className="space-y-5">
 
-            {/* Grid visual de firmas con ícono + nombre */}
-            <div className="grid grid-cols-2 gap-1.5">
-              {FIRMAS_PROP.map((f) => {
-                const meta = FIRMA_META[f.id] || { abbr: f.nombre.slice(0, 2).toUpperCase(), color: "#6b7280", bg: "rgba(107,114,128,0.15)", domain: "" };
-                const sel = firmaId === f.id;
-                return (
-                  <button
-                    key={f.id}
-                    type="button"
-                    onClick={() => seleccionarFirma(f.id)}
-                    className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${
-                      sel
-                        ? "border-kb-accent bg-kb-accent/10"
-                        : "border-kb-border hover:border-kb-text-secondary"
-                    }`}
-                  >
-                    <FirmaLogo
-                      domain={meta.domain}
-                      abbr={meta.abbr}
-                      color={meta.color}
-                      bg={meta.bg}
-                      alt={f.nombre}
-                      logoUrl={meta.logoUrl}
-                    />
-                    <span className={`text-[11px] font-medium leading-tight ${sel ? "text-kb-accent" : "text-kb-text-secondary"}`}>
-                      {f.nombre}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* ── Selector en cascada ─────────────────────────────── */}
-            {firma && (
-              <div className="space-y-3">
-
-                {/* Paso 1 — Monto */}
-                <div>
-                  <p className="mb-1.5 text-[11px] text-kb-text-muted font-medium">
-                    1 · Elige el tamaño de cuenta
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {montosDisponibles.map((bal) => (
-                      <button
-                        key={bal}
-                        type="button"
-                        onClick={() => elegirMonto(bal)}
-                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                          montoSel === bal
-                            ? "border-kb-accent bg-kb-accent/10 text-kb-accent"
-                            : "border-kb-border text-kb-text hover:border-kb-text-secondary"
-                        }`}
-                      >
-                        ${bal >= 1000 ? `${bal / 1000}K` : bal.toLocaleString()}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Paso 2 — Grupo (solo si hay más de uno para el monto) */}
-                {montoSel !== null && gruposDisponibles.length > 1 && (
-                  <div>
-                    <p className="mb-1.5 text-[11px] text-kb-text-muted font-medium">
-                      2 · Tipo de cuenta
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {gruposDisponibles.map((g) => (
-                        <button
-                          key={g}
-                          type="button"
-                          onClick={() => elegirGrupo(g)}
-                          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                            grupoSel === g
-                              ? "border-kb-accent bg-kb-accent/10 text-kb-accent"
-                              : "border-kb-border text-kb-text hover:border-kb-text-secondary"
-                          }`}
-                        >
-                          {g}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Paso 2/3 — DLL (solo si aplica y hay monto y grupo elegidos) */}
-                {montoSel !== null &&
-                  (gruposDisponibles.length <= 1 || grupoSel !== null) &&
-                  dllToggleDisponible && (
-                  <div>
-                    <p className="mb-1.5 text-[11px] text-kb-text-muted font-medium">
-                      {gruposDisponibles.length > 1 ? "3" : "2"} · Daily loss limit
-                    </p>
-                    {plantillaAplicada && planIdx !== null && firma ? (
-                      /* Plan aplicado — muestra solo la opción elegida con ✓ (clic para re-elegir) */
-                      <button
-                        type="button"
-                        onClick={() => setPlantillaAplicada(false)}
-                        className="rounded-lg border border-kb-gain bg-kb-gain/10 px-3 py-1.5 text-xs font-semibold text-kb-gain"
-                      >
-                        ✓ {firma.planes[planIdx]?.perdidaDiaria !== null ? "Con DLL" : "Sin DLL"}
-                      </button>
-                    ) : (
-                      /* Pendiente — muestra ambas opciones */
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => confirmarPlanCascada(false)}
-                          className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-semibold text-kb-text transition-colors hover:border-kb-text-secondary"
-                        >
-                          Sin DLL
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => confirmarPlanCascada(true)}
-                          className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-semibold text-kb-text transition-colors hover:border-kb-text-secondary"
-                        >
-                          Con DLL
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Botón confirmar cuando monto+grupo ya definen el plan (sin DLL toggle) */}
-                {montoSel !== null &&
-                  (gruposDisponibles.length <= 1 || grupoSel !== null) &&
-                  !dllToggleDisponible && (
-                  <button
-                    type="button"
-                    onClick={() => confirmarPlanCascada(false)}
-                    className={`w-full rounded-lg border py-1.5 text-xs font-semibold transition-colors ${
-                      plantillaAplicada
-                        ? "border-kb-gain bg-kb-gain/10 text-kb-gain"
-                        : "border-kb-border bg-kb-bg-soft text-kb-text hover:border-kb-accent hover:text-kb-accent"
-                    }`}
-                  >
-                    {plantillaAplicada ? "✓ Plantilla aplicada" : "Aplicar plan"}
-                  </button>
-                )}
-
-              </div>
-            )}
-
-            {/* Panel de detalles cuando hay un plan seleccionado */}
-            {plantillaAplicada && firma && planIdx !== null && (() => {
-              const plan = firma.planes[planIdx];
-              const ddPct = ((plan.drawdownTotal / plan.balance) * 100).toFixed(1);
-              const dlPct = plan.perdidaDiaria
-                ? ((plan.perdidaDiaria / plan.balance) * 100).toFixed(1)
-                : null;
-              return (
-                <div className="rounded-lg border border-kb-gain/25 bg-kb-gain/5 p-3 space-y-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-kb-gain">
-                    ✓ Plantilla aplicada — {firma.nombre} {plan.nombre}
-                  </p>
-
-                  {/* Grid de métricas */}
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                    <div>
-                      <p className="text-[10px] text-kb-text-muted">Balance</p>
-                      <p className="text-xs font-semibold text-kb-text">${plan.balance.toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-kb-text-muted">Objetivo fase</p>
-                      <p className="text-xs font-semibold text-kb-text">{plan.objetivoPct}%</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-kb-text-muted">Drawdown total</p>
-                      <p className="text-xs font-semibold text-kb-text">${plan.drawdownTotal.toLocaleString()} ({ddPct}%)</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-kb-text-muted">Tipo de challenge</p>
-                      <p className="text-xs font-semibold text-kb-text">{CHALLENGE_TYPE_LABELS[plan.challengeType]}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-kb-text-muted">Precio base (sin promo)</p>
-                      <p className="text-xs font-semibold text-kb-text">
-                        ~${plan.costo} {plan.tipoCosto === "mensual" ? "/ mes" : "(pago único)"}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Toggle daily loss */}
-                  {plan.perdidaDiaria !== null ? (
-                    dllToggleDisponible ? (
-                      /* La cascada ya eligió explícitamente "Con DLL" — mostrar solo como info,
-                         sin toggle redundante (el usuario ya tomó la decisión en el paso anterior) */
-                      <div className="rounded-md border border-kb-border-soft bg-kb-bg px-2.5 py-2">
-                        <p className="text-[11px] font-medium text-kb-text">Daily loss limit</p>
-                        <p className="text-[10px] text-kb-text-muted">
-                          ${plan.perdidaDiaria.toLocaleString()} ({dlPct}% del balance)
-                        </p>
-                      </div>
-                    ) : (
-                      /* Plan con DLL fijo sin variante "sin DLL" (ej. Apex EOD) —
-                         toggle para que el usuario decida si quiere trackearlo en la app */
-                      <div className="flex items-center justify-between rounded-md border border-kb-border-soft bg-kb-bg px-2.5 py-2">
-                        <div>
-                          <p className="text-[11px] font-medium text-kb-text">Daily loss limit</p>
-                          <p className="text-[10px] text-kb-text-muted">
-                            ${plan.perdidaDiaria.toLocaleString()} ({dlPct}% del balance)
-                          </p>
-                        </div>
-                        <label className="flex cursor-pointer items-center gap-2 select-none">
-                          <input
-                            type="checkbox"
-                            checked={usarDailyLoss}
-                            onChange={(e) => toggleDailyLoss(e.target.checked)}
-                            className="h-4 w-4 accent-kb-accent"
-                          />
-                          <span className={`text-[11px] font-medium ${usarDailyLoss ? "text-kb-gain" : "text-kb-text-muted"}`}>
-                            {usarDailyLoss ? "Activado" : "Desactivado"}
-                          </span>
-                        </label>
-                      </div>
-                    )
-                  ) : (
-                    <p className="text-[10px] text-kb-text-muted italic">
-                      Esta firma no maneja daily loss limit — solo drawdown total.
-                    </p>
-                  )}
-
-                  <p className="text-[9px] text-kb-text-muted">
-                    💡 Precios base (sin código promo). La mayoría de firmas tienen descuentos activos de 20–60% — siempre verifica promos en el sitio oficial antes de comprar.
-                  </p>
-                </div>
-              );
-            })()}
-          </div>
-          {/* ───────────────────────────────────────────────────── */}
-
-          <Campo etiqueta="Nombre de la cuenta" ayuda="Para identificarla rápido, ej. 'FTMO 10K' o 'Mi cuenta real'">
+          {/* 1 · Nombre de la cuenta */}
+          <Campo etiqueta="Nombre de la cuenta" ayuda="Para identificarla rápido, ej. 'Apex 50K' o 'FTMO Enero'">
             <input
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="FTMO 10K"
+              placeholder="Apex 50K"
               className={inputClass}
             />
           </Campo>
 
-          <Campo etiqueta="Empresa / Broker" ayuda="Quién te vendió o dónde abriste la cuenta">
-            <input
-              value={broker}
-              onChange={(e) => setBroker(e.target.value)}
-              placeholder="FTMO, IBKR, Schwab…"
-              className={inputClass}
-            />
-          </Campo>
-
+          {/* 2 · Tipo de capital */}
           <div>
-            <span className="mb-1.5 block text-xs font-medium text-kb-text-secondary">
-              ¿Qué camino recorre esta cuenta hasta estar fondeada?
+            <span className="mb-2 block text-xs font-medium text-kb-text-secondary">
+              Tipo de capital
             </span>
             <div className="grid grid-cols-2 gap-2">
-              {(Object.entries(CHALLENGE_TYPE_LABELS) as [AccountChallengeType, string][]).map(
-                ([valor, etiqueta]) => (
+              {(["prop_firm", "capital_propio"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => cambiarTipoCapital(t)}
+                  className={`rounded-lg border px-3 py-2.5 text-xs font-medium transition-colors text-center ${
+                    tipoCapital === t
+                      ? "border-kb-accent bg-kb-accent/10 text-kb-accent"
+                      : "border-kb-border text-kb-text-secondary hover:border-kb-text-secondary"
+                  }`}
+                >
+                  {t === "prop_firm" ? "Empresa de fondeo / Prop Firm" : "Capital propio"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 3 · Mercado (solo prop_firm) */}
+          {tipoCapital === "prop_firm" && (
+            <div>
+              <span className="mb-2 block text-xs font-medium text-kb-text-secondary">
+                Mercado
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                {(["futuros", "cfd_forex"] as const).map((m) => (
                   <button
-                    key={valor}
+                    key={m}
                     type="button"
-                    onClick={() => setChallengeType(valor)}
-                    className={`rounded-lg border px-3 py-2.5 text-left text-xs font-medium transition-colors ${
-                      challengeType === valor
+                    onClick={() => cambiarMercado(m)}
+                    className={`rounded-lg border px-3 py-2.5 text-xs font-medium transition-colors text-center ${
+                      mercado === m
                         ? "border-kb-accent bg-kb-accent/10 text-kb-accent"
                         : "border-kb-border text-kb-text-secondary hover:border-kb-text-secondary"
                     }`}
                   >
-                    {etiqueta}
+                    {m === "futuros" ? "Futuros" : "CFD / Forex"}
                   </button>
-                )
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 4 · Empresa de fondeo + cascade (solo prop_firm) */}
+          {tipoCapital === "prop_firm" && (
+            <div className="rounded-lg border border-kb-border-soft bg-kb-bg p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wide text-kb-text-secondary">
+                  Empresa de fondeo
+                </p>
+                <p className={`text-[11px] font-medium transition-colors ${firmaId ? "text-kb-gain" : "text-kb-text-muted"}`}>
+                  {firmaId ? "✓ confirmada" : "elige dónde compraste la cuenta"}
+                </p>
+              </div>
+
+              {/* Grid de firmas filtrado por mercado */}
+              <div className="grid grid-cols-2 gap-1.5 max-h-52 overflow-y-auto">
+                {firmasActuales.map((f) => {
+                  const meta = FIRMA_META[f.id] || { abbr: f.nombre.slice(0, 2).toUpperCase(), color: "#6b7280", bg: "rgba(107,114,128,0.15)", domain: "" };
+                  const sel = firmaId === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() =>
+                        mercado === "futuros"
+                          ? seleccionarFirmaFuturos(f.id)
+                          : seleccionarFirmaCFD(f.id)
+                      }
+                      className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${
+                        sel
+                          ? "border-kb-accent bg-kb-accent/10"
+                          : "border-kb-border hover:border-kb-text-secondary"
+                      }`}
+                    >
+                      <FirmaLogo
+                        domain={meta.domain}
+                        abbr={meta.abbr}
+                        color={meta.color}
+                        bg={meta.bg}
+                        alt={f.nombre}
+                        logoUrl={meta.logoUrl}
+                      />
+                      <span className={`text-[11px] font-medium leading-tight ${sel ? "text-kb-accent" : "text-kb-text-secondary"}`}>
+                        {f.nombre}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 5 · Cascada (solo futuros + firma elegida) */}
+              {mercado === "futuros" && firma && (
+                <div className="space-y-3 border-t border-kb-border-soft pt-3">
+                  {/* Paso 1 — Tamaño */}
+                  <div>
+                    <p className="mb-1.5 text-[11px] text-kb-text-muted font-medium">
+                      Tamaño de cuenta
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {montosDisponibles.map((bal) => (
+                        <button
+                          key={bal}
+                          type="button"
+                          onClick={() => elegirMonto(bal)}
+                          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                            montoSel === bal
+                              ? "border-kb-accent bg-kb-accent/10 text-kb-accent"
+                              : "border-kb-border text-kb-text hover:border-kb-text-secondary"
+                          }`}
+                        >
+                          ${bal >= 1000 ? `${bal / 1000}K` : bal.toLocaleString()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Paso 2 — Grupo */}
+                  {montoSel !== null && gruposDisponibles.length > 1 && (
+                    <div>
+                      <p className="mb-1.5 text-[11px] text-kb-text-muted font-medium">
+                        Tipo de cuenta
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {gruposDisponibles.map((g) => (
+                          <button
+                            key={g}
+                            type="button"
+                            onClick={() => elegirGrupo(g)}
+                            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                              grupoSel === g
+                                ? "border-kb-accent bg-kb-accent/10 text-kb-accent"
+                                : "border-kb-border text-kb-text hover:border-kb-text-secondary"
+                            }`}
+                          >
+                            {g}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* DLL toggle */}
+                  {montoSel !== null &&
+                    (gruposDisponibles.length <= 1 || grupoSel !== null) &&
+                    dllToggleDisponible && (
+                    <div>
+                      <p className="mb-1.5 text-[11px] text-kb-text-muted font-medium">
+                        Daily loss limit
+                      </p>
+                      {plantillaAplicada && planIdx !== null ? (
+                        <button
+                          type="button"
+                          onClick={() => setPlantillaAplicada(false)}
+                          className="rounded-lg border border-kb-gain bg-kb-gain/10 px-3 py-1.5 text-xs font-semibold text-kb-gain"
+                        >
+                          ✓ {firma.planes[planIdx]?.perdidaDiaria !== null ? "Con DLL" : "Sin DLL"}
+                        </button>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => confirmarPlanCascada(false)}
+                            className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-semibold text-kb-text transition-colors hover:border-kb-text-secondary"
+                          >
+                            Sin DLL
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => confirmarPlanCascada(true)}
+                            className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-semibold text-kb-text transition-colors hover:border-kb-text-secondary"
+                          >
+                            Con DLL
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Botón aplicar plan */}
+                  {montoSel !== null &&
+                    (gruposDisponibles.length <= 1 || grupoSel !== null) &&
+                    !dllToggleDisponible && (
+                    <button
+                      type="button"
+                      onClick={() => confirmarPlanCascada(false)}
+                      className={`w-full rounded-lg border py-1.5 text-xs font-semibold transition-colors ${
+                        plantillaAplicada
+                          ? "border-kb-gain bg-kb-gain/10 text-kb-gain"
+                          : "border-kb-border bg-kb-bg-soft text-kb-text hover:border-kb-accent hover:text-kb-accent"
+                      }`}
+                    >
+                      {plantillaAplicada ? "✓ Plantilla aplicada" : "Aplicar plan"}
+                    </button>
+                  )}
+
+                  {/* Panel de detalles del plan aplicado */}
+                  {plantillaAplicada && planIdx !== null && (() => {
+                    const plan = firma.planes[planIdx];
+                    const ddPct = ((plan.drawdownTotal / plan.balance) * 100).toFixed(1);
+                    const dlPct = plan.perdidaDiaria
+                      ? ((plan.perdidaDiaria / plan.balance) * 100).toFixed(1)
+                      : null;
+                    return (
+                      <div className="rounded-lg border border-kb-gain/25 bg-kb-gain/5 p-3 space-y-2.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-kb-gain">
+                          ✓ {firma.nombre} {plan.nombre}
+                        </p>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                          <div>
+                            <p className="text-[10px] text-kb-text-muted">Balance</p>
+                            <p className="text-xs font-semibold text-kb-text">${plan.balance.toLocaleString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-kb-text-muted">Objetivo fase</p>
+                            <p className="text-xs font-semibold text-kb-text">{plan.objetivoPct}%</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-kb-text-muted">Drawdown total</p>
+                            <p className="text-xs font-semibold text-kb-text">${plan.drawdownTotal.toLocaleString()} ({ddPct}%)</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-kb-text-muted">Tipo de challenge</p>
+                            <p className="text-xs font-semibold text-kb-text">{CHALLENGE_TYPE_LABELS[plan.challengeType]}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-kb-text-muted">Precio base</p>
+                            <p className="text-xs font-semibold text-kb-text">
+                              ~${plan.costo} {plan.tipoCosto === "mensual" ? "/ mes" : "(pago único)"}
+                            </p>
+                          </div>
+                        </div>
+                        {plan.perdidaDiaria !== null ? (
+                          dllToggleDisponible ? (
+                            <div className="rounded-md border border-kb-border-soft bg-kb-bg px-2.5 py-2">
+                              <p className="text-[11px] font-medium text-kb-text">Daily loss limit</p>
+                              <p className="text-[10px] text-kb-text-muted">
+                                ${plan.perdidaDiaria.toLocaleString()} ({dlPct}% del balance)
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between rounded-md border border-kb-border-soft bg-kb-bg px-2.5 py-2">
+                              <div>
+                                <p className="text-[11px] font-medium text-kb-text">Daily loss limit</p>
+                                <p className="text-[10px] text-kb-text-muted">
+                                  ${plan.perdidaDiaria.toLocaleString()} ({dlPct}% del balance)
+                                </p>
+                              </div>
+                              <label className="flex cursor-pointer items-center gap-2 select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={usarDailyLoss}
+                                  onChange={(e) => toggleDailyLoss(e.target.checked)}
+                                  className="h-4 w-4 accent-kb-accent"
+                                />
+                                <span className={`text-[11px] font-medium ${usarDailyLoss ? "text-kb-gain" : "text-kb-text-muted"}`}>
+                                  {usarDailyLoss ? "Activado" : "Desactivado"}
+                                </span>
+                              </label>
+                            </div>
+                          )
+                        ) : (
+                          <p className="text-[10px] text-kb-text-muted italic">
+                            Esta firma no maneja daily loss limit.
+                          </p>
+                        )}
+                        <p className="text-[9px] text-kb-text-muted">
+                          💡 Precios base sin código promo. Siempre verificá descuentos en el sitio oficial antes de comprar.
+                        </p>
+                      </div>
+                    );
+                  })()}
+                </div>
               )}
             </div>
-            <p className="mt-1.5 text-[11px] text-kb-text-muted">
-              {challengeType === "capital_propio" && "Sin fases — es tu propia plata, arranca sin objetivos de challenge."}
-              {challengeType === "instantanea" && "Ya nace como cuenta financiada, sin pasos previos."}
-              {challengeType === "una_fase" && "Arranca en Fase 1. Al lograr el objetivo, se marca directo como Financiada (sin Fase 2)."}
-              {challengeType === "dos_fases" && "Arranca en Fase 1. Al lograr el objetivo pasa a Fase 2, y luego a Financiada."}
-            </p>
-          </div>
+          )}
 
-          <Campo etiqueta="Tipo de cuenta">
-            <select
-              value={accountType}
-              onChange={(e) => setAccountType(e.target.value as AccountType)}
-              className={inputClass}
-            >
-              <option value="demo">Demo</option>
-              <option value="real">Real</option>
-            </select>
-          </Campo>
-
-          <Campo etiqueta="Balance inicial" ayuda="El capital con el que arrancó la cuenta">
-            <input
-              required
-              type="number"
-              step="any"
-              value={startingBalance}
-              onChange={(e) => setStartingBalance(e.target.value)}
-              className={inputClass}
-            />
-          </Campo>
-
+          {/* 6 · Costo de la cuenta */}
           <Campo
             etiqueta="Costo de la cuenta (opcional)"
-            ayuda="Lo que pagaste por ella (ej. el fee del challenge) — se usa como 'Invertido' en el ROI, no el balance"
+            ayuda="Lo que pagaste — se usa como 'Invertido' en el ROI, no el balance"
           >
             <input
               type="number"
@@ -10640,71 +10694,122 @@ function ModalNuevaCuenta({
             />
           </Campo>
 
-          {necesitaObjetivo && (
-            <Campo
-              etiqueta="Objetivo de la Fase 1 (%)"
-              ayuda="Ej. 8 para un objetivo de 8% de ganancia. La app va a avisarte solo cuando lo alcances."
-            >
+          {/* 7 · ID / Número de cuenta */}
+          <Campo etiqueta="ID / Número de cuenta (opcional)" ayuda="El número que te asignó la prop firm">
+            <input
+              value={idCuenta}
+              onChange={(e) => setIdCuenta(e.target.value)}
+              placeholder="Ej. 12345678"
+              className={inputClass}
+            />
+          </Campo>
+
+          {/* 8 · Estado (solo prop_firm) */}
+          {tipoCapital === "prop_firm" && (
+            <div>
+              <span className="mb-2 block text-xs font-medium text-kb-text-secondary">
+                Estado
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                {(["en_reto", "fondeada"] as const).map((est) => (
+                  <button
+                    key={est}
+                    type="button"
+                    onClick={() => setEstado(est)}
+                    className={`rounded-lg border px-3 py-2.5 text-xs font-medium transition-colors text-center ${
+                      estado === est
+                        ? "border-kb-accent bg-kb-accent/10 text-kb-accent"
+                        : "border-kb-border text-kb-text-secondary hover:border-kb-text-secondary"
+                    }`}
+                  >
+                    {est === "en_reto" ? "Challenge — en reto" : "Fondeada"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 9 · Balance inicial (oculto si se aplicó plantilla de futuros) */}
+          {!(tipoCapital === "prop_firm" && mercado === "futuros" && plantillaAplicada) && (
+            <Campo etiqueta="Balance inicial" ayuda="El capital con el que arranca la cuenta">
               <input
+                required
                 type="number"
                 step="any"
-                value={phaseTargetPercent}
-                onChange={(e) => setPhaseTargetPercent(e.target.value)}
-                placeholder="Ej. 8"
+                value={startingBalance}
+                onChange={(e) => setStartingBalance(e.target.value)}
                 className={inputClass}
               />
             </Campo>
           )}
 
-          <div className="rounded-lg border border-kb-border-soft bg-kb-bg p-3">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-kb-accent">
-              Reglas de la cuenta (opcional)
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <Campo
-                etiqueta="Pérdida máx. diaria"
-                ayuda={
-                  maxDailyLoss && !Number.isNaN(parseFloat(startingBalance)) && parseFloat(startingBalance) > 0
-                    ? `≈ ${((parseFloat(maxDailyLoss) / parseFloat(startingBalance)) * 100).toFixed(1)}% del balance`
-                    : "Ej. 500"
-                }
-              >
-                <input
-                  type="number"
-                  step="any"
-                  value={maxDailyLoss}
-                  onChange={(e) => setMaxDailyLoss(e.target.value)}
-                  placeholder="500"
-                  className={inputClass}
-                />
-              </Campo>
-
-              <Campo
-                etiqueta="Pérdida máx. total"
-                ayuda={
-                  maxTotalLoss && !Number.isNaN(parseFloat(startingBalance)) && parseFloat(startingBalance) > 0
-                    ? `≈ ${((parseFloat(maxTotalLoss) / parseFloat(startingBalance)) * 100).toFixed(1)}% del balance`
-                    : "Ej. 1000"
-                }
-              >
-                <input
-                  type="number"
-                  step="any"
-                  value={maxTotalLoss}
-                  onChange={(e) => setMaxTotalLoss(e.target.value)}
-                  placeholder="1000"
-                  className={inputClass}
-                />
-              </Campo>
+          {/* 10 · Reglas (solo prop_firm) */}
+          {tipoCapital === "prop_firm" && (
+            <div className="rounded-lg border border-kb-border-soft bg-kb-bg p-3 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-kb-accent">
+                Reglas de la cuenta (opcional)
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <Campo
+                  etiqueta="Pérdida máx. diaria"
+                  ayuda={
+                    maxDailyLoss && !Number.isNaN(parseFloat(startingBalance)) && parseFloat(startingBalance) > 0
+                      ? `≈ ${((parseFloat(maxDailyLoss) / parseFloat(startingBalance)) * 100).toFixed(1)}%`
+                      : "Ej. 500"
+                  }
+                >
+                  <input
+                    type="number"
+                    step="any"
+                    value={maxDailyLoss}
+                    onChange={(e) => setMaxDailyLoss(e.target.value)}
+                    placeholder="500"
+                    className={inputClass}
+                  />
+                </Campo>
+                <Campo
+                  etiqueta="Pérdida máx. total"
+                  ayuda={
+                    maxTotalLoss && !Number.isNaN(parseFloat(startingBalance)) && parseFloat(startingBalance) > 0
+                      ? `≈ ${((parseFloat(maxTotalLoss) / parseFloat(startingBalance)) * 100).toFixed(1)}%`
+                      : "Ej. 1000"
+                  }
+                >
+                  <input
+                    type="number"
+                    step="any"
+                    value={maxTotalLoss}
+                    onChange={(e) => setMaxTotalLoss(e.target.value)}
+                    placeholder="1000"
+                    className={inputClass}
+                  />
+                </Campo>
+              </div>
+              {necesitaObjetivo && (
+                <Campo
+                  etiqueta="Objetivo de la Fase 1 (%)"
+                  ayuda="Ej. 8 para un objetivo de 8% de ganancia"
+                >
+                  <input
+                    type="number"
+                    step="any"
+                    value={phaseTargetPercent}
+                    onChange={(e) => setPhaseTargetPercent(e.target.value)}
+                    placeholder="Ej. 8"
+                    className={inputClass}
+                  />
+                </Campo>
+              )}
             </div>
-          </div>
+          )}
 
-          <Campo etiqueta="Descripción (opcional)" ayuda="Objetivos, reglas de la cuenta, lo que quieras recordar">
+          {/* 11 · Notas */}
+          <Campo etiqueta="Notas (opcional)" ayuda="Objetivos, reglas especiales, lo que quieras recordar">
             <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              value={notas}
+              onChange={(e) => setNotas(e.target.value)}
               rows={3}
-              placeholder="Ej: Cuenta de fondeo, drawdown máximo 10%, objetivo 8% para pasar de fase…"
+              placeholder="Ej. Cuenta de fondeo, reglas especiales, metas…"
               className={`${inputClass} resize-none`}
             />
           </Campo>
