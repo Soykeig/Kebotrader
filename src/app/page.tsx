@@ -14565,3 +14565,4 @@ function TablaTrades({
     </div>
   );
 }
+
