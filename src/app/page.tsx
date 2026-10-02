@@ -10507,25 +10507,38 @@ function ModalNuevaCuenta({
 
                   {/* Toggle daily loss */}
                   {plan.perdidaDiaria !== null ? (
-                    <div className="flex items-center justify-between rounded-md border border-kb-border-soft bg-kb-bg px-2.5 py-2">
-                      <div>
+                    dllToggleDisponible ? (
+                      /* La cascada ya eligió explícitamente "Con DLL" — mostrar solo como info,
+                         sin toggle redundante (el usuario ya tomó la decisión en el paso anterior) */
+                      <div className="rounded-md border border-kb-border-soft bg-kb-bg px-2.5 py-2">
                         <p className="text-[11px] font-medium text-kb-text">Daily loss limit</p>
                         <p className="text-[10px] text-kb-text-muted">
                           ${plan.perdidaDiaria.toLocaleString()} ({dlPct}% del balance)
                         </p>
                       </div>
-                      <label className="flex cursor-pointer items-center gap-2 select-none">
-                        <input
-                          type="checkbox"
-                          checked={usarDailyLoss}
-                          onChange={(e) => toggleDailyLoss(e.target.checked)}
-                          className="h-4 w-4 accent-kb-accent"
-                        />
-                        <span className={`text-[11px] font-medium ${usarDailyLoss ? "text-kb-gain" : "text-kb-text-muted"}`}>
-                          {usarDailyLoss ? "Activado" : "Desactivado"}
-                        </span>
-                      </label>
-                    </div>
+                    ) : (
+                      /* Plan con DLL fijo sin variante "sin DLL" (ej. Apex EOD) —
+                         toggle para que el usuario decida si quiere trackearlo en la app */
+                      <div className="flex items-center justify-between rounded-md border border-kb-border-soft bg-kb-bg px-2.5 py-2">
+                        <div>
+                          <p className="text-[11px] font-medium text-kb-text">Daily loss limit</p>
+                          <p className="text-[10px] text-kb-text-muted">
+                            ${plan.perdidaDiaria.toLocaleString()} ({dlPct}% del balance)
+                          </p>
+                        </div>
+                        <label className="flex cursor-pointer items-center gap-2 select-none">
+                          <input
+                            type="checkbox"
+                            checked={usarDailyLoss}
+                            onChange={(e) => toggleDailyLoss(e.target.checked)}
+                            className="h-4 w-4 accent-kb-accent"
+                          />
+                          <span className={`text-[11px] font-medium ${usarDailyLoss ? "text-kb-gain" : "text-kb-text-muted"}`}>
+                            {usarDailyLoss ? "Activado" : "Desactivado"}
+                          </span>
+                        </label>
+                      </div>
+                    )
                   ) : (
                     <p className="text-[10px] text-kb-text-muted italic">
                       Esta firma no maneja daily loss limit — solo drawdown total.
