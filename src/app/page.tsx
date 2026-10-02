@@ -1311,23 +1311,26 @@ function Dashboard({
 
   async function cargarCuentas() {
     setCargandoCuentas(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("accounts")
       .select("*")
       .eq("is_archived", false)
       .order("created_at", { ascending: true });
 
-    const lista = (data as Account[]) ?? [];
-    setCuentas(lista);
+    if (!error) {
+      setCuentas((data as Account[]) ?? []);
+    }
     setCargandoCuentas(false);
   }
 
   async function cargarHistorialFases() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("phase_history")
       .select("*")
       .order("completado_en", { ascending: false });
-    setHistorialFases((data as PhaseHistoryEntry[]) ?? []);
+    if (!error) {
+      setHistorialFases((data as PhaseHistoryEntry[]) ?? []);
+    }
   }
 
   /**
@@ -1399,31 +1402,37 @@ function Dashboard({
 
   async function cargarRetiros() {
     setCargandoRetiros(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("withdrawals")
       .select("*")
       .order("withdrawal_date", { ascending: false });
-    setRetiros((data as Withdrawal[]) ?? []);
+    if (!error) {
+      setRetiros((data as Withdrawal[]) ?? []);
+    }
     setCargandoRetiros(false);
   }
 
   async function cargarAportes() {
     setCargandoAportes(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("investments")
       .select("*")
       .order("investment_date", { ascending: false });
-    setAportes((data as Investment[]) ?? []);
+    if (!error) {
+      setAportes((data as Investment[]) ?? []);
+    }
     setCargandoAportes(false);
   }
 
   async function cargarLogros() {
     setCargandoLogros(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("achievements")
       .select("*")
       .order("achieved_date", { ascending: false });
-    setLogros((data as Achievement[]) ?? []);
+    if (!error) {
+      setLogros((data as Achievement[]) ?? []);
+    }
     setCargandoLogros(false);
   }
 
@@ -1923,6 +1932,16 @@ function Dashboard({
               />
             )}
 
+            {vista === "aportes" && (
+              <InversionesView
+                cuentas={cuentas}
+                cuentaActivaId={cuentaActivaId}
+                aportes={aportes}
+                cargando={cargandoAportes}
+                onCambio={cargarAportes}
+              />
+            )}
+
             {vista === "logros" && (
               <LogrosView
                 cuentas={cuentas}
@@ -2070,7 +2089,7 @@ function InicioView({
     const inicioFase = new Date(cuenta.phase_started_at).getTime();
     return trades
       .filter(
-        (t) => t.status === "closed" && t.realized_pnl !== null && new Date(t.entry_time).getTime() >= inicioFase
+        (t) => t.status === "closed" && t.realized_pnl !== null && new Date(t.exit_time ?? t.entry_time).getTime() >= inicioFase
       )
       .reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0);
   }, [cuenta, trades]);
@@ -5379,23 +5398,19 @@ function RetirosView({
   function seleccionarPrueba(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
     setProofFile(f);
-    if (f) {
-      const url = URL.createObjectURL(f);
-      setProofPreview(url);
-    } else {
-      setProofPreview(null);
-    }
+    setProofPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return f ? URL.createObjectURL(f) : null;
+    });
   }
 
   function seleccionarPruebaPix(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
     setProofPixFile(f);
-    if (f) {
-      const url = URL.createObjectURL(f);
-      setProofPixPreview(url);
-    } else {
-      setProofPixPreview(null);
-    }
+    setProofPixPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return f ? URL.createObjectURL(f) : null;
+    });
   }
 
   const gross = parseFloat(grossStr) || 0;
@@ -5548,7 +5563,7 @@ function RetirosView({
       ];
     });
     const csv = [header, ...rows]
-      .map((row) => row.map((v) => `"${String(v).replace(/"/g, "\"\"\"")}"`).join(","))
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
       .join("\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" }); // BOM para Excel
     const url = URL.createObjectURL(blob);
@@ -7544,11 +7559,16 @@ function ImportarView({
           fees = (parseFloat(cols[10]) || 0) + (parseFloat(cols[11]) || 0);
         }
 
-        // Convertir fecha MT "YYYY.MM.DD HH:MM:SS" → ISO
+        // Convertir fecha MT "YYYY.MM.DD HH:MM:SS" → ISO con sufijo -03:00
+        // (broker MT4/MT5 suele reportar en UTC-3; sin sufijo Supabase
+        // interpreta como UTC y desplaza todas las horas incorrectamente)
         const toIso = (s: string): string | null => {
           if (!s) return null;
           const limpio = s.replace(/\./g, "-").replace(" ", "T");
-          return limpio.length > 0 ? limpio : null;
+          if (!limpio) return null;
+          return limpio.includes("+") || limpio.includes("Z") || /[+-]\d{2}:\d{2}$/.test(limpio)
+            ? limpio
+            : `${limpio}-03:00`;
         };
 
         const entryIso = toIso(entry_time);
@@ -7707,8 +7727,8 @@ function ImportarView({
         .delete()
         .eq("account_id", accountIdOcr)
         .eq("user_id", userId)
-        .gte("entry_time", `${fecha}T00:00:00${tzOffsetLocal()}`)
-        .lte("entry_time", `${fecha}T23:59:59${tzOffsetLocal()}`);
+        .gte("entry_time", `${fecha}T00:00:00-03:00`)
+        .lte("entry_time", `${fecha}T23:59:59-03:00`);
 
       if (deleteError) {
         setGuardandoOcr(false);
@@ -7938,11 +7958,22 @@ function ImportarView({
 
     // Insertamos en tandas de 200 para no mandar un solo request gigante.
     let insertados = 0;
+    let errorInsert: string | null = null;
     for (let i = 0; i < filasParaInsertar.length; i += 200) {
       const tanda = filasParaInsertar.slice(i, i + 200);
       const { error: insertError } = await supabase.from("trades").insert(tanda);
-      if (!insertError) insertados += tanda.length;
-      else saltados += tanda.length;
+      if (!insertError) {
+        insertados += tanda.length;
+      } else {
+        saltados += tanda.length;
+        errorInsert = insertError.message;
+        break; // detener en error fatal para evitar datos parciales inconsistentes
+      }
+    }
+    if (errorInsert) {
+      setImportando(false);
+      setError(`Error al importar: ${errorInsert}. Se insertaron ${insertados} trade(s) antes del fallo.`);
+      return;
     }
 
     setImportando(false);
@@ -8942,7 +8973,7 @@ function TarjetaCuenta({
   const pnlDesdeInicioFase = useMemo(() => {
     const inicioFase = new Date(cuenta.phase_started_at).getTime();
     return cerrados
-      .filter((t) => new Date(t.entry_time).getTime() >= inicioFase)
+      .filter((t) => new Date(t.exit_time ?? t.entry_time).getTime() >= inicioFase)
       .reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0);
   }, [cerrados, cuenta.phase_started_at]);
 
@@ -8996,8 +9027,12 @@ function TarjetaCuenta({
 
   async function archivar() {
     setProcesando(true);
-    await supabase.from("accounts").update({ is_archived: true }).eq("id", cuenta.id);
+    const { error: archErr } = await supabase
+      .from("accounts")
+      .update({ is_archived: true })
+      .eq("id", cuenta.id);
     setProcesando(false);
+    if (archErr) return;
     onCambio();
   }
 
@@ -9884,6 +9919,21 @@ const FIRMAS_PROP: { id: string; nombre: string; planes: PlanPropFirm[] }[] = [
   },
 ];
 
+// Metadatos visuales de cada prop firm (abbr, colores, dominio para logo)
+const FIRMA_META: Record<string, { abbr: string; color: string; bg: string; domain: string }> = {
+  apex:       { abbr: "ATF", color: "#f97316", bg: "rgba(249,115,22,0.15)",  domain: "apextraderfunding.com" },
+  topstep:    { abbr: "TS",  color: "#3b82f6", bg: "rgba(59,130,246,0.15)",  domain: "topstep.com" },
+  tradeify:   { abbr: "TF",  color: "#10b981", bg: "rgba(16,185,129,0.15)",  domain: "tradeify.com" },
+  tradeday:   { abbr: "TD",  color: "#8b5cf6", bg: "rgba(139,92,246,0.15)",  domain: "tradeday.com" },
+  mff:        { abbr: "MFF", color: "#f59e0b", bg: "rgba(245,158,11,0.15)",  domain: "myfundedfutures.com" },
+  earn2trade: { abbr: "E2T", color: "#ef4444", bg: "rgba(239,68,68,0.15)",   domain: "earn2trade.com" },
+  lucid:      { abbr: "LT",  color: "#06b6d4", bg: "rgba(6,182,212,0.15)",   domain: "lucidtrading.com" },
+  bulenox:    { abbr: "BX",  color: "#6366f1", bg: "rgba(99,102,241,0.15)",  domain: "bulenox.com" },
+  tpt:        { abbr: "TPT", color: "#22c55e", bg: "rgba(34,197,94,0.15)",   domain: "takeprofittrader.com" },
+  alpha:      { abbr: "AF",  color: "#a855f7", bg: "rgba(168,85,247,0.15)",  domain: "alphafutures.com" },
+  fundednext: { abbr: "FNF", color: "#fb923c", bg: "rgba(251,146,60,0.15)",  domain: "fundednext.com" },
+};
+
 // =====================================================================
 // MODAL: crear nueva cuenta
 // =====================================================================
@@ -10039,70 +10089,53 @@ function ModalNuevaCuenta({
             </p>
 
             {/* Grid visual de firmas con ícono + nombre */}
-            {(() => {
-              const FIRMA_META: Record<string, { abbr: string; color: string; bg: string; domain: string }> = {
-                apex:       { abbr: "ATF", color: "#f97316", bg: "rgba(249,115,22,0.15)", domain: "apextraderfunding.com" },
-                topstep:    { abbr: "TS",  color: "#3b82f6", bg: "rgba(59,130,246,0.15)", domain: "topstep.com" },
-                tradeify:   { abbr: "TF",  color: "#10b981", bg: "rgba(16,185,129,0.15)", domain: "tradeify.com" },
-                tradeday:   { abbr: "TD",  color: "#8b5cf6", bg: "rgba(139,92,246,0.15)", domain: "tradeday.com" },
-                mff:        { abbr: "MFF", color: "#f59e0b", bg: "rgba(245,158,11,0.15)", domain: "myfundedfutures.com" },
-                earn2trade: { abbr: "E2T", color: "#ef4444", bg: "rgba(239,68,68,0.15)",  domain: "earn2trade.com" },
-                lucid:      { abbr: "LT",  color: "#06b6d4", bg: "rgba(6,182,212,0.15)",  domain: "lucidtrading.com" },
-                bulenox:    { abbr: "BX",  color: "#6366f1", bg: "rgba(99,102,241,0.15)", domain: "bulenox.com" },
-                tpt:        { abbr: "TPT", color: "#22c55e", bg: "rgba(34,197,94,0.15)",  domain: "takeprofittrader.com" },
-                alpha:      { abbr: "AF",  color: "#a855f7", bg: "rgba(168,85,247,0.15)", domain: "alphafutures.com" },
-                fundednext: { abbr: "FNF", color: "#fb923c", bg: "rgba(251,146,60,0.15)", domain: "fundednext.com" },
-              };
-              return (
-                <div className="grid grid-cols-2 gap-1.5">
-                  {FIRMAS_PROP.map((f) => {
-                    const meta = FIRMA_META[f.id] || { abbr: f.nombre.slice(0, 2).toUpperCase(), color: "#6b7280", bg: "rgba(107,114,128,0.15)" };
-                    const sel = firmaId === f.id;
-                    return (
-                      <button
-                        key={f.id}
-                        type="button"
-                        onClick={() => seleccionarFirma(f.id)}
-                        className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${
-                          sel
-                            ? "border-kb-accent bg-kb-accent/10"
-                            : "border-kb-border hover:border-kb-text-secondary"
-                        }`}
+            <div className="grid grid-cols-2 gap-1.5">
+              {FIRMAS_PROP.map((f) => {
+                const meta = FIRMA_META[f.id] || { abbr: f.nombre.slice(0, 2).toUpperCase(), color: "#6b7280", bg: "rgba(107,114,128,0.15)", domain: "" };
+                const sel = firmaId === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => seleccionarFirma(f.id)}
+                    className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${
+                      sel
+                        ? "border-kb-accent bg-kb-accent/10"
+                        : "border-kb-border hover:border-kb-text-secondary"
+                    }`}
+                  >
+                    <span
+                      className="flex-shrink-0 flex items-center justify-center rounded-md overflow-hidden"
+                      style={{ width: 28, height: 28, backgroundColor: meta.bg }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`https://logo.clearbit.com/${meta.domain}`}
+                        alt={f.nombre}
+                        width={20}
+                        height={20}
+                        style={{ objectFit: "contain" }}
+                        onError={(e) => {
+                          const img = e.currentTarget;
+                          img.style.display = "none";
+                          const fallback = img.nextElementSibling as HTMLElement | null;
+                          if (fallback) fallback.style.display = "flex";
+                        }}
+                      />
+                      <span
+                        className="items-center justify-center text-[9px] font-bold w-full h-full"
+                        style={{ color: meta.color, display: "none" }}
                       >
-                        <span
-                          className="flex-shrink-0 flex items-center justify-center rounded-md overflow-hidden"
-                          style={{ width: 28, height: 28, backgroundColor: meta.bg }}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={`https://logo.clearbit.com/${meta.domain}`}
-                            alt={f.nombre}
-                            width={20}
-                            height={20}
-                            style={{ objectFit: "contain" }}
-                            onError={(e) => {
-                              const img = e.currentTarget;
-                              img.style.display = "none";
-                              const fallback = img.nextElementSibling as HTMLElement | null;
-                              if (fallback) fallback.style.display = "flex";
-                            }}
-                          />
-                          <span
-                            className="items-center justify-center text-[9px] font-bold w-full h-full"
-                            style={{ color: meta.color, display: "none" }}
-                          >
-                            {meta.abbr}
-                          </span>
-                        </span>
-                        <span className={`text-[11px] font-medium leading-tight ${sel ? "text-kb-accent" : "text-kb-text-secondary"}`}>
-                          {f.nombre}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              );
-            })()}
+                        {meta.abbr}
+                      </span>
+                    </span>
+                    <span className={`text-[11px] font-medium leading-tight ${sel ? "text-kb-accent" : "text-kb-text-secondary"}`}>
+                      {f.nombre}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
 
             {/* Botones de tamaño — con precio visible */}
             {firma && (
@@ -10116,14 +10149,14 @@ function ModalNuevaCuenta({
                       onClick={() => aplicarPlan(firma, idx)}
                       className={`rounded-lg border px-3 py-2 text-left transition-colors ${
                         planIdx === idx && plantillaAplicada
-                          ? "border-kb-profit bg-kb-profit/10"
+                          ? "border-kb-gain bg-kb-gain/10"
                           : "border-kb-border hover:border-kb-text-secondary"
                       }`}
                     >
-                      <p className={`text-xs font-bold ${planIdx === idx && plantillaAplicada ? "text-kb-profit" : "text-kb-text"}`}>
+                      <p className={`text-xs font-bold ${planIdx === idx && plantillaAplicada ? "text-kb-gain" : "text-kb-text"}`}>
                         {plan.nombre}
                       </p>
-                      <p className={`text-[10px] ${planIdx === idx && plantillaAplicada ? "text-kb-profit/70" : "text-kb-text-muted"}`}>
+                      <p className={`text-[10px] ${planIdx === idx && plantillaAplicada ? "text-kb-gain/70" : "text-kb-text-muted"}`}>
                         desde ~${plan.costo}/{plan.tipoCosto === "mensual" ? "mes" : "único"}
                       </p>
                     </button>
@@ -10140,8 +10173,8 @@ function ModalNuevaCuenta({
                 ? ((plan.perdidaDiaria / plan.balance) * 100).toFixed(1)
                 : null;
               return (
-                <div className="rounded-lg border border-kb-profit/25 bg-kb-profit/5 p-3 space-y-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-kb-profit">
+                <div className="rounded-lg border border-kb-gain/25 bg-kb-gain/5 p-3 space-y-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-kb-gain">
                     ✓ Plantilla aplicada — {firma.nombre} {plan.nombre}
                   </p>
 
@@ -10187,7 +10220,7 @@ function ModalNuevaCuenta({
                           onChange={(e) => toggleDailyLoss(e.target.checked)}
                           className="h-4 w-4 accent-kb-accent"
                         />
-                        <span className={`text-[11px] font-medium ${usarDailyLoss ? "text-kb-profit" : "text-kb-text-muted"}`}>
+                        <span className={`text-[11px] font-medium ${usarDailyLoss ? "text-kb-gain" : "text-kb-text-muted"}`}>
                           {usarDailyLoss ? "Activado" : "Desactivado"}
                         </span>
                       </label>
@@ -10432,7 +10465,7 @@ function ModalCuentasArchivadas({
     }
   }
 
-  function formatFechaCorta(iso: string) {
+  function formatFechaLarga(iso: string) {
     return new Date(iso).toLocaleDateString("es", {
       day: "2-digit",
       month: "short",
@@ -10530,7 +10563,7 @@ function ModalCuentasArchivadas({
                     </p>
                     {c.blown_at && (
                       <p className="mt-0.5 text-[11px] text-orange-400/80">
-                        Quemada el {formatFechaCorta(c.blown_at)}
+                        Quemada el {formatFechaLarga(c.blown_at)}
                       </p>
                     )}
                   </div>
@@ -12067,11 +12100,18 @@ function FormularioTrade({
 
   // Atajo de teclado: Ctrl+Enter guarda el formulario desde cualquier
   // campo, sin tener que ir hasta el botón con el mouse.
+  // Solo dispara si el foco está dentro del formulario para no interferir
+  // con otros modales o componentes activos en pantalla.
   useEffect(() => {
     function manejarTecla(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        formRef.current?.requestSubmit();
+        const form = formRef.current;
+        if (!form) return;
+        const activo = document.activeElement;
+        if (activo && form.contains(activo)) {
+          e.preventDefault();
+          form.requestSubmit();
+        }
       }
     }
     window.addEventListener("keydown", manejarTecla);
@@ -13297,8 +13337,10 @@ function FormularioCerrarTrade({
           pips: pips.trim() === "" ? null : parseFloat(pips),
           fees: comisiones,
           // El P&L final suma lo que ya se había asegurado en cierres
-          // parciales anteriores (si los hubo) más el resultado de este
-          // último tramo, y recién ahí se resta la comisión total.
+          // parciales anteriores (si los hubo, ya descontadas sus comisiones
+          // por tramo en trade_exits.pnl) más el resultado de este último
+          // tramo bruto, y recién ahí se resta la comisión de este tramo.
+          // Resultado: realized_pnl es SIEMPRE neto (sin comisiones).
           realized_pnl: Math.round((pnlParcialesPrevios + pnlNumero - comisiones) * 100) / 100,
           result_type: resultType,
           exit_time: new Date(exitTimeLocal).toISOString(),
@@ -13494,10 +13536,16 @@ function FormularioCierreParcial({
     // acabamos de insertar), promediamos el precio de salida ponderado
     // por cantidad, y sumamos todos los P&L para el resultado final.
     if (cantidadRestanteDespues <= 0.0000001) {
-      const { data: todosLosExits } = await supabase
+      const { data: todosLosExits, error: exitsError } = await supabase
         .from("trade_exits")
         .select("*")
         .eq("trade_id", trade.id);
+
+      if (exitsError) {
+        setEnviando(false);
+        setError(`No se pudieron leer los tramos parciales para calcular el P&L final. Detalle: ${exitsError.message}`);
+        return;
+      }
 
       const exitsFinal = (todosLosExits as TradeExit[]) ?? [];
       const cantidadTotal = exitsFinal.reduce((acc, ex) => acc + ex.quantity, 0);
@@ -13505,22 +13553,29 @@ function FormularioCierreParcial({
         cantidadTotal > 0
           ? exitsFinal.reduce((acc, ex) => acc + ex.exit_price * ex.quantity, 0) / cantidadTotal
           : precioSalida;
+      // pnlTotal ya es neto (cada tramo descontó sus comisiones al guardarse)
       const pnlTotal = exitsFinal.reduce((acc, ex) => acc + ex.pnl, 0);
-      const ultimoExitTime = exitsFinal.reduce(
-        (acc, ex) => (new Date(ex.exit_time).getTime() > new Date(acc).getTime() ? ex.exit_time : acc),
-        ahora
-      );
+      // ultimoExitTime: tiempo real del último tramo (no "ahora")
+      const ultimoExitTime = exitsFinal.length > 0
+        ? exitsFinal.reduce(
+            (acc, ex) => (new Date(ex.exit_time).getTime() > new Date(acc).getTime() ? ex.exit_time : acc),
+            exitsFinal[0].exit_time
+          )
+        : ahora;
 
-      const { error: updateError } = await supabase
-        .from("trades")
-        .update({
-          status: "closed",
-          exit_price: Math.round(precioPromedio * 100000) / 100000,
-          realized_pnl: Math.round((pnlTotal - (trade.fees ?? 0)) * 100) / 100,
-          result_type: "manual",
-          exit_time: ultimoExitTime,
-        })
-        .eq("id", trade.id);
+      const { error: updateError } = await conReintento(() =>
+        supabase
+          .from("trades")
+          .update({
+            status: "closed",
+            exit_price: Math.round(precioPromedio * 100000) / 100000,
+            // pnlTotal ya es neto — NO restar trade.fees de nuevo
+            realized_pnl: Math.round(pnlTotal * 100) / 100,
+            result_type: "manual",
+            exit_time: ultimoExitTime,
+          })
+          .eq("id", trade.id)
+      );
 
       setEnviando(false);
 
@@ -13658,7 +13713,11 @@ function FormularioEdicionTrade({
   const [pips, setPips] = useState(trade.pips !== null ? String(trade.pips) : "");
   const [fees, setFees] = useState(String(trade.fees ?? 0));
   const [pnlManual, setPnlManual] = useState(
-    trade.realized_pnl !== null ? String(trade.realized_pnl + (trade.fees ?? 0)) : ""
+    // realized_pnl se guarda neto; al editar mostramos el bruto (neto + fees)
+    // Redondeamos a 2 decimales para evitar errores de punto flotante (ej. 0.1+0.2=0.300...04)
+    trade.realized_pnl !== null
+      ? String(Math.round((trade.realized_pnl + (trade.fees ?? 0)) * 100) / 100)
+      : ""
   );
   const [riskAmount, setRiskAmount] = useState(trade.risk_amount !== null ? String(trade.risk_amount) : "");
   const [resultType, setResultType] = useState<ResultType>(trade.result_type ?? "manual");
@@ -13733,47 +13792,55 @@ function FormularioEdicionTrade({
           imagenesNuevas.map(async (archivo) => {
             const nombreLimpio = archivo.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
             const ruta = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${nombreLimpio}`;
-            const { error: uploadError } = await supabase.storage
-              .from("trade-evidence")
-              .upload(ruta, archivo);
+            // Reintento manual para uploads: usamos la misma ruta para no
+            // generar archivos huérfanos en el bucket entre intentos.
+            let uploadError = (await supabase.storage.from("trade-evidence").upload(ruta, archivo)).error;
+            if (uploadError) {
+              uploadError = (await supabase.storage.from("trade-evidence").upload(ruta, archivo, { upsert: true })).error;
+            }
             return uploadError ? null : ruta;
           })
         );
         rutasNuevas = subidas.filter((r): r is string => r !== null);
         setSubiendoImagenes(false);
+        if (rutasNuevas.length < imagenesNuevas.length) {
+          setError(`${imagenesNuevas.length - rutasNuevas.length} imagen(es) no se pudieron subir. El trade se guardó sin ellas.`);
+        }
       }
     }
 
-    const { error: updateError } = await supabase
-      .from("trades")
-      .update({
-        symbol: symbol.trim().toUpperCase(),
-        instrument_type: instrumentType,
-        side,
-        quantity: cantidad,
-        entry_price: precioEntrada,
-        exit_price: esAbierta ? null : precioSalida,
-        entry_time: new Date(entryTimeLocal).toISOString(),
-        exit_time: exitTimeLocal.trim() !== "" ? new Date(exitTimeLocal).toISOString() : null,
-        pips: pips.trim() === "" ? null : parseFloat(pips),
-        fees: comisiones,
-        realized_pnl: esAbierta ? null : Math.round((pnlNumero - comisiones) * 100) / 100,
-        risk_amount: riskAmount.trim() === "" ? null : parseFloat(riskAmount),
-        result_type: resultType,
-        session: session === "" ? null : session,
-        strategy_id: strategyId === "" ? null : strategyId,
-        emotion: emotion === "" ? null : emotion,
-        mistake: mistakes.length > 0 ? mistakes[0] : "ninguno",
-        mistakes,
-        tradingview_links: tradingviewLinks.map((l) => l.trim()).filter((l) => l !== ""),
-        evidence_images: [...imagenesExistentes, ...rutasNuevas],
-        notes: notes.trim() === "" ? null : notes.trim(),
-      })
-      .eq("id", trade.id);
+    const { error: updateError } = await conReintento(() =>
+      supabase
+        .from("trades")
+        .update({
+          symbol: symbol.trim().toUpperCase(),
+          instrument_type: instrumentType,
+          side,
+          quantity: cantidad,
+          entry_price: precioEntrada,
+          exit_price: esAbierta ? null : precioSalida,
+          entry_time: new Date(entryTimeLocal).toISOString(),
+          exit_time: exitTimeLocal.trim() !== "" ? new Date(exitTimeLocal).toISOString() : null,
+          pips: pips.trim() === "" ? null : parseFloat(pips),
+          fees: comisiones,
+          realized_pnl: esAbierta ? null : Math.round((pnlNumero - comisiones) * 100) / 100,
+          risk_amount: riskAmount.trim() === "" ? null : parseFloat(riskAmount),
+          result_type: resultType,
+          session: session === "" ? null : session,
+          strategy_id: strategyId === "" ? null : strategyId,
+          emotion: emotion === "" ? null : emotion,
+          mistake: mistakes.length > 0 ? mistakes[0] : "ninguno",
+          mistakes,
+          tradingview_links: tradingviewLinks.map((l) => l.trim()).filter((l) => l !== ""),
+          evidence_images: [...imagenesExistentes, ...rutasNuevas],
+          notes: notes.trim() === "" ? null : notes.trim(),
+        })
+        .eq("id", trade.id)
+    );
     setEnviando(false);
 
     if (updateError) {
-      setError("No se pudo guardar los cambios. Intenta de nuevo.");
+      setError("No se pudo guardar los cambios (lo intentamos dos veces). Revisa tu conexión e intenta de nuevo.");
       return;
     }
 
@@ -14151,19 +14218,28 @@ function TablaTrades({
                 </td>
                 <td className="px-5 py-3 text-kb-text-secondary">{formatDate(t.entry_time)}</td>
                 <td className="px-5 py-3">
-                  {t.tradingview_links && t.tradingview_links.length > 0 ? (
-                    <a
-                      href={t.tradingview_links[0]}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-xs text-kb-accent hover:underline"
-                    >
-                      Ver gráfico{t.tradingview_links.length > 1 ? ` (+${t.tradingview_links.length - 1})` : ""}
-                    </a>
-                  ) : (
-                    <span className="text-xs text-kb-text-muted">—</span>
-                  )}
+                  <div className="flex flex-col gap-0.5">
+                    {t.tradingview_links && t.tradingview_links.length > 0 ? (
+                      <a
+                        href={t.tradingview_links[0]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-xs text-kb-accent hover:underline"
+                      >
+                        📈 Gráfico{t.tradingview_links.length > 1 ? ` (+${t.tradingview_links.length - 1})` : ""}
+                      </a>
+                    ) : null}
+                    {t.evidence_images && t.evidence_images.length > 0 ? (
+                      <span className="text-xs text-kb-text-secondary">
+                        🖼 {t.evidence_images.length} imagen{t.evidence_images.length > 1 ? "es" : ""}
+                      </span>
+                    ) : null}
+                    {(!t.tradingview_links || t.tradingview_links.length === 0) &&
+                      (!t.evidence_images || t.evidence_images.length === 0) && (
+                      <span className="text-xs text-kb-text-muted">—</span>
+                    )}
+                  </div>
                 </td>
               </tr>
             );
