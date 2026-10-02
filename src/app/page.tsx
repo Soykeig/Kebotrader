@@ -9994,23 +9994,25 @@ const FIRMA_META: Record<string, { abbr: string; color: string; bg: string; doma
 };
 
 // Componente logo de prop firm.
-// Cascade: DuckDuckGo → icon.horse → favicon.ico directo → abreviatura con color de marca.
+// Cascade: Clearbit → DuckDuckGo → icon.horse → favicon.ico directo → abreviatura con color de marca.
 // Google Favicons (s2/favicons y faviconV2) ELIMINADOS: ambos devuelven HTTP 200 con un globo
 // gris genérico para dominios no indexados, impidiendo que onError se dispare — el logo queda
 // "cargado" pero muestra el globo placeholder en vez del ícono real o la abreviatura de marca.
-// DuckDuckGo sí devuelve 404 para dominios sin favicon, lo que dispara onError correctamente.
+// Clearbit Logo API: devuelve logos de empresa de alta calidad (no favicons) y 404 real para
+// dominios desconocidos. DuckDuckGo como respaldo para sitios que Clearbit no indexa.
 function FirmaLogo({
   domain, abbr, color, bg, alt,
 }: {
   domain: string; abbr: string; color: string; bg: string; alt: string;
 }) {
   // Cascade de fuentes de logo. Orden actual:
-  //   1. DuckDuckGo — amplio caché de favicons reales, devuelve 404 si no hay nada (dispara onError)
-  //   2. icon.horse — agregador con cobertura muy amplia para sitios sin favicon propio
-  //   3. Favicon.ico directo en el dominio — último recurso antes de la abreviatura
-  //   4. Abreviatura con color de marca (siempre visible)
+  //   1. Clearbit Logo API — logos de empresa de alta calidad, 404 real si no está indexado
+  //   2. DuckDuckGo — amplio caché de favicons reales, devuelve 404 si no hay nada (dispara onError)
+  //   3. icon.horse — agregador con cobertura muy amplia para sitios sin favicon propio
+  //   4. Favicon.ico directo en el dominio — último recurso antes de la abreviatura
+  //   5. Abreviatura con color de marca (siempre visible)
   const [src, setSrc] = useState(
-    domain ? `https://icons.duckduckgo.com/ip3/${domain}.ico` : ""
+    domain ? `https://logo.clearbit.com/${domain}` : ""
   );
   const [fallback, setFallback] = useState(!domain);
   const intento = useRef(0);
@@ -10018,8 +10020,10 @@ function FirmaLogo({
   function handleError() {
     intento.current += 1;
     if (intento.current === 1 && domain) {
-      setSrc(`https://icon.horse/icon/${domain}`);
+      setSrc(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
     } else if (intento.current === 2 && domain) {
+      setSrc(`https://icon.horse/icon/${domain}`);
+    } else if (intento.current === 3 && domain) {
       setSrc(`https://${domain}/favicon.ico`);
     } else {
       setFallback(true);
