@@ -1381,7 +1381,8 @@ function Dashboard({
         phase: nuevaFase,
         phase_started_at: new Date().toISOString(),
       })
-      .eq("id", accountId);
+      .eq("id", accountId)
+      .eq("user_id", session.user.id);
     if (errAvance) {
       console.error("avanzarFase: no se pudo actualizar la fase de la cuenta", errAvance.message);
       return; // Si falla el avance real, no recargamos para no mostrar estado incorrecto
@@ -1575,7 +1576,7 @@ function Dashboard({
   const metricas = useMemo(() => {
     const cerrados = tradesDeLaCuenta
       .filter((t) => t.status === "closed" && t.realized_pnl !== null)
-      .sort((a, b) => new Date(a.entry_time).getTime() - new Date(b.entry_time).getTime());
+      .sort((a, b) => new Date(a.exit_time ?? a.entry_time).getTime() - new Date(b.exit_time ?? b.entry_time).getTime());
 
     const totalPnL = cerrados.reduce((acc, t) => acc + (t.realized_pnl ?? 0), 0);
     const ganadores = cerrados.filter((t) => (t.realized_pnl ?? 0) > 0);
@@ -3004,7 +3005,9 @@ function MiniCalendario({
     trades
       .filter((t) => t.status === "closed" && t.realized_pnl !== null)
       .forEach((t) => {
-        const clave = fechaKeyLocal(t.entry_time);
+        // Usamos exit_time para ubicar el P&L en el día en que se realizó,
+        // no el día en que abrió la posición.
+        const clave = fechaKeyLocal(t.exit_time ?? t.entry_time);
         mapa.set(clave, (mapa.get(clave) ?? 0) + (t.realized_pnl ?? 0));
       });
     return mapa;
@@ -3535,16 +3538,20 @@ function ModalNuevaEstrategia({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const nombreLimpio = nombre.trim();
-    if (!nombreLimpio) return;
+    if (!nombreLimpio || guardando) return;
+
+    // Bloquear doble-submit inmediatamente, antes de cualquier await
+    setGuardando(true);
+    setError(null);
 
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData.user?.id;
     if (!userId) {
       setError("Tu sesión expiró. Vuelve a iniciar sesión.");
+      setGuardando(false);
       return;
     }
 
-    setGuardando(true);
     const { error: insertError } = await supabase
       .from("strategies")
       .insert({ user_id: userId, name: nombreLimpio });
@@ -3625,15 +3632,15 @@ function TarjetaEstrategia({
       setNombreEditado(estrategia.name);
       return;
     }
-    const { error } = await supabase.from("strategies").update({ name: nombreLimpio }).eq("id", estrategia.id);
+    const { error } = await supabase.from("strategies").update({ name: nombreLimpio }).eq("id", estrategia.id).eq("user_id", estrategia.user_id);
+    setEditandoNombre(false);
     if (error) {
       setNombreEditado(estrategia.name); // revertir visualmente
       setErrorAccion(`No se pudo guardar el nombre: ${error.message}`);
-    } else {
-      setErrorAccion(null);
+      return; // no llamar onCambio si falló
     }
-    setEditandoNombre(false);
-    onCambio();
+    setErrorAccion(null);
+    onCambio(); // solo si guardó bien
   }
 
   async function agregarRegla(e: FormEvent) {
@@ -3644,40 +3651,48 @@ function TarjetaEstrategia({
     const { error } = await supabase
       .from("strategies")
       .update({ rules: [...reglas, texto] })
-      .eq("id", estrategia.id);
+      .eq("id", estrategia.id)
+      .eq("user_id", estrategia.user_id);
     setGuardando(false);
     if (error) {
       setErrorAccion(`No se pudo agregar la regla: ${error.message}`);
-    } else {
-      setNuevaRegla("");
-      setMostrarFormRegla(false);
-      setErrorAccion(null);
+      return; // no llamar onCambio si falló
     }
-    onCambio();
+    setNuevaRegla("");
+    setMostrarFormRegla(false);
+    setErrorAccion(null);
+    onCambio(); // solo si guardó bien
   }
 
   async function eliminarRegla(indice: number) {
     const nuevasReglas = reglas.filter((_, i) => i !== indice);
-    const { error } = await supabase.from("strategies").update({ rules: nuevasReglas }).eq("id", estrategia.id);
+    const { error } = await supabase.from("strategies").update({ rules: nuevasReglas }).eq("id", estrategia.id).eq("user_id", estrategia.user_id);
     if (error) {
       setErrorAccion(`No se pudo eliminar la regla: ${error.message}`);
-    } else {
-      setConfirmandoEliminarRegla(null);
-      setErrorAccion(null);
+      return; // no llamar onCambio si falló
     }
-    onCambio();
+    setConfirmandoEliminarRegla(null);
+    setErrorAccion(null);
+    onCambio(); // solo si guardó bien
   }
 
   async function eliminarEstrategia() {
     // No borramos los trades: solo desvinculamos la estrategia de ellos
     // (quedan como "Sin estrategia"), y después borramos la estrategia.
-    const { error: errorDesvincular } = await supabase.from("trades").update({ strategy_id: null }).eq("strategy_id", estrategia.id);
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) {
+      setErrorAccion("Tu sesión expiró. Vuelve a iniciar sesión.");
+      setConfirmandoEliminar(false);
+      return;
+    }
+    const { error: errorDesvincular } = await supabase.from("trades").update({ strategy_id: null }).eq("strategy_id", estrategia.id).eq("user_id", userId);
     if (errorDesvincular) {
       setErrorAccion(`No se pudo desvincular los trades: ${errorDesvincular.message}`);
       setConfirmandoEliminar(false);
       return;
     }
-    const { error: errorEliminar } = await supabase.from("strategies").delete().eq("id", estrategia.id);
+    const { error: errorEliminar } = await supabase.from("strategies").delete().eq("id", estrategia.id).eq("user_id", userId);
     if (errorEliminar) {
       // Los trades ya quedaron desvinculados (strategy_id = null), pero la estrategia
       // todavía existe en la DB. El usuario puede reintentar eliminarla.
@@ -3953,7 +3968,7 @@ function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: S
     () =>
       trades
         .filter((t) => t.status === "closed" && t.realized_pnl !== null)
-        .sort((a, b) => new Date(a.entry_time).getTime() - new Date(b.entry_time).getTime()),
+        .sort((a, b) => new Date(a.exit_time ?? a.entry_time).getTime() - new Date(b.exit_time ?? b.entry_time).getTime()),
     [trades]
   );
 
@@ -3965,7 +3980,8 @@ function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: S
     const config = RANGOS_TIEMPO.find((r) => r.id === rango);
     if (!config || config.dias === null) return todosCerrados;
     const limite = Date.now() - config.dias * 24 * 60 * 60 * 1000;
-    return todosCerrados.filter((t) => new Date(t.entry_time).getTime() >= limite);
+    // Filtrar por exit_time: el P&L se realizó en ese momento, no en entry_time
+    return todosCerrados.filter((t) => new Date(t.exit_time ?? t.entry_time).getTime() >= limite);
   }, [todosCerrados, rango]);
 
   const ganadores = useMemo(() => cerrados.filter((t) => (t.realized_pnl ?? 0) > 0), [cerrados]);
@@ -4228,7 +4244,8 @@ function ReportesView({ trades, estrategias }: { trades: Trade[]; estrategias: S
   const rendimientoMensual = useMemo(() => {
     const mapa = new Map<number, number[]>(); // año -> [pnl x 12 meses]
     todosCerrados.forEach((t) => {
-      const fecha = new Date(t.entry_time);
+      // Usar exit_time para ubicar el P&L en el mes en que se realizó
+      const fecha = new Date(t.exit_time ?? t.entry_time);
       const año = fecha.getFullYear();
       const mes = fecha.getMonth();
       if (!mapa.has(año)) mapa.set(año, Array(12).fill(0));
@@ -4984,11 +5001,20 @@ function ReportesFiscalesSection({
     retiros.forEach((r) => años.add(new Date(r.withdrawal_date).getFullYear()));
     trades
       .filter((t) => t.status === "closed" && t.realized_pnl !== null)
-      .forEach((t) => años.add(new Date(t.entry_time).getFullYear()));
+      // Usar exit_time para el año fiscal (cuando se realizó el P&L)
+      .forEach((t) => años.add(new Date(t.exit_time ?? t.entry_time).getFullYear()));
     return Array.from(años).sort((a, b) => b - a);
   }, [retiros, trades]);
 
   const [añoElegido, setAñoElegido] = useState<number>(() => new Date().getFullYear());
+
+  // Sincronizar año elegido: si el año actual no tiene datos,
+  // saltar automáticamente al año más reciente con datos.
+  useEffect(() => {
+    if (añosDisponibles.length > 0 && !añosDisponibles.includes(añoElegido)) {
+      setAñoElegido(añosDisponibles[0]); // ordenados desc, [0] es el más reciente
+    }
+  }, [añosDisponibles, añoElegido]);
 
   // ── Tab "Retiros": tabla mes a mes ────────────────────────────────
   const filasRetirosMes = useMemo(() => {
@@ -5039,7 +5065,8 @@ function ReportesFiscalesSection({
             t.account_id === c.id &&
             t.status === "closed" &&
             t.realized_pnl !== null &&
-            new Date(t.entry_time).getFullYear() === añoElegido
+            // Usar exit_time para el año fiscal: el P&L se realizó cuando se cerró el trade
+            new Date(t.exit_time ?? t.entry_time).getFullYear() === añoElegido
         );
         const gananciaBruta = cerrados
           .filter((t) => (t.realized_pnl ?? 0) > 0)
@@ -5507,10 +5534,13 @@ function RetirosView({
       setError("Seleccioná una cuenta e ingresá un monto bruto válido.");
       return;
     }
+    if (enviando) return;
+    setEnviando(true);
 
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData.user?.id;
     if (!userId) {
+      setEnviando(false);
       setError("Tu sesión expiró. Volvé a iniciar sesión.");
       return;
     }
@@ -5543,7 +5573,6 @@ function RetirosView({
     if (proofPixFile) proofPixUrl = await subirArchivo(proofPixFile, "pix");
     setSubiendoPrueba(false);
 
-    setEnviando(true);
     const { error: insertError } = await conReintento(() =>
       supabase.from("withdrawals").insert({
         user_id: userId,
@@ -5597,7 +5626,7 @@ function RetirosView({
         await supabase.storage.from("withdrawal-proofs").remove(rutasABorrar);
       }
     }
-    const { error: deleteError } = await supabase.from("withdrawals").delete().eq("id", id);
+    const { error: deleteError } = await supabase.from("withdrawals").delete().eq("id", id).eq("user_id", retiro?.user_id ?? "");
     if (deleteError) {
       setError("No se pudo eliminar el retiro. Intenta de nuevo.");
       return;
@@ -6286,15 +6315,17 @@ function InversionesView({
       setError("Seleccioná una cuenta e ingresá un monto válido.");
       return;
     }
+    if (enviando) return;
+    setEnviando(true);
 
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData.user?.id;
     if (!userId) {
+      setEnviando(false);
       setError("Tu sesión expiró. Volvé a iniciar sesión.");
       return;
     }
 
-    setEnviando(true);
     const { error: insertError } = await conReintento(() =>
       supabase.from("investments").insert({
         user_id: userId,
@@ -6321,7 +6352,8 @@ function InversionesView({
   }
 
   async function eliminar(id: string) {
-    const { error: deleteError } = await supabase.from("investments").delete().eq("id", id);
+    const aporte = aportes.find((a) => a.id === id);
+    const { error: deleteError } = await supabase.from("investments").delete().eq("id", id).eq("user_id", aporte?.user_id ?? "");
     if (deleteError) {
       setError("No se pudo eliminar el aporte. Intenta de nuevo.");
       return;
@@ -6589,14 +6621,17 @@ function LogrosView({
       return;
     }
 
+    if (subiendo) return;
+    setSubiendo(true);
+
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData.user?.id;
     if (!userId) {
+      setSubiendo(false);
       setError("Tu sesión expiró. Vuelve a iniciar sesión.");
       return;
     }
 
-    setSubiendo(true);
     let fileUrl: string | null = null;
 
     if (archivo) {
@@ -6646,7 +6681,7 @@ function LogrosView({
       const ruta = extraerRutaStorage("achievements", logro.file_url);
       await supabase.storage.from("achievements").remove([ruta]);
     }
-    const { error: deleteError } = await supabase.from("achievements").delete().eq("id", logro.id);
+    const { error: deleteError } = await supabase.from("achievements").delete().eq("id", logro.id).eq("user_id", logro.user_id);
     if (deleteError) {
       setError("No se pudo eliminar el logro. Intenta de nuevo.");
       return;
@@ -6847,7 +6882,9 @@ function TarjetaLogro({
     async function resolver() {
       if (!logro.file_url) return;
       const ruta = extraerRutaStorage("achievements", logro.file_url);
-      const { data, error } = await supabase.storage.from("achievements").createSignedUrl(ruta, 3600);
+      // 604800 = 7 días — evita que el link caduque durante una sesión larga
+      // o si el usuario deja la pestaña abierta más de una hora.
+      const { data, error } = await supabase.storage.from("achievements").createSignedUrl(ruta, 604800);
       if (activo) setUrlFirmada(error ? null : (data?.signedUrl ?? null));
     }
     resolver();
@@ -7007,9 +7044,27 @@ function PerfilView({
   function copiarLink() {
     if (!publicToken) return;
     const url = `${window.location.origin}/p/${publicToken}`;
-    navigator.clipboard.writeText(url);
-    setCopiado(true);
-    setTimeout(() => setCopiado(false), 2000);
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    }).catch(() => {
+      // Clipboard API bloqueada (contexto inseguro, extensiones, etc.)
+      // Intentamos la técnica del textarea como fallback
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = url;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+        setCopiado(true);
+        setTimeout(() => setCopiado(false), 2000);
+      } catch {
+        // Nada que hacer si ambos métodos fallan
+      }
+    });
   }
 
   async function subirFoto(archivo: File) {
@@ -7432,7 +7487,13 @@ function parsearNumeroCSV(valor: string | undefined): number | null {
 function parsearFechaCSV(valor: string | undefined): string | null {
   if (!valor) return null;
   const conGuiones = valor.trim().replace(/^(\d{4})\.(\d{2})\.(\d{2})/, "$1-$2-$3");
-  const fecha = new Date(conGuiones);
+  // Strings con SOLO fecha (sin hora) son interpretados por JS como UTC
+  // medianoche, lo que en zonas negativas puede caer en el día anterior.
+  // Añadimos T00:00:00 explícito para que JS los trate como hora local.
+  const conHora = /^\d{4}-\d{2}-\d{2}$/.test(conGuiones)
+    ? `${conGuiones}T00:00:00`
+    : conGuiones;
+  const fecha = new Date(conHora);
   return Number.isNaN(fecha.getTime()) ? null : fecha.toISOString();
 }
 
@@ -7667,6 +7728,18 @@ function ImportarView({
         setErrorMt("Se leyó el archivo pero no se encontraron filas de operaciones reconocibles. Verificá que sea un reporte de historial de MT4 o MT5.");
         return;
       }
+
+      // Advertir si algún trade quedó con símbolo UNKNOWN (ocurre en el
+      // Formato A de MT5 donde la columna de símbolo no está disponible).
+      const conSimbDesconocido = trades.filter((t) => t.symbol === "UNKNOWN").length;
+      if (conSimbDesconocido > 0) {
+        setErrorMt(
+          `⚠️ ${conSimbDesconocido} operación(es) quedaron con símbolo "UNKNOWN" porque el reporte MT5 en Formato A no incluye esa columna. ` +
+          `Editá el símbolo manualmente en cada trade después de importarlos, o exportá el reporte en Formato B desde tu plataforma.`
+        );
+        // No abortamos: los trades igual se muestran para que el usuario pueda decidir
+      }
+
       setTradesMt(trades);
     } catch (e) {
       setErrorMt(`Error al procesar el archivo HTML: ${e instanceof Error ? e.message : "Error desconocido"}`);
@@ -8928,9 +9001,13 @@ function ExportarBackup() {
   async function exportarTradesCSV() {
     setExportando("csv");
     setError(null);
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) { setExportando(null); setError("Tu sesión expiró."); return; }
     const { data, error: fetchError } = await supabase
       .from("trades")
       .select("*")
+      .eq("user_id", userId)
       .order("entry_time", { ascending: true });
     setExportando(null);
 
@@ -8957,12 +9034,16 @@ function ExportarBackup() {
     setError(null);
 
     try {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData.user?.id;
+      if (!userId) { setExportando(null); setError("Tu sesión expiró."); return; }
+
       const [trades, accounts, strategies, withdrawals, achievements] = await Promise.all([
-        supabase.from("trades").select("*"),
-        supabase.from("accounts").select("*"),
-        supabase.from("strategies").select("*"),
-        supabase.from("withdrawals").select("*"),
-        supabase.from("achievements").select("*"),
+        supabase.from("trades").select("*").eq("user_id", userId),
+        supabase.from("accounts").select("*").eq("user_id", userId),
+        supabase.from("strategies").select("*").eq("user_id", userId),
+        supabase.from("withdrawals").select("*").eq("user_id", userId),
+        supabase.from("achievements").select("*").eq("user_id", userId),
       ]);
 
       // Verificar errores individuales
@@ -9114,7 +9195,8 @@ function TarjetaCuenta({
         phase: "financiada",
         phase_started_at: new Date().toISOString(),
       })
-      .eq("id", cuenta.id);
+      .eq("id", cuenta.id)
+      .eq("user_id", userId ?? "");
 
     if (updateError) {
       console.error("[fondearCuenta] Error al actualizar cuenta:", updateError.message);
@@ -9128,10 +9210,14 @@ function TarjetaCuenta({
 
   async function archivar() {
     setProcesando(true);
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) { setProcesando(false); return; }
     const { error: archErr } = await supabase
       .from("accounts")
       .update({ is_archived: true })
-      .eq("id", cuenta.id);
+      .eq("id", cuenta.id)
+      .eq("user_id", userId);
     setProcesando(false);
     if (archErr) return;
     onCambio();
@@ -9139,10 +9225,14 @@ function TarjetaCuenta({
 
   async function quemar() {
     setProcesando(true);
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) { setProcesando(false); setConfirmandoQuemar(false); return; }
     const { error: qErr } = await supabase
       .from("accounts")
       .update({ blown_at: new Date().toISOString(), is_archived: true })
-      .eq("id", cuenta.id);
+      .eq("id", cuenta.id)
+      .eq("user_id", userId);
     setProcesando(false);
     if (qErr) {
       setConfirmandoQuemar(false);
@@ -9192,7 +9282,7 @@ function TarjetaCuenta({
       await supabase.storage.from("trade-evidence").remove(todasLasRutas);
     }
 
-    const borradoTrades = await supabase.from("trades").delete().eq("account_id", cuenta.id);
+    const borradoTrades = await supabase.from("trades").delete().eq("account_id", cuenta.id).eq("user_id", cuenta.user_id);
     if (borradoTrades.error) {
       setProcesando(false);
       setErrorEliminar(
@@ -9201,7 +9291,7 @@ function TarjetaCuenta({
       return;
     }
 
-    const borradoRetiros = await supabase.from("withdrawals").delete().eq("account_id", cuenta.id);
+    const borradoRetiros = await supabase.from("withdrawals").delete().eq("account_id", cuenta.id).eq("user_id", cuenta.user_id);
     if (borradoRetiros.error) {
       setProcesando(false);
       setErrorEliminar(
@@ -9210,9 +9300,9 @@ function TarjetaCuenta({
       return;
     }
 
-    await supabase.from("achievements").update({ account_id: null }).eq("account_id", cuenta.id);
+    await supabase.from("achievements").update({ account_id: null }).eq("account_id", cuenta.id).eq("user_id", cuenta.user_id);
 
-    const borradoCuenta = await supabase.from("accounts").delete().eq("id", cuenta.id);
+    const borradoCuenta = await supabase.from("accounts").delete().eq("id", cuenta.id).eq("user_id", cuenta.user_id);
     if (borradoCuenta.error) {
       setProcesando(false);
       setErrorEliminar(`No se pudo eliminar la cuenta (${borradoCuenta.error.message}).`);
@@ -9564,7 +9654,15 @@ function ModalEditarCuenta({
       return;
     }
 
+    if (enviando) return;
     setEnviando(true);
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) {
+      setEnviando(false);
+      setError("Tu sesión expiró. Volvé a iniciar sesión.");
+      return;
+    }
     const { error: updateError } = await supabase
       .from("accounts")
       .update({
@@ -9584,7 +9682,8 @@ function ModalEditarCuenta({
         // anterior como si fuera de la nueva.
         ...(phase !== cuenta.phase ? { phase_started_at: new Date().toISOString() } : {}),
       })
-      .eq("id", cuenta.id);
+      .eq("id", cuenta.id)
+      .eq("user_id", userId);
     setEnviando(false);
 
     if (updateError) {
@@ -10380,9 +10479,13 @@ function ModalNuevaCuenta({
       return;
     }
 
+    if (enviando) return;
+    setEnviando(true);
+
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData.user?.id;
     if (!userId) {
+      setEnviando(false);
       setError("Tu sesión expiró. Vuelve a iniciar sesión.");
       return;
     }
@@ -10391,8 +10494,6 @@ function ModalNuevaCuenta({
       idCuenta.trim() ? `ID: ${idCuenta.trim()}` : "",
       notas.trim(),
     ].filter(Boolean).join("\n\n") || null;
-
-    setEnviando(true);
     const { data, error: insertError } = await supabase
       .from("accounts")
       .insert({
@@ -10910,9 +11011,13 @@ function ModalCuentasArchivadas({
 
   async function cargarTodas() {
     setCargando(true);
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) { setCargando(false); return; }
     const { data } = await supabase
       .from("accounts")
       .select("*")
+      .eq("user_id", userId)
       .eq("is_archived", true)
       .order("created_at", { ascending: true });
     setTodas((data as Account[]) ?? []);
@@ -10925,10 +11030,14 @@ function ModalCuentasArchivadas({
 
   async function reactivar(cuenta: Account) {
     setReactivandoId(cuenta.id);
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) { setReactivandoId(null); return; }
     const { data, error } = await supabase
       .from("accounts")
       .update({ is_archived: false, blown_at: null })
       .eq("id", cuenta.id)
+      .eq("user_id", userId)
       .select()
       .single();
     setReactivandoId(null);
@@ -11112,14 +11221,16 @@ function GraficoPnL({ trades }: { trades: Trade[] }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   const puntos = useMemo(() => {
+    // Ordenamos y fechamos por exit_time (cuándo se realizó el P&L),
+    // no por entry_time, para que la curva de equity sea cronológicamente correcta.
     const cerrados = trades
-      .filter((t) => t.status === "closed" && t.realized_pnl !== null)
-      .sort((a, b) => new Date(a.entry_time).getTime() - new Date(b.entry_time).getTime());
+      .filter((t) => t.status === "closed" && t.realized_pnl !== null && t.exit_time !== null)
+      .sort((a, b) => new Date(a.exit_time!).getTime() - new Date(b.exit_time!).getTime());
 
     let acumulado = 0;
     return cerrados.map((t) => {
       acumulado += t.realized_pnl ?? 0;
-      return { fecha: t.entry_time, acumulado, pnlTrade: t.realized_pnl ?? 0, symbol: t.symbol };
+      return { fecha: t.exit_time!, acumulado, pnlTrade: t.realized_pnl ?? 0, symbol: t.symbol };
     });
   }, [trades]);
 
@@ -11488,7 +11599,10 @@ const BANCO_DE_CONSEJOS: ConsejoDia[] = [
 /** Elige el consejo del día según la fecha (mismo día = mismo consejo para todos, y no se repite hasta dar toda la vuelta a la lista). */
 function consejoDeHoy(): ConsejoDia {
   const hoy = new Date();
-  const inicioDeAño = new Date(hoy.getFullYear(), 0, 0);
+  // new Date(year, 0, 1) = 1 de enero — base correcta para que el día 1
+  // del año (1 ene) devuelva índice 0, sin el off-by-one que provocaba
+  // new Date(year, 0, 0) (= 31 dic del año anterior → índice 1 en 1 ene).
+  const inicioDeAño = new Date(hoy.getFullYear(), 0, 1);
   const diferenciaMs = hoy.getTime() - inicioDeAño.getTime();
   const diaDelAño = Math.floor(diferenciaMs / (1000 * 60 * 60 * 24));
   return BANCO_DE_CONSEJOS[diaDelAño % BANCO_DE_CONSEJOS.length];
@@ -11562,7 +11676,11 @@ function calcularKeboScore(trades: Trade[]): { puntaje: number; desglose: Desglo
   }).length;
   const puntajeDisciplina = (sinError / cerrados.length) * 100;
 
-  const ordenados = [...cerrados].sort((a, b) => new Date(a.entry_time).getTime() - new Date(b.entry_time).getTime());
+  // Ordenar por exit_time para que el drawdown refleje cuándo se realizó
+  // cada P&L, no cuándo se entró al trade (coherente con el resto de métricas).
+  const ordenados = [...cerrados].sort(
+    (a, b) => new Date(a.exit_time ?? a.entry_time).getTime() - new Date(b.exit_time ?? b.entry_time).getTime()
+  );
   let acumulado = 0;
   let pico = 0;
   let peorCaidaPorcentaje = 0;
@@ -11657,9 +11775,11 @@ function ComparacionMensualWidget({ trades }: { trades: Trade[] }) {
     let pnlActual = 0;
     let pnlAnterior = 0;
     trades
-      .filter((t) => t.status === "closed" && t.realized_pnl !== null)
+      .filter((t) => t.status === "closed" && t.realized_pnl !== null && t.exit_time !== null)
       .forEach((t) => {
-        const fecha = new Date(t.entry_time);
+        // Usamos exit_time (cuándo se cerró el trade) para agrupar por mes,
+        // no entry_time, ya que el P&L se realiza al cierre.
+        const fecha = new Date(t.exit_time!);
         if (fecha.getFullYear() === añoActual && fecha.getMonth() === mesActual) {
           pnlActual += t.realized_pnl ?? 0;
         } else if (
@@ -11886,7 +12006,7 @@ function ImagenPrivada({
     let activo = true;
     async function cargar() {
       const ruta = extraerRutaStorage(bucket, path);
-      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(ruta, 3600);
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(ruta, 604800);
       if (activo) setUrl(error ? null : (data?.signedUrl ?? null));
     }
     cargar();
@@ -11915,7 +12035,7 @@ function GaleriaImagenEvidencia({ ruta }: { ruta: string }) {
     let activo = true;
     async function cargar() {
       const rutaLimpia = extraerRutaStorage("trade-evidence", ruta);
-      const { data, error } = await supabase.storage.from("trade-evidence").createSignedUrl(rutaLimpia, 3600);
+      const { data, error } = await supabase.storage.from("trade-evidence").createSignedUrl(rutaLimpia, 604800);
       if (activo) setUrlFirmada(error ? null : (data?.signedUrl ?? null));
     }
     cargar();
@@ -12006,7 +12126,8 @@ function CalendarioRendimiento({
     trades
       .filter((t) => t.status === "closed" && t.realized_pnl !== null)
       .forEach((t) => {
-        const clave = fechaKeyLocal(t.entry_time);
+        // Usar exit_time para ubicar el P&L en el día en que se realizó
+        const clave = fechaKeyLocal(t.exit_time ?? t.entry_time);
         const previo = mapa.get(clave) ?? { pnl: 0, cantidadTrades: 0 };
         mapa.set(clave, {
           pnl: previo.pnl + (t.realized_pnl ?? 0),
@@ -12079,7 +12200,11 @@ function CalendarioRendimiento({
   // En modo soloLectura (cuando no hay una cuenta seleccionada) solo
   // permitimos ver trades existentes, no abrir el form de registro.
   function manejarClickDia(clave: string) {
-    const tradesDelDia = trades.filter((t) => fechaKeyLocal(t.entry_time) === clave);
+    // Para trades cerrados usamos exit_time (el día en que se realizó el P&L),
+    // igual que resumenPorDia. Para trades abiertos usamos entry_time.
+    const tradesDelDia = trades.filter((t) =>
+      fechaKeyLocal(t.status === "closed" && t.exit_time ? t.exit_time : t.entry_time) === clave
+    );
     if (soloLectura && tradesDelDia.length === 0) return; // nada que ver
     onSeleccionarDia(clave);
     onAbrirDia(clave, tradesDelDia);
@@ -12608,11 +12733,15 @@ function FormularioTrade({
     const nombre = nombreNuevaEstrategia.trim();
     if (!nombre) return;
 
+    if (guardandoEstrategia) return;
+    setGuardandoEstrategia(true);
+
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData.user?.id;
-    if (!userId) return;
-
-    setGuardandoEstrategia(true);
+    if (!userId) {
+      setGuardandoEstrategia(false);
+      return;
+    }
     const { data, error: insertError } = await supabase
       .from("strategies")
       .insert({ user_id: userId, name: nombre })
@@ -12636,10 +12765,13 @@ function FormularioTrade({
       setError("Crea una cuenta primero para poder registrar operaciones en ella.");
       return;
     }
+    if (enviando) return;
+    setEnviando(true);
 
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData.user?.id;
     if (!userId) {
+      setEnviando(false);
       setError("Tu sesión expiró. Vuelve a iniciar sesión.");
       return;
     }
@@ -12657,6 +12789,7 @@ function FormularioTrade({
       (yaSeCerro && (precioSalida === null || Number.isNaN(precioSalida))) ||
       (yaSeCerro && (pnlNumero === null || Number.isNaN(pnlNumero)))
     ) {
+      setEnviando(false);
       setError(
         yaSeCerro
           ? "Cantidad, precio de entrada, precio de salida y resultado (P&L) son obligatorios y deben ser números."
@@ -12664,8 +12797,6 @@ function FormularioTrade({
       );
       return;
     }
-
-    setEnviando(true);
 
     // Subimos las imágenes de evidencia primero (si hay), para guardar
     // sus rutas junto con el resto de la operación. El bucket es privado;
@@ -13009,8 +13140,8 @@ function FormularioTrade({
                 )}
 
                 <Campo
-                  etiqueta="P&L (ganancia o pérdida)"
-                  ayuda="El resultado bruto en dólares (sin restar la comisión — eso lo hacemos nosotros solos)"
+                  etiqueta="P&L bruto (antes de comisión)"
+                  ayuda="Ingresá el resultado tal como lo muestra tu plataforma, SIN restarle la comisión — la comisión se descuenta sola abajo"
                 >
                   <input
                     required
@@ -13031,6 +13162,19 @@ function FormularioTrade({
                     placeholder="200 o -50"
                     className={inputClass}
                   />
+                  {(() => {
+                    const pnlNum = parseFloat(pnlManual);
+                    const feeNum = parseFloat(fees || "0");
+                    if (!Number.isNaN(pnlNum) && feeNum !== 0) {
+                      const neto = Math.round((pnlNum - feeNum) * 100) / 100;
+                      return (
+                        <p className={`mt-1 text-[11px] font-medium ${neto >= 0 ? "text-kb-gain" : "text-kb-loss"}`}>
+                          → P&L neto que se guardará: {neto >= 0 ? "+" : ""}{neto.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                        </p>
+                      );
+                    }
+                    return null;
+                  })()}
                 </Campo>
               </>
             )}
@@ -13805,6 +13949,7 @@ function FormularioCerrarTrade({
       return;
     }
 
+    if (enviando) return;
     setEnviando(true);
     const { error: updateError } = await conReintento(() =>
       supabase
@@ -13824,6 +13969,7 @@ function FormularioCerrarTrade({
           exit_time: new Date(exitTimeLocal).toISOString(),
         })
         .eq("id", trade.id)
+        .eq("user_id", trade.user_id)
     );
     setEnviando(false);
 
@@ -13977,6 +14123,7 @@ function FormularioCierreParcial({
       return;
     }
 
+    if (enviando) return;
     setEnviando(true);
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData.user?.id;
@@ -14054,6 +14201,7 @@ function FormularioCierreParcial({
             exit_time: ultimoExitTime,
           })
           .eq("id", trade.id)
+          .eq("user_id", userId)
       );
 
       setEnviando(false);
@@ -14258,6 +14406,7 @@ function FormularioEdicionTrade({
       return;
     }
 
+    if (enviando) return;
     setEnviando(true);
 
     // Subimos las imágenes nuevas que se hayan agregado en esta edición y
@@ -14285,7 +14434,7 @@ function FormularioEdicionTrade({
         rutasNuevas = subidas.filter((r): r is string => r !== null);
         setSubiendoImagenes(false);
         if (rutasNuevas.length < imagenesNuevas.length) {
-          setError(`${imagenesNuevas.length - rutasNuevas.length} imagen(es) no se pudieron subir. El trade se guardó sin ellas.`);
+          setError(`${imagenesNuevas.length - rutasNuevas.length} imagen(es) no se pudieron subir. Se guardarán los cambios sin esas imágenes.`);
         }
       }
     }
@@ -14317,6 +14466,7 @@ function FormularioEdicionTrade({
           notes: notes.trim() === "" ? null : notes.trim(),
         })
         .eq("id", trade.id)
+        .eq("user_id", trade.user_id)
     );
     setEnviando(false);
 
