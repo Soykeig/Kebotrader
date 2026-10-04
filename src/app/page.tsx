@@ -923,7 +923,76 @@ type Vista =
   | "aportes"
   | "logros"
   | "importar"
-  | "perfil";
+  | "perfil"
+  | "gym";
+
+type GimVista = "hoy" | "plan" | "progreso" | "historial_gym";
+
+// =====================================================================
+// GYM: tipos de datos para el módulo de Gimnasio
+// =====================================================================
+
+interface GymEjercicio {
+  nombre: string;
+  series: number;
+  reps: string;       // puede ser "8-12", "AMRAP", etc.
+  peso_kg: number | null;
+  notas: string;
+}
+
+interface GymRutinaEjercicio {
+  id: string;
+  nombre: string;
+  series: number;
+  reps_objetivo: string;
+  grupo_muscular: string;
+  orden: number;
+}
+
+interface GymRutina {
+  id: string;
+  user_id: string;
+  nombre: string;
+  dia_semana: number;   // 0=Dom … 6=Sáb
+  ejercicios: GymRutinaEjercicio[];
+  created_at: string;
+}
+
+interface GymSesion {
+  id: string;
+  user_id: string;
+  fecha: string;         // YYYY-MM-DD
+  rutina_id: string | null;
+  duracion_min: number | null;
+  notas: string;
+  created_at: string;
+}
+
+interface GymSesionEjercicio {
+  id: string;
+  sesion_id: string;
+  nombre: string;
+  grupo_muscular: string;
+  series: { reps: number; peso_kg: number | null }[];
+  orden: number;
+}
+
+interface BodyMeasurement {
+  id: string;
+  user_id: string;
+  fecha: string;
+  peso_kg: number | null;
+  grasa_pct: number | null;
+  musculo_kg: number | null;
+  pecho_cm: number | null;
+  cintura_cm: number | null;
+  cadera_cm: number | null;
+  brazo_cm: number | null;
+  pierna_cm: number | null;
+  notas: string;
+  created_at: string;
+}
+
 type CuentaSeleccion = string | "todas";
 
 interface NavItem {
@@ -1042,6 +1111,16 @@ function IconoNav({ id, className = "h-[18px] w-[18px]" }: { id: Vista; classNam
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
         </svg>
       );
+    case "gym":
+      return (
+        <svg {...props}>
+          <path d="M3 12h2" />
+          <path d="M19 12h2" />
+          <path d="M5 9h2v6H5z" />
+          <path d="M17 9h2v6h-2z" />
+          <path d="M7 11h10v2H7z" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -1081,6 +1160,14 @@ const NAV_GRUPOS: NavGrupo[] = [
 ];
 
 const NAV_ITEMS: NavItem[] = NAV_GRUPOS.flatMap((g) => g.items);
+
+// Navegación interna del módulo Gym (se muestra cuando esModoGym=true)
+const GYM_DIAS_SEMANA = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"] as const;
+const DIAS_SEMANA_COMPLETO = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"] as const;
+const GRUPOS_MUSCULARES = [
+  "Pecho", "Espalda", "Hombros", "Bíceps", "Tríceps",
+  "Piernas", "Glúteos", "Abdomen", "Cardio", "Otro",
+] as const;
 
 
 /** Deriva un nombre legible a partir del correo (ej. "juan.perez@x.com" → "Juan.perez") */
@@ -1235,7 +1322,11 @@ function Dashboard({
   alternarTema: () => void;
 }) {
   const [vista, setVista] = useState<Vista>("inicio");
+  const [vistaGim, setVistaGim] = useState<GimVista>("hoy");
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
+
+  // true cuando estamos dentro del módulo Gym
+  const esModoGym = vista === "gym";
 
   // Nombre real del perfil (si lo cargaste en Perfil, o si lo pusiste al
   // registrarte) — se usa en el saludo del Dashboard y en el sidebar,
@@ -1667,51 +1758,132 @@ function Dashboard({
             </span>
           </div>
 
-          <SelectorCuentaSidebar
-            cuentas={cuentas}
-            cargando={cargandoCuentas}
-            cuentaActivaId={cuentaActivaId}
-            pnlPorCuenta={pnlPorCuenta}
-            retiradoPorCuenta={retiradoPorCuenta}
-            onSeleccionar={setCuentaActivaId}
-            onNuevaCuenta={() => setMostrarModalCuenta(true)}
-          />
+          {/* Selector de cuenta solo visible en modo Trading */}
+          {!esModoGym && (
+            <SelectorCuentaSidebar
+              cuentas={cuentas}
+              cargando={cargandoCuentas}
+              cuentaActivaId={cuentaActivaId}
+              pnlPorCuenta={pnlPorCuenta}
+              retiradoPorCuenta={retiradoPorCuenta}
+              onSeleccionar={setCuentaActivaId}
+              onNuevaCuenta={() => setMostrarModalCuenta(true)}
+            />
+          )}
 
-          <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
-            {navGruposFiltrados.map((grupo) => (
-              <div key={grupo.titulo} className="rounded-xl border border-kb-border-soft bg-kb-bg/40 p-2">
+          {/* ── Switcher de módulo ─────────────────────────────── */}
+          <div className="px-3 pt-3 pb-1">
+            <div className="flex gap-1 rounded-xl border border-kb-border-soft bg-kb-bg/60 p-1">
+              <button
+                onClick={() => irA("inicio")}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition-colors ${
+                  !esModoGym
+                    ? "bg-kb-gain text-kb-bg shadow-sm"
+                    : "text-kb-text-secondary hover:text-kb-text"
+                }`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                  <polyline points="3,17 9,11 13,15 21,6" />
+                  <polyline points="15,6 21,6 21,12" />
+                </svg>
+                Trading
+              </button>
+              <button
+                onClick={() => irA("gym")}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition-colors ${
+                  esModoGym
+                    ? "bg-kb-gain text-kb-bg shadow-sm"
+                    : "text-kb-text-secondary hover:text-kb-text"
+                }`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                  <path d="M3 12h2" /><path d="M19 12h2" />
+                  <path d="M5 9h2v6H5z" /><path d="M17 9h2v6h-2z" />
+                  <path d="M7 11h10v2H7z" />
+                </svg>
+                Gym
+              </button>
+            </div>
+          </div>
+
+          {/* ── Navegación principal (Trading) ────────────────── */}
+          {!esModoGym && (
+            <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
+              {navGruposFiltrados.map((grupo) => (
+                <div key={grupo.titulo} className="rounded-xl border border-kb-border-soft bg-kb-bg/40 p-2">
+                  <p className="mb-1.5 flex items-center gap-1.5 px-2 text-[10px] font-semibold uppercase tracking-wider text-kb-text-muted">
+                    <span className="h-1 w-1 rounded-full bg-kb-gain/70" />
+                    {grupo.titulo}
+                  </p>
+                  <div className="space-y-0.5">
+                    {grupo.items.map((item) => {
+                      const activo = vista === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => irA(item.id)}
+                          className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm font-medium transition-colors ${
+                            activo
+                              ? "bg-kb-gain/10 text-kb-text"
+                              : "text-kb-text-secondary hover:bg-kb-surface hover:text-kb-text"
+                          }`}
+                        >
+                          <span
+                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${
+                              activo ? "bg-kb-gain text-kb-bg" : "bg-kb-surface text-kb-text-secondary"
+                            }`}
+                          >
+                            <IconoNav id={item.id} />
+                          </span>
+                          <span className={activo ? "text-kb-gain" : ""}>{item.etiqueta}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </nav>
+          )}
+
+          {/* ── Navegación del Gym ────────────────────────────── */}
+          {esModoGym && (
+            <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+              <div className="rounded-xl border border-kb-border-soft bg-kb-bg/40 p-2">
                 <p className="mb-1.5 flex items-center gap-1.5 px-2 text-[10px] font-semibold uppercase tracking-wider text-kb-text-muted">
                   <span className="h-1 w-1 rounded-full bg-kb-gain/70" />
-                  {grupo.titulo}
+                  Entrenamiento
                 </p>
                 <div className="space-y-0.5">
-                  {grupo.items.map((item) => {
-                    const activo = vista === item.id;
+                  {(
+                    [
+                      { id: "hoy" as GimVista, label: "Hoy", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg> },
+                      { id: "plan" as GimVista, label: "Mi Rutina", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg> },
+                      { id: "historial_gym" as GimVista, label: "Historial", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg> },
+                      { id: "progreso" as GimVista, label: "Progreso", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><line x1="5" y1="21" x2="5" y2="11"/><line x1="12" y1="21" x2="12" y2="5"/><line x1="19" y1="21" x2="19" y2="14"/></svg> },
+                    ] as const
+                  ).map(({ id, label, icono }) => {
+                    const activo = vistaGim === id;
                     return (
                       <button
-                        key={item.id}
-                        onClick={() => irA(item.id)}
+                        key={id}
+                        onClick={() => setVistaGim(id)}
                         className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm font-medium transition-colors ${
                           activo
                             ? "bg-kb-gain/10 text-kb-text"
                             : "text-kb-text-secondary hover:bg-kb-surface hover:text-kb-text"
                         }`}
                       >
-                        <span
-                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${
-                            activo ? "bg-kb-gain text-kb-bg" : "bg-kb-surface text-kb-text-secondary"
-                          }`}
-                        >
-                          <IconoNav id={item.id} />
+                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${activo ? "bg-kb-gain text-kb-bg" : "bg-kb-surface text-kb-text-secondary"}`}>
+                          {icono}
                         </span>
-                        <span className={activo ? "text-kb-gain" : ""}>{item.etiqueta}</span>
+                        <span className={activo ? "text-kb-gain" : ""}>{label}</span>
                       </button>
                     );
                   })}
                 </div>
               </div>
-            ))}
-          </nav>
+            </nav>
+          )}
 
           <div className="border-t border-kb-border-soft px-3 py-4">
             <div className="mb-3 flex items-center gap-2.5 px-1">
@@ -1769,38 +1941,78 @@ function Dashboard({
             </button>
           </header>
           {menuMovilAbierto && (
-            <div className="grid grid-cols-3 gap-2 border-b border-kb-border-soft bg-kb-surface/40 p-3 lg:hidden">
-              {navGruposFiltrados.flatMap((g) => g.items).map((item) => (
+            <div className="border-b border-kb-border-soft bg-kb-surface/40 p-3 lg:hidden">
+              {/* Switcher móvil */}
+              <div className="mb-3 flex gap-1 rounded-xl border border-kb-border-soft bg-kb-bg/60 p-1">
                 <button
-                  key={item.id}
-                  onClick={() => irA(item.id)}
-                  className={`rounded-lg px-2 py-2 text-center text-xs font-medium transition-colors ${
-                    vista === item.id
-                      ? "bg-kb-accent/10 text-kb-accent"
-                      : "text-kb-text-secondary hover:bg-kb-surface"
-                  }`}
+                  onClick={() => { irA("inicio"); }}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-colors ${!esModoGym ? "bg-kb-gain text-kb-bg" : "text-kb-text-secondary"}`}
                 >
-                  <span className="mb-0.5 flex justify-center"><IconoNav id={item.id} className="h-5 w-5" /></span>
-                  {item.etiqueta}
+                  📊 Trading
                 </button>
-              ))}
-              <button
-                onClick={alternarTema}
-                className="col-span-3 mb-2 flex items-center justify-center gap-2 rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary"
-              >
-                {tema === "oscuro" ? "🌙 Tema oscuro" : "☀️ Tema claro"}
-              </button>
-              <button
-                onClick={handleLogout}
-                className="col-span-3 rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary"
-              >
-                Cerrar sesión
-              </button>
+                <button
+                  onClick={() => { irA("gym"); }}
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-colors ${esModoGym ? "bg-kb-gain text-kb-bg" : "text-kb-text-secondary"}`}
+                >
+                  🏋️ Gym
+                </button>
+              </div>
+
+              {/* Items de navegación */}
+              <div className="grid grid-cols-3 gap-2">
+                {!esModoGym
+                  ? navGruposFiltrados.flatMap((g) => g.items).map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => irA(item.id)}
+                        className={`rounded-lg px-2 py-2 text-center text-xs font-medium transition-colors ${
+                          vista === item.id ? "bg-kb-accent/10 text-kb-accent" : "text-kb-text-secondary hover:bg-kb-surface"
+                        }`}
+                      >
+                        <span className="mb-0.5 flex justify-center"><IconoNav id={item.id} className="h-5 w-5" /></span>
+                        {item.etiqueta}
+                      </button>
+                    ))
+                  : (
+                    [
+                      { id: "hoy" as GimVista, label: "Hoy" },
+                      { id: "plan" as GimVista, label: "Mi Rutina" },
+                      { id: "historial_gym" as GimVista, label: "Historial" },
+                      { id: "progreso" as GimVista, label: "Progreso" },
+                    ].map(({ id, label }) => (
+                      <button
+                        key={id}
+                        onClick={() => { setVistaGim(id); setMenuMovilAbierto(false); }}
+                        className={`rounded-lg px-2 py-2 text-center text-xs font-medium transition-colors ${
+                          vistaGim === id ? "bg-kb-gain/10 text-kb-gain" : "text-kb-text-secondary hover:bg-kb-surface"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))
+                  )
+                }
+              </div>
+
+              <div className="mt-2 space-y-2">
+                <button
+                  onClick={alternarTema}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary"
+                >
+                  {tema === "oscuro" ? "🌙 Tema oscuro" : "☀️ Tema claro"}
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="w-full rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary"
+                >
+                  Cerrar sesión
+                </button>
+              </div>
             </div>
           )}
 
-          {/* ---------- Selector de cuenta móvil (en desktop vive en el sidebar) ---------- */}
-          <div className="border-b border-kb-border-soft bg-kb-surface/40 lg:hidden">
+          {/* ---------- Selector de cuenta móvil (solo en modo Trading) ---------- */}
+          {!esModoGym && <div className="border-b border-kb-border-soft bg-kb-surface/40 lg:hidden">
             <div className="flex items-center gap-3 overflow-x-auto px-4 py-3 lg:px-8">
               {cargandoCuentas ? (
                 <>
@@ -1861,7 +2073,7 @@ function Dashboard({
                 + Nueva cuenta
               </button>
             </div>
-          </div>
+          </div>}
 
           {/* ---------- Contenido de la vista activa ---------- */}
           <div className="flex-1 px-4 py-6 lg:px-10 lg:py-8">
@@ -1996,6 +2208,14 @@ function Dashboard({
                 historialFases={historialFases}
                 onCambio={recargarTrasCambioDeCuentas}
                 onVerArchivadas={() => setMostrarArchivadas(true)}
+              />
+            )}
+
+            {vista === "gym" && (
+              <GimView
+                vistaGim={vistaGim}
+                setVistaGim={setVistaGim}
+                userId={session.user.id}
               />
             )}
               </>
@@ -14904,3 +15124,1209 @@ function TablaTrades({
   );
 }
 
+
+// =====================================================================
+// MÓDULO GYM — componentes completos
+// =====================================================================
+
+// ── Helpers locales del módulo gym ────────────────────────────────────
+
+function gymFechaKey(d: Date = new Date()): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function gymFechaLabel(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const meses = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  return `${d} ${meses[m - 1]} ${y}`;
+}
+
+// ── GimView: raíz del módulo, enruta entre sub-vistas ─────────────────
+
+function GimView({
+  vistaGim,
+  setVistaGim,
+  userId,
+}: {
+  vistaGim: GimVista;
+  setVistaGim: (v: GimVista) => void;
+  userId: string;
+}) {
+  // Tabs superiores visibles en móvil (en desktop está en sidebar)
+  const tabs: { id: GimVista; label: string }[] = [
+    { id: "hoy", label: "Hoy" },
+    { id: "plan", label: "Mi Rutina" },
+    { id: "historial_gym", label: "Historial" },
+    { id: "progreso", label: "Progreso" },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Tabs móvil */}
+      <div className="flex gap-1 overflow-x-auto rounded-xl border border-kb-border-soft bg-kb-surface/40 p-1 lg:hidden">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setVistaGim(t.id)}
+            className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              vistaGim === t.id
+                ? "bg-kb-gain text-kb-bg shadow-sm"
+                : "text-kb-text-secondary hover:text-kb-text"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {vistaGim === "hoy" && <GimHoyView userId={userId} />}
+      {vistaGim === "plan" && <GimPlanView userId={userId} />}
+      {vistaGim === "historial_gym" && <GimHistorialView userId={userId} />}
+      {vistaGim === "progreso" && <GimProgresoView userId={userId} />}
+    </div>
+  );
+}
+
+// ── GimHoyView: registrar sesión de hoy ───────────────────────────────
+
+function GimHoyView({ userId }: { userId: string }) {
+  const hoy = gymFechaKey();
+
+  const [sesionHoy, setSesionHoy] = useState<GymSesion | null>(null);
+  const [ejerciciosHoy, setEjerciciosHoy] = useState<GymSesionEjercicio[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [enviando, setEnviando] = useState(false);
+
+  // Form para agregar ejercicio rápido
+  const [formVisible, setFormVisible] = useState(false);
+  const [exNombre, setExNombre] = useState("");
+  const [exGrupo, setExGrupo] = useState<string>(GRUPOS_MUSCULARES[0]);
+  const [exSeries, setExSeries] = useState<{ reps: string; peso: string }[]>([
+    { reps: "", peso: "" },
+  ]);
+  const [duracion, setDuracion] = useState("");
+  const [notas, setNotas] = useState("");
+
+  useEffect(() => {
+    cargarSesionHoy();
+  }, [userId]);
+
+  async function cargarSesionHoy() {
+    setCargando(true);
+    const { data: sesData } = await supabase
+      .from("gym_sessions")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("fecha", hoy)
+      .maybeSingle();
+
+    if (sesData) {
+      setSesionHoy(sesData as GymSesion);
+      const { data: exData } = await supabase
+        .from("gym_session_exercises")
+        .select("*")
+        .eq("sesion_id", sesData.id)
+        .order("orden");
+      setEjerciciosHoy((exData as GymSesionEjercicio[]) ?? []);
+    } else {
+      setSesionHoy(null);
+      setEjerciciosHoy([]);
+    }
+    setCargando(false);
+  }
+
+  async function iniciarSesion() {
+    if (enviando) return;
+    setEnviando(true);
+    const { data, error } = await supabase
+      .from("gym_sessions")
+      .insert({ user_id: userId, fecha: hoy, notas: "" })
+      .select()
+      .single();
+    if (!error && data) {
+      setSesionHoy(data as GymSesion);
+    }
+    setEnviando(false);
+  }
+
+  async function agregarEjercicio() {
+    if (enviando || !sesionHoy) return;
+    if (!exNombre.trim()) return;
+    setEnviando(true);
+
+    const seriesData = exSeries
+      .filter((s) => s.reps.trim() !== "")
+      .map((s) => ({
+        reps: parseInt(s.reps) || 0,
+        peso_kg: s.peso.trim() ? parseFloat(s.peso) : null,
+      }));
+
+    const { error } = await supabase.from("gym_session_exercises").insert({
+      sesion_id: sesionHoy.id,
+      nombre: exNombre.trim(),
+      grupo_muscular: exGrupo,
+      series: seriesData,
+      orden: ejerciciosHoy.length,
+    });
+
+    if (!error) {
+      setExNombre("");
+      setExSeries([{ reps: "", peso: "" }]);
+      setFormVisible(false);
+      await cargarSesionHoy();
+    }
+    setEnviando(false);
+  }
+
+  async function finalizarSesion() {
+    if (!sesionHoy || enviando) return;
+    setEnviando(true);
+    await supabase
+      .from("gym_sessions")
+      .update({
+        duracion_min: duracion ? parseInt(duracion) : null,
+        notas: notas.trim(),
+      })
+      .eq("id", sesionHoy.id)
+      .eq("user_id", userId);
+    await cargarSesionHoy();
+    setDuracion("");
+    setNotas("");
+    setEnviando(false);
+  }
+
+  async function eliminarEjercicio(id: string) {
+    await supabase
+      .from("gym_session_exercises")
+      .delete()
+      .eq("id", id)
+      .eq("sesion_id", sesionHoy?.id ?? "");
+    await cargarSesionHoy();
+  }
+
+  if (cargando) {
+    return (
+      <div className="space-y-3">
+        <SkeletonBloque className="h-32 w-full" />
+        <SkeletonBloque className="h-24 w-full" />
+      </div>
+    );
+  }
+
+  const diasSemana = DIAS_SEMANA_COMPLETO[new Date().getDay()];
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-kb-text">Sesión de Hoy</h1>
+          <p className="text-sm text-kb-text-secondary">{diasSemana} · {gymFechaLabel(hoy)}</p>
+        </div>
+        {sesionHoy && (
+          <span className="flex items-center gap-1.5 rounded-full bg-kb-gain/10 px-3 py-1 text-xs font-semibold text-kb-gain">
+            <span className="h-1.5 w-1.5 rounded-full bg-kb-gain" />
+            Sesión activa
+          </span>
+        )}
+      </div>
+
+      {!sesionHoy ? (
+        /* Pantalla de inicio de sesión */
+        <div className="flex flex-col items-center justify-center gap-6 rounded-2xl border border-kb-border-soft bg-kb-surface/30 py-16">
+          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-kb-gain/10">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="h-10 w-10 text-kb-gain">
+              <path d="M3 12h2" /><path d="M19 12h2" />
+              <path d="M5 9h2v6H5z" /><path d="M17 9h2v6h-2z" />
+              <path d="M7 11h10v2H7z" />
+            </svg>
+          </div>
+          <div className="text-center">
+            <p className="text-lg font-semibold text-kb-text">¿Listo para entrenar?</p>
+            <p className="mt-1 text-sm text-kb-text-secondary">Registra tu sesión de hoy y mantén el seguimiento de tu progreso</p>
+          </div>
+          <button
+            onClick={iniciarSesion}
+            disabled={enviando}
+            className="rounded-xl bg-kb-gain px-8 py-3 text-sm font-semibold text-kb-bg transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {enviando ? "Iniciando…" : "Iniciar sesión"}
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Lista de ejercicios */}
+          {ejerciciosHoy.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-kb-border bg-kb-surface/20 py-8 text-center">
+              <p className="text-sm text-kb-text-secondary">Aún no agregaste ejercicios</p>
+              <p className="mt-1 text-xs text-kb-text-muted">Pulsa "Agregar ejercicio" para empezar</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {ejerciciosHoy.map((ej) => (
+                <div key={ej.id} className="rounded-xl border border-kb-border-soft bg-kb-surface/30 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-kb-text">{ej.nombre}</p>
+                      <span className="mt-0.5 inline-block rounded-full bg-kb-surface px-2 py-0.5 text-[10px] font-medium text-kb-text-muted">
+                        {ej.grupo_muscular}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => eliminarEjercicio(ej.id)}
+                      className="text-kb-text-muted hover:text-kb-loss transition-colors"
+                      title="Eliminar"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                        <path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" />
+                      </svg>
+                    </button>
+                  </div>
+                  {/* Tabla de series */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-kb-text-muted">
+                          <th className="pb-1 pr-4 text-left font-medium">Serie</th>
+                          <th className="pb-1 pr-4 text-left font-medium">Reps</th>
+                          <th className="pb-1 text-left font-medium">Peso (kg)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="space-y-1">
+                        {ej.series.map((s, i) => (
+                          <tr key={i}>
+                            <td className="pr-4 py-0.5 font-mono text-kb-text-secondary">{i + 1}</td>
+                            <td className="pr-4 py-0.5 font-mono text-kb-text">{s.reps}</td>
+                            <td className="py-0.5 font-mono text-kb-text">{s.peso_kg ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Form agregar ejercicio */}
+          {formVisible ? (
+            <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-5 space-y-4">
+              <h3 className="font-semibold text-kb-text">Nuevo ejercicio</h3>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Nombre</label>
+                  <input
+                    value={exNombre}
+                    onChange={(e) => setExNombre(e.target.value)}
+                    placeholder="Press banca, Sentadilla…"
+                    className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text placeholder:text-kb-text-muted focus:border-kb-gain focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Grupo muscular</label>
+                  <select
+                    value={exGrupo}
+                    onChange={(e) => setExGrupo(e.target.value)}
+                    className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
+                  >
+                    {GRUPOS_MUSCULARES.map((g) => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Series */}
+              <div>
+                <label className="mb-2 block text-xs font-medium text-kb-text-secondary">Series</label>
+                <div className="space-y-2">
+                  {exSeries.map((s, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="w-6 text-center text-xs font-mono text-kb-text-muted">{i + 1}</span>
+                      <input
+                        type="number"
+                        placeholder="Reps"
+                        value={s.reps}
+                        onChange={(e) => {
+                          const ns = [...exSeries];
+                          ns[i] = { ...ns[i], reps: e.target.value };
+                          setExSeries(ns);
+                        }}
+                        className="w-20 rounded-lg border border-kb-border bg-kb-bg px-2 py-1.5 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
+                      />
+                      <input
+                        type="number"
+                        placeholder="Peso kg"
+                        value={s.peso}
+                        onChange={(e) => {
+                          const ns = [...exSeries];
+                          ns[i] = { ...ns[i], peso: e.target.value };
+                          setExSeries(ns);
+                        }}
+                        className="w-24 rounded-lg border border-kb-border bg-kb-bg px-2 py-1.5 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
+                      />
+                      {exSeries.length > 1 && (
+                        <button
+                          onClick={() => setExSeries(exSeries.filter((_, j) => j !== i))}
+                          className="text-kb-text-muted hover:text-kb-loss"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4"><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setExSeries([...exSeries, { reps: "", peso: "" }])}
+                  className="mt-2 text-xs font-medium text-kb-gain hover:opacity-80"
+                >
+                  + Agregar serie
+                </button>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={agregarEjercicio}
+                  disabled={enviando || !exNombre.trim()}
+                  className="rounded-lg bg-kb-gain px-4 py-2 text-sm font-semibold text-kb-bg disabled:opacity-50"
+                >
+                  {enviando ? "Guardando…" : "Guardar"}
+                </button>
+                <button
+                  onClick={() => setFormVisible(false)}
+                  className="rounded-lg border border-kb-border px-4 py-2 text-sm font-medium text-kb-text-secondary"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setFormVisible(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-kb-border py-3 text-sm font-medium text-kb-text-secondary hover:border-kb-gain hover:text-kb-gain transition-colors"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              Agregar ejercicio
+            </button>
+          )}
+
+          {/* Panel de finalizar sesión */}
+          <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 p-5 space-y-4">
+            <h3 className="font-semibold text-kb-text">Finalizar sesión</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Duración (min)</label>
+                <input
+                  type="number"
+                  value={duracion}
+                  onChange={(e) => setDuracion(e.target.value)}
+                  placeholder="60"
+                  className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Notas</label>
+                <input
+                  value={notas}
+                  onChange={(e) => setNotas(e.target.value)}
+                  placeholder="Cómo te sentiste…"
+                  className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
+                />
+              </div>
+            </div>
+            <button
+              onClick={finalizarSesion}
+              disabled={enviando}
+              className="w-full rounded-xl border border-kb-border-soft bg-kb-surface py-2.5 text-sm font-semibold text-kb-text hover:bg-kb-border-soft transition-colors disabled:opacity-50"
+            >
+              {enviando ? "Guardando…" : "Guardar y cerrar sesión"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── GimPlanView: rutina semanal ────────────────────────────────────────
+
+function GimPlanView({ userId }: { userId: string }) {
+  const [rutinas, setRutinas] = useState<GymRutina[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [diaSeleccionado, setDiaSeleccionado] = useState<number>(new Date().getDay());
+  const [modalAbierto, setModalAbierto] = useState(false);
+  const [editando, setEditando] = useState<GymRutina | null>(null);
+  const [enviando, setEnviando] = useState(false);
+
+  // Form de rutina
+  const [formNombre, setFormNombre] = useState("");
+  const [formEjercicios, setFormEjercicios] = useState<Omit<GymRutinaEjercicio, "id">[]>([
+    { nombre: "", grupo_muscular: GRUPOS_MUSCULARES[0], series: 3, reps_objetivo: "8-12", orden: 0 },
+  ]);
+
+  useEffect(() => { cargarRutinas(); }, [userId]);
+
+  async function cargarRutinas() {
+    setCargando(true);
+    const { data } = await supabase
+      .from("gym_routines")
+      .select("*")
+      .eq("user_id", userId)
+      .order("dia_semana");
+    setRutinas((data as GymRutina[]) ?? []);
+    setCargando(false);
+  }
+
+  function abrirModal(rutina?: GymRutina) {
+    if (rutina) {
+      setEditando(rutina);
+      setFormNombre(rutina.nombre);
+      setFormEjercicios(rutina.ejercicios.map(({ id: _id, ...rest }) => rest));
+    } else {
+      setEditando(null);
+      setFormNombre("");
+      setFormEjercicios([{ nombre: "", grupo_muscular: GRUPOS_MUSCULARES[0], series: 3, reps_objetivo: "8-12", orden: 0 }]);
+    }
+    setModalAbierto(true);
+  }
+
+  async function guardarRutina() {
+    if (enviando) return;
+    if (!formNombre.trim()) return;
+    setEnviando(true);
+
+    const payload = {
+      user_id: userId,
+      nombre: formNombre.trim(),
+      dia_semana: diaSeleccionado,
+      ejercicios: formEjercicios.filter((e) => e.nombre.trim()).map((e, i) => ({
+        ...e,
+        id: crypto.randomUUID(),
+        orden: i,
+      })),
+    };
+
+    if (editando) {
+      await supabase.from("gym_routines").update(payload).eq("id", editando.id).eq("user_id", userId);
+    } else {
+      await supabase.from("gym_routines").insert(payload);
+    }
+
+    setModalAbierto(false);
+    await cargarRutinas();
+    setEnviando(false);
+  }
+
+  async function eliminarRutina(id: string) {
+    await supabase.from("gym_routines").delete().eq("id", id).eq("user_id", userId);
+    await cargarRutinas();
+  }
+
+  const rutinaDelDia = rutinas.filter((r) => r.dia_semana === diaSeleccionado);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-kb-text">Mi Rutina</h1>
+          <p className="text-sm text-kb-text-secondary">Planifica tu semana de entrenamiento</p>
+        </div>
+        <button
+          onClick={() => abrirModal()}
+          className="flex items-center gap-2 rounded-xl bg-kb-gain px-4 py-2 text-sm font-semibold text-kb-bg hover:opacity-90 transition-opacity"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+          Nueva rutina
+        </button>
+      </div>
+
+      {/* Selector de día */}
+      <div className="flex gap-1 overflow-x-auto">
+        {GYM_DIAS_SEMANA.map((dia, i) => (
+          <button
+            key={i}
+            onClick={() => setDiaSeleccionado(i)}
+            className={`shrink-0 rounded-xl px-4 py-2.5 text-center text-xs font-semibold transition-colors ${
+              diaSeleccionado === i
+                ? "bg-kb-gain text-kb-bg"
+                : rutinas.some((r) => r.dia_semana === i)
+                ? "border border-kb-gain/40 bg-kb-gain/10 text-kb-gain"
+                : "border border-kb-border-soft bg-kb-surface/30 text-kb-text-secondary"
+            }`}
+          >
+            <span className="block">{dia}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Rutinas del día */}
+      {cargando ? (
+        <SkeletonBloque className="h-40 w-full" />
+      ) : rutinaDelDia.length === 0 ? (
+        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-kb-border py-12 text-center">
+          <p className="text-sm text-kb-text-secondary">No hay rutina para el {DIAS_SEMANA_COMPLETO[diaSeleccionado]}</p>
+          <button
+            onClick={() => abrirModal()}
+            className="rounded-xl border border-kb-gain/40 bg-kb-gain/10 px-5 py-2 text-sm font-semibold text-kb-gain hover:bg-kb-gain/20 transition-colors"
+          >
+            + Agregar rutina
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {rutinaDelDia.map((rutina) => (
+            <div key={rutina.id} className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-kb-text">{rutina.nombre}</h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => abrirModal(rutina)}
+                    className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    onClick={() => eliminarRutina(rutina.id)}
+                    className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-medium text-kb-text-secondary hover:border-kb-loss hover:text-kb-loss transition-colors"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {rutina.ejercicios.map((ej, idx) => (
+                  <div key={ej.id} className="flex items-center gap-3 rounded-lg bg-kb-bg/60 px-3 py-2">
+                    <span className="w-5 text-center text-xs font-mono text-kb-text-muted">{idx + 1}</span>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-kb-text">{ej.nombre}</p>
+                      <p className="text-xs text-kb-text-muted">{ej.grupo_muscular}</p>
+                    </div>
+                    <div className="text-right text-xs text-kb-text-secondary">
+                      <p className="font-semibold">{ej.series} × {ej.reps_objetivo}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Modal editar/crear rutina */}
+      {modalAbierto && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center">
+          <div className="w-full max-h-[90vh] overflow-y-auto rounded-t-2xl bg-kb-surface sm:max-w-lg sm:rounded-2xl">
+            <div className="sticky top-0 flex items-center justify-between border-b border-kb-border-soft bg-kb-surface px-5 py-4">
+              <h2 className="font-display text-base font-bold text-kb-text">
+                {editando ? "Editar rutina" : "Nueva rutina"}
+              </h2>
+              <button onClick={() => setModalAbierto(false)} className="text-kb-text-muted hover:text-kb-text">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+
+            <div className="space-y-5 p-5">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Nombre de la rutina</label>
+                <input
+                  value={formNombre}
+                  onChange={(e) => setFormNombre(e.target.value)}
+                  placeholder="Push day, Piernas, Full body…"
+                  className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Día</label>
+                <div className="flex gap-1 flex-wrap">
+                  {GYM_DIAS_SEMANA.map((d, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setDiaSeleccionado(i)}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${diaSeleccionado === i ? "bg-kb-gain text-kb-bg" : "border border-kb-border text-kb-text-secondary"}`}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <label className="text-xs font-medium text-kb-text-secondary">Ejercicios</label>
+                  <button
+                    onClick={() =>
+                      setFormEjercicios([
+                        ...formEjercicios,
+                        { nombre: "", grupo_muscular: GRUPOS_MUSCULARES[0], series: 3, reps_objetivo: "8-12", orden: formEjercicios.length },
+                      ])
+                    }
+                    className="text-xs font-medium text-kb-gain hover:opacity-80"
+                  >
+                    + Agregar
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {formEjercicios.map((ej, i) => (
+                    <div key={i} className="rounded-xl border border-kb-border-soft bg-kb-bg/60 p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-kb-text-muted w-4">{i + 1}</span>
+                        <input
+                          value={ej.nombre}
+                          onChange={(e) => {
+                            const ne = [...formEjercicios];
+                            ne[i] = { ...ne[i], nombre: e.target.value };
+                            setFormEjercicios(ne);
+                          }}
+                          placeholder="Nombre del ejercicio"
+                          className="flex-1 rounded-lg border border-kb-border bg-kb-surface px-2 py-1.5 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
+                        />
+                        {formEjercicios.length > 1 && (
+                          <button onClick={() => setFormEjercicios(formEjercicios.filter((_, j) => j !== i))} className="text-kb-text-muted hover:text-kb-loss">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4"><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex gap-2 pl-6">
+                        <select
+                          value={ej.grupo_muscular}
+                          onChange={(e) => {
+                            const ne = [...formEjercicios];
+                            ne[i] = { ...ne[i], grupo_muscular: e.target.value };
+                            setFormEjercicios(ne);
+                          }}
+                          className="flex-1 rounded-lg border border-kb-border bg-kb-surface px-2 py-1.5 text-xs text-kb-text focus:border-kb-gain focus:outline-none"
+                        >
+                          {GRUPOS_MUSCULARES.map((g) => <option key={g}>{g}</option>)}
+                        </select>
+                        <input
+                          type="number"
+                          min={1}
+                          value={ej.series}
+                          onChange={(e) => {
+                            const ne = [...formEjercicios];
+                            ne[i] = { ...ne[i], series: parseInt(e.target.value) || 1 };
+                            setFormEjercicios(ne);
+                          }}
+                          placeholder="Series"
+                          className="w-16 rounded-lg border border-kb-border bg-kb-surface px-2 py-1.5 text-xs text-kb-text focus:border-kb-gain focus:outline-none"
+                        />
+                        <input
+                          value={ej.reps_objetivo}
+                          onChange={(e) => {
+                            const ne = [...formEjercicios];
+                            ne[i] = { ...ne[i], reps_objetivo: e.target.value };
+                            setFormEjercicios(ne);
+                          }}
+                          placeholder="Reps"
+                          className="w-20 rounded-lg border border-kb-border bg-kb-surface px-2 py-1.5 text-xs text-kb-text focus:border-kb-gain focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 flex gap-2 border-t border-kb-border-soft bg-kb-surface px-5 py-4">
+              <button
+                onClick={guardarRutina}
+                disabled={enviando || !formNombre.trim()}
+                className="flex-1 rounded-xl bg-kb-gain py-2.5 text-sm font-semibold text-kb-bg disabled:opacity-50"
+              >
+                {enviando ? "Guardando…" : editando ? "Guardar cambios" : "Crear rutina"}
+              </button>
+              <button onClick={() => setModalAbierto(false)} className="rounded-xl border border-kb-border px-4 py-2.5 text-sm font-medium text-kb-text-secondary">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── GimHistorialView: historial de sesiones ────────────────────────────
+
+function GimHistorialView({ userId }: { userId: string }) {
+  const [sesiones, setSesiones] = useState<(GymSesion & { ejercicios: GymSesionEjercicio[] })[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [expandida, setExpandida] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function cargar() {
+      setCargando(true);
+      const { data: sesData } = await supabase
+        .from("gym_sessions")
+        .select("*")
+        .eq("user_id", userId)
+        .order("fecha", { ascending: false })
+        .limit(60);
+
+      const sesionesCargadas = sesData as GymSesion[] ?? [];
+
+      if (sesionesCargadas.length > 0) {
+        const ids = sesionesCargadas.map((s) => s.id);
+        const { data: exData } = await supabase
+          .from("gym_session_exercises")
+          .select("*")
+          .in("sesion_id", ids)
+          .order("orden");
+
+        const ejerciciosPorSesion = new Map<string, GymSesionEjercicio[]>();
+        ((exData as GymSesionEjercicio[]) ?? []).forEach((ex) => {
+          if (!ejerciciosPorSesion.has(ex.sesion_id)) ejerciciosPorSesion.set(ex.sesion_id, []);
+          ejerciciosPorSesion.get(ex.sesion_id)!.push(ex);
+        });
+
+        setSesiones(
+          sesionesCargadas.map((s) => ({
+            ...s,
+            ejercicios: ejerciciosPorSesion.get(s.id) ?? [],
+          }))
+        );
+      } else {
+        setSesiones([]);
+      }
+      setCargando(false);
+    }
+    cargar();
+  }, [userId]);
+
+  if (cargando) {
+    return (
+      <div className="space-y-3">
+        {[...Array(3)].map((_, i) => <SkeletonBloque key={i} className="h-20 w-full" />)}
+      </div>
+    );
+  }
+
+  if (sesiones.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-kb-border py-16 text-center">
+        <p className="text-sm text-kb-text-secondary">Aún no tienes sesiones registradas</p>
+        <p className="text-xs text-kb-text-muted">Empieza registrando tu primera sesión en "Hoy"</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-kb-text">Historial</h1>
+        <p className="text-sm text-kb-text-secondary">{sesiones.length} sesiones registradas</p>
+      </div>
+
+      {/* Resumen rápido */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: "Sesiones totales", valor: sesiones.length },
+          {
+            label: "Días este mes",
+            valor: sesiones.filter((s) => s.fecha.slice(0, 7) === gymFechaKey().slice(0, 7)).length,
+          },
+          {
+            label: "Duración prom.",
+            valor: (() => {
+              const conDur = sesiones.filter((s) => s.duracion_min);
+              return conDur.length
+                ? Math.round(conDur.reduce((a, s) => a + (s.duracion_min ?? 0), 0) / conDur.length) + " min"
+                : "—";
+            })(),
+          },
+        ].map((m) => (
+          <div key={m.label} className="rounded-xl border border-kb-border-soft bg-kb-surface/30 p-3 text-center">
+            <p className="text-lg font-bold tabular-nums text-kb-text">{m.valor}</p>
+            <p className="text-[11px] text-kb-text-muted">{m.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Lista de sesiones */}
+      <div className="space-y-3">
+        {sesiones.map((sesion) => {
+          const abierta = expandida === sesion.id;
+          const totalSeries = sesion.ejercicios.reduce((a, e) => a + e.series.length, 0);
+          return (
+            <div key={sesion.id} className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 overflow-hidden">
+              <button
+                onClick={() => setExpandida(abierta ? null : sesion.id)}
+                className="flex w-full items-center justify-between px-5 py-4 text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-kb-gain/10">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-kb-gain">
+                      <path d="M3 12h2" /><path d="M19 12h2" />
+                      <path d="M5 9h2v6H5z" /><path d="M17 9h2v6h-2z" />
+                      <path d="M7 11h10v2H7z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-kb-text">{gymFechaLabel(sesion.fecha)}</p>
+                    <p className="text-xs text-kb-text-secondary">
+                      {sesion.ejercicios.length} ejercicios · {totalSeries} series
+                      {sesion.duracion_min ? ` · ${sesion.duracion_min} min` : ""}
+                    </p>
+                  </div>
+                </div>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 text-kb-text-muted transition-transform ${abierta ? "rotate-180" : ""}`}>
+                  <polyline points="6,9 12,15 18,9" />
+                </svg>
+              </button>
+
+              {abierta && (
+                <div className="border-t border-kb-border-soft px-5 pb-5 pt-4 space-y-3">
+                  {sesion.ejercicios.map((ej) => (
+                    <div key={ej.id} className="rounded-xl bg-kb-bg/60 p-3">
+                      <div className="mb-2 flex items-center gap-2">
+                        <p className="font-medium text-kb-text">{ej.nombre}</p>
+                        <span className="rounded-full bg-kb-surface px-2 py-0.5 text-[10px] text-kb-text-muted">{ej.grupo_muscular}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {ej.series.map((s, i) => (
+                          <span key={i} className="rounded-lg bg-kb-surface px-2.5 py-1 text-xs font-mono text-kb-text-secondary">
+                            {s.reps} reps{s.peso_kg ? ` · ${s.peso_kg}kg` : ""}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {sesion.notas && (
+                    <p className="text-sm text-kb-text-secondary italic">{sesion.notas}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── GimProgresoView: medidas corporales + gráfica ─────────────────────
+
+function GimProgresoView({ userId }: { userId: string }) {
+  const [medidas, setMedidas] = useState<BodyMeasurement[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [modalAbierto, setModalAbierto] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [metricaSelec, setMetricaSelec] = useState<keyof BodyMeasurement>("peso_kg");
+
+  const metricasDisponibles: { id: keyof BodyMeasurement; label: string; unidad: string }[] = [
+    { id: "peso_kg", label: "Peso", unidad: "kg" },
+    { id: "grasa_pct", label: "Grasa corporal", unidad: "%" },
+    { id: "musculo_kg", label: "Músculo", unidad: "kg" },
+    { id: "pecho_cm", label: "Pecho", unidad: "cm" },
+    { id: "cintura_cm", label: "Cintura", unidad: "cm" },
+    { id: "cadera_cm", label: "Cadera", unidad: "cm" },
+    { id: "brazo_cm", label: "Brazo", unidad: "cm" },
+    { id: "pierna_cm", label: "Pierna", unidad: "cm" },
+  ];
+
+  // Form
+  const [fPeso, setFPeso] = useState("");
+  const [fGrasa, setFGrasa] = useState("");
+  const [fMusculo, setFMusculo] = useState("");
+  const [fPecho, setFPecho] = useState("");
+  const [fCintura, setFCintura] = useState("");
+  const [fCadera, setFCadera] = useState("");
+  const [fBrazo, setFBrazo] = useState("");
+  const [fPierna, setFPierna] = useState("");
+  const [fNotas, setFNotas] = useState("");
+  const [fFecha, setFFecha] = useState(gymFechaKey());
+
+  useEffect(() => { cargarMedidas(); }, [userId]);
+
+  async function cargarMedidas() {
+    setCargando(true);
+    const { data } = await supabase
+      .from("body_measurements")
+      .select("*")
+      .eq("user_id", userId)
+      .order("fecha", { ascending: true })
+      .limit(120);
+    setMedidas((data as BodyMeasurement[]) ?? []);
+    setCargando(false);
+  }
+
+  async function guardarMedida() {
+    if (enviando) return;
+    setEnviando(true);
+    const { error } = await supabase.from("body_measurements").insert({
+      user_id: userId,
+      fecha: fFecha,
+      peso_kg: fPeso ? parseFloat(fPeso) : null,
+      grasa_pct: fGrasa ? parseFloat(fGrasa) : null,
+      musculo_kg: fMusculo ? parseFloat(fMusculo) : null,
+      pecho_cm: fPecho ? parseFloat(fPecho) : null,
+      cintura_cm: fCintura ? parseFloat(fCintura) : null,
+      cadera_cm: fCadera ? parseFloat(fCadera) : null,
+      brazo_cm: fBrazo ? parseFloat(fBrazo) : null,
+      pierna_cm: fPierna ? parseFloat(fPierna) : null,
+      notas: fNotas.trim(),
+    });
+    if (!error) {
+      setModalAbierto(false);
+      setFPeso(""); setFGrasa(""); setFMusculo(""); setFPecho("");
+      setFCintura(""); setFCadera(""); setFBrazo(""); setFPierna(""); setFNotas("");
+      setFFecha(gymFechaKey());
+      await cargarMedidas();
+    }
+    setEnviando(false);
+  }
+
+  // Datos para la gráfica SVG
+  const datosGrafica = medidas
+    .map((m) => ({ fecha: m.fecha, valor: m[metricaSelec] as number | null }))
+    .filter((d) => d.valor !== null) as { fecha: string; valor: number }[];
+
+  const ultimaMedida = medidas[medidas.length - 1] ?? null;
+  const metricaInfo = metricasDisponibles.find((m) => m.id === metricaSelec)!;
+
+  // SVG chart
+  const W = 600, H = 200, PX = 40, PY = 20;
+  const vals = datosGrafica.map((d) => d.valor);
+  const minV = vals.length ? Math.min(...vals) : 0;
+  const maxV = vals.length ? Math.max(...vals) : 1;
+  const rangoV = maxV - minV || 1;
+  const scaleX = (i: number) => PX + (i / Math.max(datosGrafica.length - 1, 1)) * (W - PX * 2);
+  const scaleY = (v: number) => PY + (1 - (v - minV) / rangoV) * (H - PY * 2);
+
+  const polyPoints = datosGrafica.map((d, i) => `${scaleX(i)},${scaleY(d.valor)}`).join(" ");
+  const areaPoints = datosGrafica.length
+    ? `${scaleX(0)},${H - PY} ${polyPoints} ${scaleX(datosGrafica.length - 1)},${H - PY}`
+    : "";
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-kb-text">Progreso</h1>
+          <p className="text-sm text-kb-text-secondary">Seguimiento de medidas corporales</p>
+        </div>
+        <button
+          onClick={() => setModalAbierto(true)}
+          className="flex items-center gap-2 rounded-xl bg-kb-gain px-4 py-2 text-sm font-semibold text-kb-bg hover:opacity-90 transition-opacity"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+          Agregar medida
+        </button>
+      </div>
+
+      {/* Última medida */}
+      {ultimaMedida && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {metricasDisponibles.slice(0, 4).map((m) => {
+            const v = ultimaMedida[m.id] as number | null;
+            return (
+              <div key={m.id} className="rounded-xl border border-kb-border-soft bg-kb-surface/30 p-3 text-center">
+                <p className="text-xs text-kb-text-muted">{m.label}</p>
+                <p className="mt-0.5 text-lg font-bold tabular-nums text-kb-text">
+                  {v != null ? `${v} ${m.unidad}` : "—"}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Selector de métrica */}
+      <div className="flex gap-1 flex-wrap">
+        {metricasDisponibles.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => setMetricaSelec(m.id)}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              metricaSelec === m.id
+                ? "bg-kb-gain text-kb-bg"
+                : "border border-kb-border-soft text-kb-text-secondary hover:border-kb-gain hover:text-kb-gain"
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Gráfica SVG */}
+      {cargando ? (
+        <SkeletonBloque className="h-52 w-full" />
+      ) : datosGrafica.length < 2 ? (
+        <div className="flex items-center justify-center rounded-2xl border border-dashed border-kb-border py-16">
+          <p className="text-sm text-kb-text-secondary">
+            Necesitas al menos 2 registros de {metricaInfo.label.toLowerCase()} para ver la gráfica
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 p-4 overflow-x-auto">
+          <p className="mb-3 text-sm font-semibold text-kb-text">{metricaInfo.label} ({metricaInfo.unidad})</p>
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 280 }}>
+            {/* Área */}
+            {areaPoints && (
+              <polygon
+                points={areaPoints}
+                className="fill-kb-gain/10"
+                stroke="none"
+              />
+            )}
+            {/* Línea */}
+            {polyPoints && (
+              <polyline
+                points={polyPoints}
+                fill="none"
+                stroke="var(--color-kb-gain, #22c55e)"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            )}
+            {/* Puntos */}
+            {datosGrafica.map((d, i) => (
+              <circle
+                key={i}
+                cx={scaleX(i)}
+                cy={scaleY(d.valor)}
+                r={3}
+                fill="var(--color-kb-gain, #22c55e)"
+              />
+            ))}
+            {/* Labels eje Y */}
+            {[minV, (minV + maxV) / 2, maxV].map((v, i) => (
+              <text
+                key={i}
+                x={PX - 5}
+                y={scaleY(v) + 4}
+                fontSize={9}
+                fill="var(--color-kb-text-muted, #6b7280)"
+                textAnchor="end"
+              >
+                {v.toFixed(1)}
+              </text>
+            ))}
+            {/* Label primera y última fecha */}
+            {datosGrafica.length > 0 && (
+              <>
+                <text x={scaleX(0)} y={H - 4} fontSize={8} fill="var(--color-kb-text-muted, #6b7280)" textAnchor="middle">
+                  {gymFechaLabel(datosGrafica[0].fecha)}
+                </text>
+                {datosGrafica.length > 1 && (
+                  <text x={scaleX(datosGrafica.length - 1)} y={H - 4} fontSize={8} fill="var(--color-kb-text-muted, #6b7280)" textAnchor="middle">
+                    {gymFechaLabel(datosGrafica[datosGrafica.length - 1].fecha)}
+                  </text>
+                )}
+              </>
+            )}
+          </svg>
+        </div>
+      )}
+
+      {/* Tabla de registros */}
+      {medidas.length > 0 && (
+        <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-kb-border-soft bg-kb-bg/60 text-xs text-kb-text-muted">
+                  <th className="px-4 py-3 text-left font-medium">Fecha</th>
+                  <th className="px-4 py-3 text-right font-medium">Peso</th>
+                  <th className="px-4 py-3 text-right font-medium">Grasa</th>
+                  <th className="px-4 py-3 text-right font-medium">Cintura</th>
+                  <th className="px-4 py-3 text-right font-medium">Brazo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...medidas].reverse().slice(0, 20).map((m) => (
+                  <tr key={m.id} className="border-b border-kb-border-soft/50 hover:bg-kb-surface/40">
+                    <td className="px-4 py-3 text-kb-text-secondary">{gymFechaLabel(m.fecha)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-kb-text">{m.peso_kg != null ? `${m.peso_kg} kg` : "—"}</td>
+                    <td className="px-4 py-3 text-right font-mono text-kb-text">{m.grasa_pct != null ? `${m.grasa_pct}%` : "—"}</td>
+                    <td className="px-4 py-3 text-right font-mono text-kb-text">{m.cintura_cm != null ? `${m.cintura_cm} cm` : "—"}</td>
+                    <td className="px-4 py-3 text-right font-mono text-kb-text">{m.brazo_cm != null ? `${m.brazo_cm} cm` : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modal agregar medida */}
+      {modalAbierto && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center">
+          <div className="w-full max-h-[90vh] overflow-y-auto rounded-t-2xl bg-kb-surface sm:max-w-md sm:rounded-2xl">
+            <div className="sticky top-0 flex items-center justify-between border-b border-kb-border-soft bg-kb-surface px-5 py-4">
+              <h2 className="font-display text-base font-bold text-kb-text">Registrar medida</h2>
+              <button onClick={() => setModalAbierto(false)} className="text-kb-text-muted hover:text-kb-text">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+
+            <div className="space-y-4 p-5">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Fecha</label>
+                <input
+                  type="date"
+                  value={fFecha}
+                  onChange={(e) => setFFecha(e.target.value)}
+                  className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: "Peso (kg)", val: fPeso, set: setFPeso },
+                  { label: "Grasa (%)", val: fGrasa, set: setFGrasa },
+                  { label: "Músculo (kg)", val: fMusculo, set: setFMusculo },
+                  { label: "Pecho (cm)", val: fPecho, set: setFPecho },
+                  { label: "Cintura (cm)", val: fCintura, set: setFCintura },
+                  { label: "Cadera (cm)", val: fCadera, set: setFCadera },
+                  { label: "Brazo (cm)", val: fBrazo, set: setFBrazo },
+                  { label: "Pierna (cm)", val: fPierna, set: setFPierna },
+                ].map((f) => (
+                  <div key={f.label}>
+                    <label className="mb-1 block text-xs font-medium text-kb-text-secondary">{f.label}</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={f.val}
+                      onChange={(e) => f.set(e.target.value)}
+                      placeholder="—"
+                      className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Notas</label>
+                <textarea
+                  value={fNotas}
+                  onChange={(e) => setFNotas(e.target.value)}
+                  rows={2}
+                  placeholder="Observaciones…"
+                  className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text resize-none focus:border-kb-gain focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 flex gap-2 border-t border-kb-border-soft bg-kb-surface px-5 py-4">
+              <button
+                onClick={guardarMedida}
+                disabled={enviando}
+                className="flex-1 rounded-xl bg-kb-gain py-2.5 text-sm font-semibold text-kb-bg disabled:opacity-50"
+              >
+                {enviando ? "Guardando…" : "Guardar medida"}
+              </button>
+              <button onClick={() => setModalAbierto(false)} className="rounded-xl border border-kb-border px-4 py-2.5 text-sm font-medium text-kb-text-secondary">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
