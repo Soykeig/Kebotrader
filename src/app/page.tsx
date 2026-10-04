@@ -1,7 +1,7 @@
 // src/app/page.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState, FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, FormEvent, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   supabase,
@@ -926,23 +926,31 @@ type Vista =
   | "perfil"
   | "gym";
 
-type GimVista = "hoy" | "plan" | "progreso" | "historial_gym";
+type GimVista = "dashboard" | "hoy" | "plan" | "progreso" | "historial_gym" | "guia" | "perfil_gym";
 
 // =====================================================================
-// GYM: tipos de datos para el módulo de Gimnasio
+// GYM V2: tipos de datos para el módulo de Gimnasio
 // =====================================================================
 
-interface GymEjercicio {
-  nombre: string;
-  series: number;
-  reps: string;       // puede ser "8-12", "AMRAP", etc.
-  peso_kg: number | null;
-  notas: string;
+interface GymPerfil {
+  id: string;
+  user_id: string;
+  tipo_cuerpo: "ectomorfo" | "mesomorfo" | "endomorfo" | null;
+  fase: "volumen" | "definicion" | "recomposicion" | "mantenimiento";
+  objetivo: "ganar_musculo" | "perder_grasa" | "rendimiento" | "mantenimiento";
+  experiencia: "principiante" | "intermedio" | "avanzado";
+  fecha_inicio: string | null;
+  peso_inicial: number | null;
+  horario_gym: "manana" | "tarde" | "noche" | null;
+  dias_entreno: number[];   // [1,2,3,4,5] = L-V
+  created_at: string;
+  updated_at: string;
 }
 
 interface GymRutinaEjercicio {
   id: string;
   nombre: string;
+  equipo: string;
   series: number;
   reps_objetivo: string;
   grupo_muscular: string;
@@ -963,7 +971,10 @@ interface GymSesion {
   user_id: string;
   fecha: string;         // YYYY-MM-DD
   rutina_id: string | null;
+  hora_inicio: string | null;  // "HH:MM"
+  hora_fin: string | null;     // "HH:MM"
   duracion_min: number | null;
+  fase: string;
   notas: string;
   created_at: string;
 }
@@ -972,6 +983,7 @@ interface GymSesionEjercicio {
   id: string;
   sesion_id: string;
   nombre: string;
+  equipo: string;
   grupo_muscular: string;
   series: { reps: number; peso_kg: number | null }[];
   orden: number;
@@ -1322,7 +1334,7 @@ function Dashboard({
   alternarTema: () => void;
 }) {
   const [vista, setVista] = useState<Vista>("inicio");
-  const [vistaGim, setVistaGim] = useState<GimVista>("hoy");
+  const [vistaGim, setVistaGim] = useState<GimVista>("dashboard");
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
 
   // true cuando estamos dentro del módulo Gym
@@ -1856,10 +1868,13 @@ function Dashboard({
                 <div className="space-y-0.5">
                   {(
                     [
-                      { id: "hoy" as GimVista, label: "Hoy", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg> },
+                      { id: "dashboard" as GimVista, label: "Inicio", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
+                      { id: "hoy" as GimVista, label: "Entrenar Hoy", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><path d="M3 12h2"/><path d="M19 12h2"/><path d="M5 9h2v6H5z"/><path d="M17 9h2v6h-2z"/><path d="M7 11h10v2H7z"/></svg> },
                       { id: "plan" as GimVista, label: "Mi Rutina", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg> },
-                      { id: "historial_gym" as GimVista, label: "Historial", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg> },
                       { id: "progreso" as GimVista, label: "Progreso", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><line x1="5" y1="21" x2="5" y2="11"/><line x1="12" y1="21" x2="12" y2="5"/><line x1="19" y1="21" x2="19" y2="14"/></svg> },
+                      { id: "historial_gym" as GimVista, label: "Historial", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
+                      { id: "guia" as GimVista, label: "Guía & Tips", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> },
+                      { id: "perfil_gym" as GimVista, label: "Mi Perfil Gym", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg> },
                     ] as const
                   ).map(({ id, label, icono }) => {
                     const activo = vistaGim === id;
@@ -1975,10 +1990,13 @@ function Dashboard({
                     ))
                   : (
                     [
+                      { id: "dashboard" as GimVista, label: "Inicio" },
                       { id: "hoy" as GimVista, label: "Hoy" },
-                      { id: "plan" as GimVista, label: "Mi Rutina" },
-                      { id: "historial_gym" as GimVista, label: "Historial" },
+                      { id: "plan" as GimVista, label: "Rutina" },
                       { id: "progreso" as GimVista, label: "Progreso" },
+                      { id: "historial_gym" as GimVista, label: "Historial" },
+                      { id: "guia" as GimVista, label: "Guía" },
+                      { id: "perfil_gym" as GimVista, label: "Perfil" },
                     ].map(({ id, label }) => (
                       <button
                         key={id}
@@ -15125,23 +15143,67 @@ function TablaTrades({
 }
 
 
+
 // =====================================================================
-// MÓDULO GYM — componentes completos
+// MÓDULO GYM V2 — componentes completos
 // =====================================================================
 
-// ── Helpers locales del módulo gym ────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────
 
 function gymFechaKey(d: Date = new Date()): string {
   return d.toISOString().slice(0, 10);
 }
-
 function gymFechaLabel(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   const meses = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
   return `${d} ${meses[m - 1]} ${y}`;
 }
+function gymHoraActual(): string {
+  const n = new Date();
+  return `${String(n.getHours()).padStart(2,"0")}:${String(n.getMinutes()).padStart(2,"0")}`;
+}
+function gymDuracion(inicio: string, fin: string): number {
+  const [h1,m1] = inicio.split(":").map(Number);
+  const [h2,m2] = fin.split(":").map(Number);
+  return Math.max(0, (h2 * 60 + m2) - (h1 * 60 + m1));
+}
+function gymVolumenTotal(ejercicios: GymSesionEjercicio[]): number {
+  return ejercicios.reduce((sum, e) =>
+    sum + e.series.reduce((s, r) => s + (r.reps * (r.peso_kg ?? 0)), 0), 0);
+}
 
-// ── GimView: raíz del módulo, enruta entre sub-vistas ─────────────────
+const GYM_FASES = {
+  volumen:       { label: "Volumen",       color: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
+  definicion:    { label: "Definición",    color: "bg-orange-500/15 text-orange-400 border-orange-500/30" },
+  recomposicion: { label: "Recomposición", color: "bg-purple-500/15 text-purple-400 border-purple-500/30" },
+  mantenimiento: { label: "Mantenimiento", color: "bg-kb-gain/15 text-kb-gain border-kb-gain/30" },
+} as const;
+
+const GYM_TIPOS_CUERPO = {
+  ectomorfo: {
+    label: "Ectomorfo",
+    emoji: "🔥",
+    desc: "Naturalmente delgado, metabolismo rápido, cuesta ganar masa muscular.",
+    estrategia: "Alto volumen calórico, enfócate en ejercicios compuestos (sentadilla, press, remo). Minimiza el cardio. Come más de lo que crees necesitar.",
+    color: "border-blue-500/40 bg-blue-500/5",
+  },
+  mesomorfo: {
+    label: "Mesomorfo",
+    emoji: "⚡",
+    desc: "Build atlético natural, responde bien al entrenamiento. Gana músculo y pierde grasa con relativa facilidad.",
+    estrategia: "Equilibrio entre fuerza e hipertrofia. Puedes alternar volumen y definición con buenos resultados. Entrena consistentemente 4-5 días.",
+    color: "border-kb-gain/40 bg-kb-gain/5",
+  },
+  endomorfo: {
+    label: "Endomorfo",
+    emoji: "💪",
+    desc: "Tendencia a acumular grasa, metabolismo más lento, frame más ancho. Mayor fuerza natural.",
+    estrategia: "Déficit calórico moderado, combina fuerza con cardio moderado. Alta proteína. Control nutricional es clave para tu tipo de cuerpo.",
+    color: "border-orange-500/40 bg-orange-500/5",
+  },
+} as const;
+
+// ── GimView: raíz del módulo ──────────────────────────────────────────
 
 function GimView({
   vistaGim,
@@ -15152,395 +15214,385 @@ function GimView({
   setVistaGim: (v: GimVista) => void;
   userId: string;
 }) {
-  // Tabs superiores visibles en móvil (en desktop está en sidebar)
-  const tabs: { id: GimVista; label: string }[] = [
-    { id: "hoy", label: "Hoy" },
-    { id: "plan", label: "Mi Rutina" },
-    { id: "historial_gym", label: "Historial" },
-    { id: "progreso", label: "Progreso" },
+  const tabs: { id: GimVista; label: string; icon: ReactNode }[] = [
+    { id: "dashboard",    label: "Inicio",    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
+    { id: "hoy",          label: "Hoy",       icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M3 12h2"/><path d="M19 12h2"/><path d="M5 9h2v6H5z"/><path d="M17 9h2v6h-2z"/><path d="M7 11h10v2H7z"/></svg> },
+    { id: "plan",         label: "Rutina",    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/></svg> },
+    { id: "progreso",     label: "Progreso",  icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><line x1="5" y1="21" x2="5" y2="11"/><line x1="12" y1="21" x2="12" y2="5"/><line x1="19" y1="21" x2="19" y2="14"/></svg> },
+    { id: "historial_gym",label: "Historial", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
+    { id: "guia",         label: "Guía",      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> },
+    { id: "perfil_gym",   label: "Perfil",    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg> },
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Tabs móvil */}
-      <div className="flex gap-1 overflow-x-auto rounded-xl border border-kb-border-soft bg-kb-surface/40 p-1 lg:hidden">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setVistaGim(t.id)}
-            className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-              vistaGim === t.id
-                ? "bg-kb-gain text-kb-bg shadow-sm"
-                : "text-kb-text-secondary hover:text-kb-text"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="border-b border-kb-border-soft bg-kb-surface/60 backdrop-blur-sm lg:hidden">
+        <div className="flex overflow-x-auto">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setVistaGim(t.id)}
+              className={`flex shrink-0 flex-col items-center gap-0.5 px-4 py-2.5 text-[10px] font-semibold transition-colors ${
+                vistaGim === t.id ? "border-b-2 border-kb-gain text-kb-gain" : "text-kb-text-secondary"
+              }`}
+            >
+              {t.icon}
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {vistaGim === "hoy" && <GimHoyView userId={userId} />}
-      {vistaGim === "plan" && <GimPlanView userId={userId} />}
-      {vistaGim === "historial_gym" && <GimHistorialView userId={userId} />}
-      {vistaGim === "progreso" && <GimProgresoView userId={userId} />}
+      <div className="flex-1 overflow-y-auto">
+        {vistaGim === "dashboard"    && <GimDashboard    userId={userId} setVistaGim={setVistaGim} />}
+        {vistaGim === "hoy"          && <GimHoyView      userId={userId} />}
+        {vistaGim === "plan"         && <GimPlanView     userId={userId} />}
+        {vistaGim === "progreso"     && <GimProgresoView userId={userId} />}
+        {vistaGim === "historial_gym"&& <GimHistorialView userId={userId} />}
+        {vistaGim === "guia"         && <GimGuiaView     userId={userId} />}
+        {vistaGim === "perfil_gym"   && <GimPerfilView   userId={userId} />}
+      </div>
     </div>
   );
 }
 
-// ── GimHoyView: registrar sesión de hoy ───────────────────────────────
+// ── GimDashboard: pantalla principal ─────────────────────────────────
 
-function GimHoyView({ userId }: { userId: string }) {
-  const hoy = gymFechaKey();
-
-  const [sesionHoy, setSesionHoy] = useState<GymSesion | null>(null);
-  const [ejerciciosHoy, setEjerciciosHoy] = useState<GymSesionEjercicio[]>([]);
-  const [cargando, setCargando] = useState(true);
-  const [enviando, setEnviando] = useState(false);
-
-  // Form para agregar ejercicio rápido
-  const [formVisible, setFormVisible] = useState(false);
-  const [exNombre, setExNombre] = useState("");
-  const [exGrupo, setExGrupo] = useState<string>(GRUPOS_MUSCULARES[0]);
-  const [exSeries, setExSeries] = useState<{ reps: string; peso: string }[]>([
-    { reps: "", peso: "" },
-  ]);
-  const [duracion, setDuracion] = useState("");
-  const [notas, setNotas] = useState("");
+function GimDashboard({ userId, setVistaGim }: { userId: string; setVistaGim: (v: GimVista) => void }) {
+  const [perfil, setPerfil] = useState<GymPerfil | null>(null);
+  const [sesiones, setSesiones] = useState<GymSesion[]>([]);
+  const [medidas, setMedidas] = useState<BodyMeasurement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [mostrarOnboarding, setMostrarOnboarding] = useState(false);
 
   useEffect(() => {
-    cargarSesionHoy();
+    (async () => {
+      const [{ data: p }, { data: s }, { data: m }] = await Promise.all([
+        supabase.from("gym_perfil").select("*").eq("user_id", userId).maybeSingle(),
+        supabase.from("gym_sessions").select("*").eq("user_id", userId).order("fecha", { ascending: false }).limit(60),
+        supabase.from("body_measurements").select("*").eq("user_id", userId).order("fecha", { ascending: false }).limit(1),
+      ]);
+      setPerfil(p as GymPerfil | null);
+      setSesiones((s ?? []) as GymSesion[]);
+      setMedidas((m ?? []) as BodyMeasurement[]);
+      if (!p) setMostrarOnboarding(true);
+      setLoading(false);
+    })();
   }, [userId]);
 
-  async function cargarSesionHoy() {
-    setCargando(true);
-    const { data: sesData } = await supabase
-      .from("gym_sessions")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("fecha", hoy)
-      .maybeSingle();
+  if (loading) return <div className="flex items-center justify-center py-20 text-kb-text-secondary text-sm">Cargando...</div>;
 
-    if (sesData) {
-      setSesionHoy(sesData as GymSesion);
-      const { data: exData } = await supabase
-        .from("gym_session_exercises")
-        .select("*")
-        .eq("sesion_id", sesData.id)
-        .order("orden");
-      setEjerciciosHoy((exData as GymSesionEjercicio[]) ?? []);
-    } else {
-      setSesionHoy(null);
-      setEjerciciosHoy([]);
-    }
-    setCargando(false);
+  if (mostrarOnboarding) {
+    return <GimOnboarding userId={userId} onComplete={(p) => { setPerfil(p); setMostrarOnboarding(false); }} />;
   }
 
-  async function iniciarSesion() {
-    if (enviando) return;
-    setEnviando(true);
-    const { data, error } = await supabase
-      .from("gym_sessions")
-      .insert({ user_id: userId, fecha: hoy, notas: "" })
-      .select()
-      .single();
-    if (!error && data) {
-      setSesionHoy(data as GymSesion);
-    }
-    setEnviando(false);
+  const hoy = gymFechaKey();
+  const mesActual = hoy.slice(0, 7);
+  const sesionesMes = sesiones.filter(s => s.fecha.slice(0, 7) === mesActual);
+  const entrenohoy = sesiones.find(s => s.fecha === hoy);
+
+  // Racha actual
+  let racha = 0;
+  const diasOrdenados = [...new Set(sesiones.map(s => s.fecha))].sort().reverse();
+  for (let i = 0; i < diasOrdenados.length; i++) {
+    const esperado = new Date();
+    esperado.setDate(esperado.getDate() - i);
+    if (diasOrdenados[i] === gymFechaKey(esperado)) racha++;
+    else break;
   }
 
-  async function agregarEjercicio() {
-    if (enviando || !sesionHoy) return;
-    if (!exNombre.trim()) return;
-    setEnviando(true);
+  const durPromedio = sesionesMes.length
+    ? Math.round(sesionesMes.reduce((a, s) => a + (s.duracion_min ?? 0), 0) / sesionesMes.filter(s => s.duracion_min).length || 0)
+    : 0;
 
-    const seriesData = exSeries
-      .filter((s) => s.reps.trim() !== "")
-      .map((s) => ({
-        reps: parseInt(s.reps) || 0,
-        peso_kg: s.peso.trim() ? parseFloat(s.peso) : null,
-      }));
+  const fase = perfil?.fase ?? "mantenimiento";
+  const faseInfo = GYM_FASES[fase as keyof typeof GYM_FASES];
+  const tipoCuerpo = perfil?.tipo_cuerpo ? GYM_TIPOS_CUERPO[perfil.tipo_cuerpo] : null;
 
-    const { error } = await supabase.from("gym_session_exercises").insert({
-      sesion_id: sesionHoy.id,
-      nombre: exNombre.trim(),
-      grupo_muscular: exGrupo,
-      series: seriesData,
-      orden: ejerciciosHoy.length,
-    });
-
-    if (!error) {
-      setExNombre("");
-      setExSeries([{ reps: "", peso: "" }]);
-      setFormVisible(false);
-      await cargarSesionHoy();
-    }
-    setEnviando(false);
-  }
-
-  async function finalizarSesion() {
-    if (!sesionHoy || enviando) return;
-    setEnviando(true);
-    await supabase
-      .from("gym_sessions")
-      .update({
-        duracion_min: duracion ? parseInt(duracion) : null,
-        notas: notas.trim(),
-      })
-      .eq("id", sesionHoy.id)
-      .eq("user_id", userId);
-    await cargarSesionHoy();
-    setDuracion("");
-    setNotas("");
-    setEnviando(false);
-  }
-
-  async function eliminarEjercicio(id: string) {
-    await supabase
-      .from("gym_session_exercises")
-      .delete()
-      .eq("id", id)
-      .eq("sesion_id", sesionHoy?.id ?? "");
-    await cargarSesionHoy();
-  }
-
-  if (cargando) {
-    return (
-      <div className="space-y-3">
-        <SkeletonBloque className="h-32 w-full" />
-        <SkeletonBloque className="h-24 w-full" />
-      </div>
-    );
-  }
-
-  const diasSemana = DIAS_SEMANA_COMPLETO[new Date().getDay()];
+  // Recomendación del día según fase
+  const recs: Record<string, string> = {
+    volumen: "Enfócate en superar el peso o reps de la sesión anterior. Come suficiente proteína post-entreno (1.8–2.2g/kg de peso corporal).",
+    definicion: "Mantén la intensidad alta. El déficit calórico viene de la nutrición, no de reducir el entrenamiento. Preserva el músculo.",
+    recomposicion: "Prioriza proteína alta (2.2–2.5g/kg). Entrena con intensidad moderada-alta. La paciencia es clave en esta fase.",
+    mantenimiento: "Mantén la consistencia. Semana a semana pequeñas mejoras en técnica y forma valen más que subidas de peso agresivas.",
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
+      {/* Header con fase */}
+      <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-kb-text">Sesión de Hoy</h1>
-          <p className="text-sm text-kb-text-secondary">{diasSemana} · {gymFechaLabel(hoy)}</p>
+          <h1 className="text-2xl font-bold text-kb-text">Buenos días 💪</h1>
+          <p className="mt-0.5 text-sm text-kb-text-secondary">{gymFechaLabel(hoy)}</p>
         </div>
-        {sesionHoy && (
-          <span className="flex items-center gap-1.5 rounded-full bg-kb-gain/10 px-3 py-1 text-xs font-semibold text-kb-gain">
-            <span className="h-1.5 w-1.5 rounded-full bg-kb-gain" />
-            Sesión activa
-          </span>
-        )}
+        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${faseInfo.color}`}>
+          {faseInfo.label}
+        </span>
       </div>
 
-      {!sesionHoy ? (
-        /* Pantalla de inicio de sesión */
-        <div className="flex flex-col items-center justify-center gap-6 rounded-2xl border border-kb-border-soft bg-kb-surface/30 py-16">
-          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-kb-gain/10">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="h-10 w-10 text-kb-gain">
-              <path d="M3 12h2" /><path d="M19 12h2" />
-              <path d="M5 9h2v6H5z" /><path d="M17 9h2v6h-2z" />
-              <path d="M7 11h10v2H7z" />
-            </svg>
+      {/* CTA entrenar hoy */}
+      {entrenohoy ? (
+        <div className="rounded-2xl border border-kb-gain/30 bg-kb-gain/5 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-kb-gain">✅ Ya entrenaste hoy</p>
+              <p className="text-xs text-kb-text-secondary mt-0.5">
+                {entrenohoy.hora_inicio && entrenohoy.hora_fin
+                  ? `${entrenohoy.hora_inicio} – ${entrenohoy.hora_fin} · ${entrenohoy.duracion_min} min`
+                  : entrenohoy.duracion_min ? `${entrenohoy.duracion_min} min` : "Sesión registrada"}
+              </p>
+            </div>
+            <button onClick={() => setVistaGim("hoy")} className="rounded-xl bg-kb-gain/20 px-3 py-1.5 text-xs font-semibold text-kb-gain">
+              Ver sesión
+            </button>
           </div>
-          <div className="text-center">
-            <p className="text-lg font-semibold text-kb-text">¿Listo para entrenar?</p>
-            <p className="mt-1 text-sm text-kb-text-secondary">Registra tu sesión de hoy y mantén el seguimiento de tu progreso</p>
-          </div>
-          <button
-            onClick={iniciarSesion}
-            disabled={enviando}
-            className="rounded-xl bg-kb-gain px-8 py-3 text-sm font-semibold text-kb-bg transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {enviando ? "Iniciando…" : "Iniciar sesión"}
-          </button>
         </div>
       ) : (
-        <div className="space-y-4">
-          {/* Lista de ejercicios */}
-          {ejerciciosHoy.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-kb-border bg-kb-surface/20 py-8 text-center">
-              <p className="text-sm text-kb-text-secondary">Aún no agregaste ejercicios</p>
-              <p className="mt-1 text-xs text-kb-text-muted">Pulsa "Agregar ejercicio" para empezar</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {ejerciciosHoy.map((ej) => (
-                <div key={ej.id} className="rounded-xl border border-kb-border-soft bg-kb-surface/30 p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-kb-text">{ej.nombre}</p>
-                      <span className="mt-0.5 inline-block rounded-full bg-kb-surface px-2 py-0.5 text-[10px] font-medium text-kb-text-muted">
-                        {ej.grupo_muscular}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => eliminarEjercicio(ej.id)}
-                      className="text-kb-text-muted hover:text-kb-loss transition-colors"
-                      title="Eliminar"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                        <path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" />
-                      </svg>
-                    </button>
+        <button
+          onClick={() => setVistaGim("hoy")}
+          className="w-full rounded-2xl bg-kb-gain px-5 py-4 text-left shadow-lg transition-opacity hover:opacity-90"
+        >
+          <p className="text-sm font-bold text-kb-bg">Registrar entrenamiento de hoy →</p>
+          <p className="mt-0.5 text-xs text-kb-bg/70">Toca para iniciar la sesión</p>
+        </button>
+      )}
+
+      {/* Stats del mes */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: "Sesiones", value: sesionesMes.length, sub: "este mes" },
+          { label: "Racha", value: `${racha}🔥`, sub: "días seguidos" },
+          { label: "Duración", value: durPromedio ? `${durPromedio}m` : "—", sub: "promedio" },
+        ].map((s) => (
+          <div key={s.label} className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4 text-center">
+            <p className="text-xl font-bold text-kb-text">{s.value}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-kb-text-muted">{s.label}</p>
+            <p className="text-[10px] text-kb-text-secondary">{s.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Tipo de cuerpo + fase */}
+      {tipoCuerpo && (
+        <div className={`rounded-2xl border p-4 ${tipoCuerpo.color}`}>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-lg">{tipoCuerpo.emoji}</span>
+            <p className="text-sm font-bold text-kb-text">{tipoCuerpo.label}</p>
+          </div>
+          <p className="text-xs text-kb-text-secondary">{tipoCuerpo.estrategia}</p>
+        </div>
+      )}
+
+      {/* Recomendación del día */}
+      <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 p-4">
+        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-kb-text-muted">💡 Consejo del día</p>
+        <p className="text-sm text-kb-text-secondary">{recs[fase]}</p>
+      </div>
+
+      {/* Última medida */}
+      {medidas[0] && (
+        <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-kb-text-muted">Últimas medidas</p>
+            <p className="text-xs text-kb-text-secondary">{gymFechaLabel(medidas[0].fecha)}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            {medidas[0].peso_kg && <div className="flex justify-between"><span className="text-kb-text-secondary">Peso</span><span className="font-semibold text-kb-text">{medidas[0].peso_kg} kg</span></div>}
+            {medidas[0].grasa_pct && <div className="flex justify-between"><span className="text-kb-text-secondary">Grasa</span><span className="font-semibold text-kb-text">{medidas[0].grasa_pct}%</span></div>}
+          </div>
+          <button onClick={() => setVistaGim("progreso")} className="mt-3 text-xs text-kb-gain font-medium">Ver progreso completo →</button>
+        </div>
+      )}
+
+      {/* Accesos rápidos */}
+      <div className="grid grid-cols-2 gap-3">
+        {([
+          { id: "plan" as GimVista, label: "Mi Rutina", sub: "Ver plan semanal" },
+          { id: "guia" as GimVista, label: "Guía & Tips", sub: "Consejos por fase" },
+        ] as const).map(({ id, label, sub }) => (
+          <button key={id} onClick={() => setVistaGim(id)}
+            className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 p-4 text-left transition-colors hover:bg-kb-surface/60">
+            <p className="text-sm font-semibold text-kb-text">{label}</p>
+            <p className="text-xs text-kb-text-secondary">{sub}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── GimOnboarding: configuración inicial ─────────────────────────────
+
+function GimOnboarding({ userId, onComplete }: { userId: string; onComplete: (p: GymPerfil) => void }) {
+  const [paso, setPaso] = useState<1|2|3|4>(1);
+  const [tipoCuerpo, setTipoCuerpo] = useState<"ectomorfo"|"mesomorfo"|"endomorfo"|null>(null);
+  const [objetivo, setObjetivo] = useState<GymPerfil["objetivo"]>("ganar_musculo");
+  const [fase, setFase] = useState<GymPerfil["fase"]>("volumen");
+  const [experiencia, setExperiencia] = useState<GymPerfil["experiencia"]>("principiante");
+  const [fechaInicio, setFechaInicio] = useState(gymFechaKey());
+  const [pesoInicial, setPesoInicial] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  async function guardar() {
+    if (guardando) return; setGuardando(true);
+    const payload = {
+      user_id: userId,
+      tipo_cuerpo: tipoCuerpo,
+      fase,
+      objetivo,
+      experiencia,
+      fecha_inicio: fechaInicio,
+      peso_inicial: pesoInicial ? parseFloat(pesoInicial) : null,
+      dias_entreno: [1,2,3,4,5],
+      horario_gym: null,
+    };
+    const { data, error } = await supabase.from("gym_perfil").upsert(payload, { onConflict: "user_id" }).select().single();
+    if (!error && data) onComplete(data as GymPerfil);
+    setGuardando(false);
+  }
+
+  const progressPct = (paso / 4) * 100;
+
+  return (
+    <div className="mx-auto max-w-lg px-4 py-10">
+      {/* Progress */}
+      <div className="mb-8">
+        <div className="h-1.5 rounded-full bg-kb-border-soft">
+          <div className="h-1.5 rounded-full bg-kb-gain transition-all" style={{ width: `${progressPct}%` }} />
+        </div>
+        <p className="mt-2 text-right text-xs text-kb-text-secondary">Paso {paso} de 4</p>
+      </div>
+
+      {/* Paso 1: Tipo de cuerpo */}
+      {paso === 1 && (
+        <div className="space-y-5">
+          <div>
+            <h2 className="text-xl font-bold text-kb-text">¿Cuál es tu tipo de cuerpo?</h2>
+            <p className="mt-1 text-sm text-kb-text-secondary">Esto nos ayuda a personalizar tu plan de entrenamiento.</p>
+          </div>
+          <div className="space-y-3">
+            {(Object.entries(GYM_TIPOS_CUERPO) as [keyof typeof GYM_TIPOS_CUERPO, typeof GYM_TIPOS_CUERPO[keyof typeof GYM_TIPOS_CUERPO]][]).map(([key, t]) => (
+              <button
+                key={key}
+                onClick={() => setTipoCuerpo(key)}
+                className={`w-full rounded-2xl border p-4 text-left transition-all ${tipoCuerpo === key ? "border-kb-gain bg-kb-gain/10 shadow-sm" : "border-kb-border-soft bg-kb-surface/30 hover:border-kb-border"}`}
+              >
+                <div className="flex items-center gap-3 mb-1">
+                  <span className="text-2xl">{t.emoji}</span>
+                  <p className="font-bold text-kb-text">{t.label}</p>
+                </div>
+                <p className="text-sm text-kb-text-secondary">{t.desc}</p>
+                {tipoCuerpo === key && (
+                  <div className="mt-3 rounded-xl bg-kb-gain/10 p-3">
+                    <p className="text-xs font-semibold text-kb-gain mb-1">Tu estrategia:</p>
+                    <p className="text-xs text-kb-text-secondary">{t.estrategia}</p>
                   </div>
-                  {/* Tabla de series */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="text-kb-text-muted">
-                          <th className="pb-1 pr-4 text-left font-medium">Serie</th>
-                          <th className="pb-1 pr-4 text-left font-medium">Reps</th>
-                          <th className="pb-1 text-left font-medium">Peso (kg)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="space-y-1">
-                        {ej.series.map((s, i) => (
-                          <tr key={i}>
-                            <td className="pr-4 py-0.5 font-mono text-kb-text-secondary">{i + 1}</td>
-                            <td className="pr-4 py-0.5 font-mono text-kb-text">{s.reps}</td>
-                            <td className="py-0.5 font-mono text-kb-text">{s.peso_kg ?? "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                )}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => tipoCuerpo && setPaso(2)}
+            disabled={!tipoCuerpo}
+            className="w-full rounded-xl bg-kb-gain py-3 text-sm font-bold text-kb-bg disabled:opacity-40"
+          >
+            Continuar →
+          </button>
+        </div>
+      )}
 
-          {/* Form agregar ejercicio */}
-          {formVisible ? (
-            <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-5 space-y-4">
-              <h3 className="font-semibold text-kb-text">Nuevo ejercicio</h3>
+      {/* Paso 2: Objetivo y fase */}
+      {paso === 2 && (
+        <div className="space-y-5">
+          <div>
+            <h2 className="text-xl font-bold text-kb-text">¿Cuál es tu objetivo?</h2>
+            <p className="mt-1 text-sm text-kb-text-secondary">Define qué quieres lograr en el gimnasio.</p>
+          </div>
+          <div className="space-y-2">
+            {([
+              { v: "ganar_musculo", l: "Ganar músculo", d: "Aumentar masa muscular y fuerza" },
+              { v: "perder_grasa",  l: "Perder grasa",   d: "Reducir grasa corporal y definir" },
+              { v: "rendimiento",   l: "Mejorar rendimiento", d: "Potencia, resistencia o deporte" },
+              { v: "mantenimiento", l: "Mantenimiento",  d: "Mantener tu composición actual" },
+            ] as const).map(({ v, l, d }) => (
+              <button key={v} onClick={() => setObjetivo(v as GymPerfil["objetivo"])}
+                className={`w-full rounded-xl border px-4 py-3 text-left transition-all ${objetivo === v ? "border-kb-gain bg-kb-gain/10" : "border-kb-border-soft bg-kb-surface/30"}`}>
+                <p className="text-sm font-semibold text-kb-text">{l}</p>
+                <p className="text-xs text-kb-text-secondary">{d}</p>
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setPaso(1)} className="rounded-xl border border-kb-border-soft px-4 py-3 text-sm font-medium text-kb-text-secondary">← Atrás</button>
+            <button onClick={() => setPaso(3)} className="flex-1 rounded-xl bg-kb-gain py-3 text-sm font-bold text-kb-bg">Continuar →</button>
+          </div>
+        </div>
+      )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Nombre</label>
-                  <input
-                    value={exNombre}
-                    onChange={(e) => setExNombre(e.target.value)}
-                    placeholder="Press banca, Sentadilla…"
-                    className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text placeholder:text-kb-text-muted focus:border-kb-gain focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Grupo muscular</label>
-                  <select
-                    value={exGrupo}
-                    onChange={(e) => setExGrupo(e.target.value)}
-                    className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
-                  >
-                    {GRUPOS_MUSCULARES.map((g) => (
-                      <option key={g} value={g}>{g}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+      {/* Paso 3: Fase actual */}
+      {paso === 3 && (
+        <div className="space-y-5">
+          <div>
+            <h2 className="text-xl font-bold text-kb-text">¿En qué fase estás ahora?</h2>
+            <p className="mt-1 text-sm text-kb-text-secondary">La fase define tu estrategia nutricional y de entrenamiento.</p>
+          </div>
+          <div className="space-y-3">
+            {([
+              { v: "volumen",       l: "Volumen (Bulk)",       d: "Superávit calórico (+300–500 kcal). Construyes músculo, aceptas algo de grasa. Alta proteína + carbohidratos.", emoji: "📈" },
+              { v: "definicion",    l: "Definición (Cut)",     d: "Déficit calórico (−300–500 kcal). Pierdes grasa preservando músculo. Proteína muy alta (2.2–2.5g/kg).", emoji: "🔥" },
+              { v: "recomposicion", l: "Recomposición",        d: "Calorías de mantenimiento. Ganas músculo y pierdes grasa lentamente. Ideal para intermedios.", emoji: "⚖️" },
+              { v: "mantenimiento", l: "Mantenimiento",        d: "Mantienes tu composición actual. Mejoras fuerza, técnica y rendimiento.", emoji: "✅" },
+            ] as const).map(({ v, l, d, emoji }) => (
+              <button key={v} onClick={() => setFase(v as GymPerfil["fase"])}
+                className={`w-full rounded-2xl border p-4 text-left transition-all ${fase === v ? "border-kb-gain bg-kb-gain/10" : "border-kb-border-soft bg-kb-surface/30"}`}>
+                <p className="flex items-center gap-2 text-sm font-bold text-kb-text"><span>{emoji}</span>{l}</p>
+                <p className="mt-1 text-xs text-kb-text-secondary">{d}</p>
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setPaso(2)} className="rounded-xl border border-kb-border-soft px-4 py-3 text-sm font-medium text-kb-text-secondary">← Atrás</button>
+            <button onClick={() => setPaso(4)} className="flex-1 rounded-xl bg-kb-gain py-3 text-sm font-bold text-kb-bg">Continuar →</button>
+          </div>
+        </div>
+      )}
 
-              {/* Series */}
-              <div>
-                <label className="mb-2 block text-xs font-medium text-kb-text-secondary">Series</label>
-                <div className="space-y-2">
-                  {exSeries.map((s, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className="w-6 text-center text-xs font-mono text-kb-text-muted">{i + 1}</span>
-                      <input
-                        type="number"
-                        placeholder="Reps"
-                        value={s.reps}
-                        onChange={(e) => {
-                          const ns = [...exSeries];
-                          ns[i] = { ...ns[i], reps: e.target.value };
-                          setExSeries(ns);
-                        }}
-                        className="w-20 rounded-lg border border-kb-border bg-kb-bg px-2 py-1.5 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
-                      />
-                      <input
-                        type="number"
-                        placeholder="Peso kg"
-                        value={s.peso}
-                        onChange={(e) => {
-                          const ns = [...exSeries];
-                          ns[i] = { ...ns[i], peso: e.target.value };
-                          setExSeries(ns);
-                        }}
-                        className="w-24 rounded-lg border border-kb-border bg-kb-bg px-2 py-1.5 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
-                      />
-                      {exSeries.length > 1 && (
-                        <button
-                          onClick={() => setExSeries(exSeries.filter((_, j) => j !== i))}
-                          className="text-kb-text-muted hover:text-kb-loss"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4"><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <button
-                  onClick={() => setExSeries([...exSeries, { reps: "", peso: "" }])}
-                  className="mt-2 text-xs font-medium text-kb-gain hover:opacity-80"
-                >
-                  + Agregar serie
-                </button>
-              </div>
-
+      {/* Paso 4: Datos base */}
+      {paso === 4 && (
+        <div className="space-y-5">
+          <div>
+            <h2 className="text-xl font-bold text-kb-text">Datos de inicio</h2>
+            <p className="mt-1 text-sm text-kb-text-secondary">Tu punto de partida para medir el progreso.</p>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-kb-text-secondary">Nivel de experiencia</label>
               <div className="flex gap-2">
-                <button
-                  onClick={agregarEjercicio}
-                  disabled={enviando || !exNombre.trim()}
-                  className="rounded-lg bg-kb-gain px-4 py-2 text-sm font-semibold text-kb-bg disabled:opacity-50"
-                >
-                  {enviando ? "Guardando…" : "Guardar"}
-                </button>
-                <button
-                  onClick={() => setFormVisible(false)}
-                  className="rounded-lg border border-kb-border px-4 py-2 text-sm font-medium text-kb-text-secondary"
-                >
-                  Cancelar
-                </button>
+                {([["principiante","Principiante"],["intermedio","Intermedio"],["avanzado","Avanzado"]] as const).map(([v,l]) => (
+                  <button key={v} onClick={() => setExperiencia(v)}
+                    className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-all ${experiencia === v ? "border-kb-gain bg-kb-gain/10 text-kb-gain" : "border-kb-border-soft text-kb-text-secondary"}`}>
+                    {l}
+                  </button>
+                ))}
               </div>
             </div>
-          ) : (
-            <button
-              onClick={() => setFormVisible(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-kb-border py-3 text-sm font-medium text-kb-text-secondary hover:border-kb-gain hover:text-kb-gain transition-colors"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-              Agregar ejercicio
-            </button>
-          )}
-
-          {/* Panel de finalizar sesión */}
-          <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 p-5 space-y-4">
-            <h3 className="font-semibold text-kb-text">Finalizar sesión</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Duración (min)</label>
-                <input
-                  type="number"
-                  value={duracion}
-                  onChange={(e) => setDuracion(e.target.value)}
-                  placeholder="60"
-                  className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Notas</label>
-                <input
-                  value={notas}
-                  onChange={(e) => setNotas(e.target.value)}
-                  placeholder="Cómo te sentiste…"
-                  className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
-                />
-              </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-kb-text-secondary">Fecha de inicio en el gym</label>
+              <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)}
+                className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2.5 text-sm text-kb-text" />
             </div>
-            <button
-              onClick={finalizarSesion}
-              disabled={enviando}
-              className="w-full rounded-xl border border-kb-border-soft bg-kb-surface py-2.5 text-sm font-semibold text-kb-text hover:bg-kb-border-soft transition-colors disabled:opacity-50"
-            >
-              {enviando ? "Guardando…" : "Guardar y cerrar sesión"}
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-kb-text-secondary">Peso inicial (kg) — opcional</label>
+              <input type="number" step="0.1" placeholder="75.5" value={pesoInicial} onChange={e => setPesoInicial(e.target.value)}
+                className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2.5 text-sm text-kb-text placeholder:text-kb-text-muted" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setPaso(3)} className="rounded-xl border border-kb-border-soft px-4 py-3 text-sm font-medium text-kb-text-secondary">← Atrás</button>
+            <button onClick={guardar} disabled={guardando}
+              className="flex-1 rounded-xl bg-kb-gain py-3 text-sm font-bold text-kb-bg disabled:opacity-60">
+              {guardando ? "Guardando..." : "Empezar 🚀"}
             </button>
           </div>
         </div>
@@ -15549,784 +15601,1465 @@ function GimHoyView({ userId }: { userId: string }) {
   );
 }
 
-// ── GimPlanView: rutina semanal ────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// GYM V2 — Parte 2: GimHoyView, GimPlanView, GimProgresoView,
+//                   GimHistorialView, GimGuiaView, GimPerfilView
+// ─────────────────────────────────────────────────────────────────────────────
 
-function GimPlanView({ userId }: { userId: string }) {
+const GYM_GRUPOS = ["Pecho","Espalda","Hombros","Bíceps","Tríceps","Piernas","Glúteos","Core","Cardio","Full Body","Otro"];
+const GYM_EQUIPOS = ["Barra","Mancuernas","Máquina","Cable","Polea","Smith Machine","Kettlebell","TRX","Peso corporal","Otro"];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GimHoyView — Registrar la sesión de hoy
+// ─────────────────────────────────────────────────────────────────────────────
+
+function GimHoyView({ userId }: { userId: string }) {
+  const hoy = gymFechaKey();
+  const [sesion, setSesion] = useState<GymSesion | null>(null);
+  const [ejercicios, setEjercicios] = useState<GymSesionEjercicio[]>([]);
   const [rutinas, setRutinas] = useState<GymRutina[]>([]);
+  const [perfil, setPerfil] = useState<GymPerfil | null>(null);
   const [cargando, setCargando] = useState(true);
-  const [diaSeleccionado, setDiaSeleccionado] = useState<number>(new Date().getDay());
-  const [modalAbierto, setModalAbierto] = useState(false);
-  const [editando, setEditando] = useState<GymRutina | null>(null);
-  const [enviando, setEnviando] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [horaInicio, setHoraInicio] = useState(gymHoraActual());
+  const [horaFin, setHoraFin] = useState("");
+  const [notas, setNotas] = useState("");
+  const [rutinaId, setRutinaId] = useState<string | null>(null);
+  const [comparativas, setComparativas] = useState<Record<string, GymSesionEjercicio>>({});
+  const [prs, setPrs] = useState<Record<string, boolean>>({});
+  const [sesionGuardada, setSesionGuardada] = useState(false);
 
-  // Form de rutina
-  const [formNombre, setFormNombre] = useState("");
-  const [formEjercicios, setFormEjercicios] = useState<Omit<GymRutinaEjercicio, "id">[]>([
-    { nombre: "", grupo_muscular: GRUPOS_MUSCULARES[0], series: 3, reps_objetivo: "8-12", orden: 0 },
-  ]);
+  // ejercicio que se está añadiendo
+  const [exNombre, setExNombre] = useState("");
+  const [exEquipo, setExEquipo] = useState("");
+  const [exGrupo, setExGrupo] = useState("");
+  const [exSeries, setExSeries] = useState<{ reps: number; peso_kg: number | null }[]>([{ reps: 10, peso_kg: null }]);
+  const [editandoIdx, setEditandoIdx] = useState<number | null>(null);
+  const [mostrarFormEx, setMostrarFormEx] = useState(false);
 
-  useEffect(() => { cargarRutinas(); }, [userId]);
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      setCargando(true);
+      const diaSemana = new Date().getDay();
+      const [{ data: sesData }, { data: rutData }, { data: perfData }] = await Promise.all([
+        supabase.from("gym_sessions").select("*").eq("user_id", userId).eq("fecha", hoy).maybeSingle(),
+        supabase.from("gym_routines").select("*").eq("user_id", userId).eq("dia_semana", diaSemana),
+        supabase.from("gym_perfil").select("*").eq("user_id", userId).maybeSingle(),
+      ]);
+      if (sesData) {
+        setSesion(sesData as GymSesion);
+        setHoraInicio((sesData as GymSesion).hora_inicio ?? gymHoraActual());
+        setHoraFin((sesData as GymSesion).hora_fin ?? "");
+        setNotas((sesData as GymSesion).notas ?? "");
+        setRutinaId((sesData as GymSesion).rutina_id);
+        // cargar ejercicios de esta sesión
+        const { data: exData } = await supabase
+          .from("gym_session_exercises")
+          .select("*")
+          .eq("sesion_id", sesData.id)
+          .order("orden");
+        if (exData) setEjercicios(exData as GymSesionEjercicio[]);
+      }
+      if (rutData) setRutinas(rutData as GymRutina[]);
+      if (perfData) setPerfil(perfData as GymPerfil);
+      setCargando(false);
+    })();
+  }, [userId, hoy]);
 
-  async function cargarRutinas() {
-    setCargando(true);
-    const { data } = await supabase
-      .from("gym_routines")
-      .select("*")
-      .eq("user_id", userId)
-      .order("dia_semana");
-    setRutinas((data as GymRutina[]) ?? []);
-    setCargando(false);
+  // Comparar ejercicio vs última sesión donde se hizo
+  async function buscarComparativa(nombre: string): Promise<GymSesionEjercicio | null> {
+    if (comparativas[nombre]) return comparativas[nombre];
+    const { data: prev } = await supabase
+      .from("gym_session_exercises")
+      .select("*, gym_sessions!inner(user_id, fecha)")
+      .eq("gym_sessions.user_id", userId)
+      .eq("nombre", nombre)
+      .order("gym_sessions(fecha)", { ascending: false })
+      .limit(1);
+    const found = prev?.[0] ?? null;
+    if (found) setComparativas(c => ({ ...c, [nombre]: found as GymSesionEjercicio }));
+    return found as GymSesionEjercicio | null;
   }
 
-  function abrirModal(rutina?: GymRutina) {
-    if (rutina) {
-      setEditando(rutina);
-      setFormNombre(rutina.nombre);
-      setFormEjercicios(rutina.ejercicios.map(({ id: _id, ...rest }) => rest));
-    } else {
-      setEditando(null);
-      setFormNombre("");
-      setFormEjercicios([{ nombre: "", grupo_muscular: GRUPOS_MUSCULARES[0], series: 3, reps_objetivo: "8-12", orden: 0 }]);
-    }
-    setModalAbierto(true);
+  function mejorSerie(e: GymSesionEjercicio) {
+    return e.series.reduce((best, s) => {
+      const vol = s.reps * (s.peso_kg ?? 0);
+      const bVol = best.reps * (best.peso_kg ?? 0);
+      return vol > bVol ? s : best;
+    }, e.series[0] ?? { reps: 0, peso_kg: null });
+  }
+
+  async function crearOCargarSesion(): Promise<string> {
+    if (sesion) return sesion.id;
+    const fase = perfil?.fase ?? "mantenimiento";
+    const { data, error } = await supabase
+      .from("gym_sessions")
+      .upsert({
+        user_id: userId,
+        fecha: hoy,
+        hora_inicio: horaInicio,
+        rutina_id: rutinaId,
+        fase,
+        notas,
+      }, { onConflict: "user_id,fecha" })
+      .select()
+      .single();
+    if (error) throw error;
+    setSesion(data as GymSesion);
+    return (data as GymSesion).id;
+  }
+
+  async function guardarEjercicio() {
+    if (!exNombre.trim()) return;
+    if (guardando) return;
+    setGuardando(true);
+    try {
+      const sesId = await crearOCargarSesion();
+      const serie: GymSesionEjercicio = {
+        id: crypto.randomUUID(),
+        sesion_id: sesId,
+        nombre: exNombre.trim(),
+        equipo: exEquipo,
+        grupo_muscular: exGrupo,
+        series: exSeries.filter(s => s.reps > 0),
+        orden: ejercicios.length,
+      };
+
+      if (editandoIdx !== null) {
+        // update existing
+        const target = ejercicios[editandoIdx];
+        await supabase.from("gym_session_exercises").update({
+          nombre: serie.nombre, equipo: serie.equipo,
+          grupo_muscular: serie.grupo_muscular, series: serie.series,
+        }).eq("id", target.id);
+        const updated = [...ejercicios];
+        updated[editandoIdx] = { ...target, ...serie, id: target.id };
+        setEjercicios(updated);
+        // detectar PR
+        const prev = await buscarComparativa(serie.nombre);
+        if (prev) {
+          const maxPrev = Math.max(...prev.series.map(s => s.peso_kg ?? 0));
+          const maxNow  = Math.max(...serie.series.map(s => s.peso_kg ?? 0));
+          if (maxNow > maxPrev) setPrs(p => ({ ...p, [serie.nombre]: true }));
+        }
+      } else {
+        const { data } = await supabase
+          .from("gym_session_exercises")
+          .insert({ sesion_id: sesId, nombre: serie.nombre, equipo: serie.equipo,
+            grupo_muscular: serie.grupo_muscular, series: serie.series, orden: serie.orden })
+          .select().single();
+        if (data) {
+          setEjercicios(prev => [...prev, data as GymSesionEjercicio]);
+          const prevEx = await buscarComparativa(serie.nombre);
+          if (prevEx) {
+            const maxPrev = Math.max(...prevEx.series.map(s => s.peso_kg ?? 0));
+            const maxNow  = Math.max(...serie.series.map(s => s.peso_kg ?? 0));
+            if (maxNow > maxPrev) setPrs(p => ({ ...p, [serie.nombre]: true }));
+          }
+        }
+      }
+      resetForm();
+      setMostrarFormEx(false);
+    } catch(e) { console.error(e); } finally { setGuardando(false); }
+  }
+
+  async function eliminarEjercicio(idx: number) {
+    const e = ejercicios[idx];
+    await supabase.from("gym_session_exercises").delete().eq("id", e.id);
+    setEjercicios(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  async function cerrarSesion() {
+    if (guardando) return;
+    setGuardando(true);
+    try {
+      const sesId = await crearOCargarSesion();
+      const fin = horaFin || gymHoraActual();
+      setHoraFin(fin);
+      const duracion = gymDuracion(horaInicio, fin);
+      await supabase.from("gym_sessions").update({
+        hora_fin: fin, duracion_min: duracion, notas,
+        rutina_id: rutinaId,
+      }).eq("id", sesId);
+      setSesionGuardada(true);
+    } catch(e) { console.error(e); } finally { setGuardando(false); }
+  }
+
+  function resetForm() {
+    setExNombre(""); setExEquipo(""); setExGrupo("");
+    setExSeries([{ reps: 10, peso_kg: null }]);
+    setEditandoIdx(null);
+  }
+
+  function cargarDesdeRutina(r: GymRutina) {
+    setRutinaId(r.id);
+    // Pre-fill ejercicios into the session
+    // Just set the routine, exercises are added manually
+  }
+
+  function editarEjercicio(idx: number) {
+    const e = ejercicios[idx];
+    setExNombre(e.nombre); setExEquipo(e.equipo ?? "");
+    setExGrupo(e.grupo_muscular ?? "");
+    setExSeries([...e.series]);
+    setEditandoIdx(idx);
+    setMostrarFormEx(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  if (cargando) return (
+    <div className="flex h-64 items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-kb-gain border-t-transparent" />
+    </div>
+  );
+
+  if (sesionGuardada) return (
+    <div className="mx-auto max-w-xl px-4 py-10 text-center">
+      <div className="text-5xl mb-4">🏆</div>
+      <h2 className="text-2xl font-bold text-kb-text mb-2">¡Sesión completada!</h2>
+      <p className="text-kb-text-secondary mb-2">
+        Duración: {gymDuracion(horaInicio, horaFin)} min · {ejercicios.length} ejercicio{ejercicios.length !== 1 ? "s" : ""}
+      </p>
+      <p className="text-kb-text-secondary mb-6">
+        Volumen total: {gymVolumenTotal(ejercicios).toLocaleString()} kg
+      </p>
+      {Object.keys(prs).length > 0 && (
+        <div className="mb-6 rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4">
+          <p className="font-bold text-yellow-400 mb-1">🥇 ¡Nuevo récord personal!</p>
+          {Object.keys(prs).map(n => <p key={n} className="text-sm text-yellow-300">{n}</p>)}
+        </div>
+      )}
+      <button onClick={() => { setSesionGuardada(false); }} className="rounded-xl border border-kb-border-soft px-6 py-3 text-sm font-semibold text-kb-text">
+        Ver sesión
+      </button>
+    </div>
+  );
+
+  const diaLabel = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][new Date().getDay()];
+
+  return (
+    <div className="mx-auto max-w-xl space-y-4 px-4 py-5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-kb-text">Sesión de hoy</h2>
+          <p className="text-sm text-kb-text-secondary">{diaLabel} · {gymFechaLabel(hoy)}</p>
+        </div>
+        {perfil && (
+          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${GYM_FASES[perfil.fase]?.color}`}>
+            {GYM_FASES[perfil.fase]?.label}
+          </span>
+        )}
+      </div>
+
+      {/* Hora + rutina */}
+      <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4 space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-kb-text-secondary">Hora inicio</label>
+            <input type="time" value={horaInicio} onChange={e => setHoraInicio(e.target.value)}
+              className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2 text-sm text-kb-text" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-kb-text-secondary">Hora fin</label>
+            <input type="time" value={horaFin} onChange={e => setHoraFin(e.target.value)}
+              placeholder="—"
+              className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2 text-sm text-kb-text" />
+          </div>
+        </div>
+        {horaFin && (
+          <p className="text-xs text-kb-text-secondary">Duración estimada: <span className="font-bold text-kb-text">{gymDuracion(horaInicio, horaFin)} min</span></p>
+        )}
+        {rutinas.length > 0 && (
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-kb-text-secondary">Rutina de hoy</label>
+            <select value={rutinaId ?? ""} onChange={e => setRutinaId(e.target.value || null)}
+              className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2 text-sm text-kb-text">
+              <option value="">Sin rutina asignada</option>
+              {rutinas.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+            </select>
+          </div>
+        )}
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-kb-text-secondary">Notas de la sesión</label>
+          <textarea value={notas} onChange={e => setNotas(e.target.value)} rows={2} placeholder="Cómo te sentiste, qué mejorar..."
+            className="w-full resize-none rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2 text-sm text-kb-text placeholder:text-kb-text-muted" />
+        </div>
+      </div>
+
+      {/* Botón añadir ejercicio */}
+      {!mostrarFormEx && (
+        <button onClick={() => { resetForm(); setMostrarFormEx(true); }}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-kb-gain/40 py-4 text-sm font-semibold text-kb-gain transition-all hover:border-kb-gain hover:bg-kb-gain/5">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Añadir ejercicio
+        </button>
+      )}
+
+      {/* Formulario ejercicio */}
+      {mostrarFormEx && (
+        <div className="rounded-2xl border border-kb-gain/30 bg-kb-gain/5 p-4 space-y-3">
+          <h3 className="font-bold text-kb-text">{editandoIdx !== null ? "Editar ejercicio" : "Nuevo ejercicio"}</h3>
+
+          <input value={exNombre} onChange={e => setExNombre(e.target.value)} placeholder="Nombre del ejercicio (ej. Press banca)"
+            className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2.5 text-sm text-kb-text placeholder:text-kb-text-muted" />
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-kb-text-secondary">Equipo/máquina</label>
+              <select value={exEquipo} onChange={e => setExEquipo(e.target.value)}
+                className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2 text-sm text-kb-text">
+                <option value="">Seleccionar</option>
+                {GYM_EQUIPOS.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-kb-text-secondary">Músculo</label>
+              <select value={exGrupo} onChange={e => setExGrupo(e.target.value)}
+                className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2 text-sm text-kb-text">
+                <option value="">Seleccionar</option>
+                {GYM_GRUPOS.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Series */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-semibold text-kb-text-secondary">Series</span>
+              <button onClick={() => setExSeries(s => [...s, { reps: 10, peso_kg: null }])}
+                className="rounded-lg border border-kb-gain/40 px-2 py-0.5 text-[11px] font-semibold text-kb-gain">
+                + Serie
+              </button>
+            </div>
+            <div className="space-y-2">
+              {exSeries.map((s, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="w-6 text-center text-xs font-bold text-kb-text-secondary">{i + 1}</span>
+                  <input type="number" min={1} max={99} placeholder="Reps"
+                    value={s.reps || ""} onChange={e => {
+                      const copy = [...exSeries];
+                      copy[i] = { ...copy[i], reps: parseInt(e.target.value) || 0 };
+                      setExSeries(copy);
+                    }}
+                    className="w-16 rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-center text-sm text-kb-text" />
+                  <span className="text-xs text-kb-text-secondary">reps</span>
+                  <input type="number" min={0} step={0.5} placeholder="Peso"
+                    value={s.peso_kg ?? ""} onChange={e => {
+                      const copy = [...exSeries];
+                      copy[i] = { ...copy[i], peso_kg: e.target.value ? parseFloat(e.target.value) : null };
+                      setExSeries(copy);
+                    }}
+                    className="w-20 rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-center text-sm text-kb-text" />
+                  <span className="text-xs text-kb-text-secondary">kg</span>
+                  {exSeries.length > 1 && (
+                    <button onClick={() => setExSeries(s => s.filter((_, j) => j !== i))}
+                      className="ml-auto text-kb-loss/70 hover:text-kb-loss">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Comparativa previa */}
+          {exNombre.trim() && comparativas[exNombre.trim()] && (
+            <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3">
+              <p className="text-xs font-semibold text-blue-400 mb-1">Última vez que hiciste este ejercicio</p>
+              {comparativas[exNombre.trim()].series.map((s, i) => (
+                <p key={i} className="text-xs text-kb-text-secondary">
+                  Serie {i+1}: {s.reps} reps × {s.peso_kg ?? 0} kg
+                </p>
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={() => { setMostrarFormEx(false); resetForm(); }}
+              className="rounded-xl border border-kb-border-soft px-4 py-2.5 text-sm text-kb-text-secondary">
+              Cancelar
+            </button>
+            <button onClick={() => {
+              if (exNombre.trim()) buscarComparativa(exNombre.trim());
+              guardarEjercicio();
+            }} disabled={guardando || !exNombre.trim()}
+              className="flex-1 rounded-xl bg-kb-gain py-2.5 text-sm font-bold text-kb-bg disabled:opacity-60">
+              {guardando ? "Guardando..." : editandoIdx !== null ? "Actualizar" : "Añadir"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Lista de ejercicios registrados */}
+      {ejercicios.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-bold text-kb-text-secondary uppercase tracking-wider">Ejercicios de hoy</h3>
+          {ejercicios.map((e, i) => (
+            <div key={e.id} className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4">
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-kb-text">{e.nombre}</span>
+                    {prs[e.nombre] && <span className="rounded-full bg-yellow-500/20 px-2 py-0.5 text-[10px] font-bold text-yellow-400">🥇 PR</span>}
+                  </div>
+                  <div className="flex gap-2 mt-0.5">
+                    {e.equipo && <span className="text-xs text-kb-text-muted">{e.equipo}</span>}
+                    {e.grupo_muscular && <span className="text-xs text-kb-text-muted">· {e.grupo_muscular}</span>}
+                  </div>
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={() => editarEjercicio(i)} className="rounded-lg p-1.5 text-kb-text-secondary hover:text-kb-text">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button onClick={() => eliminarEjercicio(i)} className="rounded-lg p-1.5 text-kb-loss/60 hover:text-kb-loss">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {e.series.map((s, j) => (
+                  <span key={j} className="rounded-lg border border-kb-border bg-kb-surface px-2 py-1 text-xs font-mono text-kb-text">
+                    {s.reps}r × {s.peso_kg ?? "—"}kg
+                  </span>
+                ))}
+              </div>
+              {comparativas[e.nombre] && (
+                <p className="mt-2 text-xs text-kb-text-muted">
+                  Última vez: mejor {Math.max(...comparativas[e.nombre].series.map(s => s.peso_kg ?? 0))} kg
+                  {prs[e.nombre] && " → ¡Superado! 🔥"}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Botón cerrar sesión */}
+      {(ejercicios.length > 0 || sesion) && (
+        <button onClick={cerrarSesion} disabled={guardando}
+          className="w-full rounded-2xl bg-kb-gain py-4 text-sm font-bold text-kb-bg disabled:opacity-60">
+          {guardando ? "Guardando..." : "✅ Finalizar sesión"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GimPlanView — Constructor de rutinas semanales
+// ─────────────────────────────────────────────────────────────────────────────
+
+function GimPlanView({ userId }: { userId: string }) {
+  const DIAS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+  const [rutinas, setRutinas] = useState<GymRutina[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [modalDia, setModalDia] = useState<number | null>(null);
+  const [editandoRutina, setEditandoRutina] = useState<GymRutina | null>(null);
+  const [guardando, setGuardando] = useState(false);
+
+  // Form state
+  const [nombre, setNombre] = useState("");
+  const [ejerciciosRutina, setEjerciciosRutina] = useState<GymRutinaEjercicio[]>([]);
+
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      const { data } = await supabase.from("gym_routines").select("*").eq("user_id", userId).order("dia_semana");
+      if (data) setRutinas(data as GymRutina[]);
+      setCargando(false);
+    })();
+  }, [userId]);
+
+  function abrirNuevaRutina(dia: number) {
+    setModalDia(dia);
+    setEditandoRutina(null);
+    setNombre("");
+    setEjerciciosRutina([]);
+  }
+
+  function abrirEditarRutina(r: GymRutina) {
+    setModalDia(r.dia_semana);
+    setEditandoRutina(r);
+    setNombre(r.nombre);
+    setEjerciciosRutina([...(r.ejercicios ?? [])]);
+  }
+
+  function addEjercicioRutina() {
+    setEjerciciosRutina(prev => [...prev, {
+      id: crypto.randomUUID(),
+      nombre: "", equipo: "", grupo_muscular: "",
+      series: 3, reps_objetivo: "8-12", orden: prev.length,
+    }]);
+  }
+
+  function updateEjRutina(idx: number, field: keyof GymRutinaEjercicio, val: string | number) {
+    setEjerciciosRutina(prev => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], [field]: val };
+      return copy;
+    });
   }
 
   async function guardarRutina() {
-    if (enviando) return;
-    if (!formNombre.trim()) return;
-    setEnviando(true);
-
-    const payload = {
-      user_id: userId,
-      nombre: formNombre.trim(),
-      dia_semana: diaSeleccionado,
-      ejercicios: formEjercicios.filter((e) => e.nombre.trim()).map((e, i) => ({
-        ...e,
-        id: crypto.randomUUID(),
-        orden: i,
-      })),
-    };
-
-    if (editando) {
-      await supabase.from("gym_routines").update(payload).eq("id", editando.id).eq("user_id", userId);
-    } else {
-      await supabase.from("gym_routines").insert(payload);
-    }
-
-    setModalAbierto(false);
-    await cargarRutinas();
-    setEnviando(false);
+    if (!nombre.trim() || modalDia === null || guardando) return;
+    setGuardando(true);
+    try {
+      const payload = {
+        user_id: userId,
+        nombre: nombre.trim(),
+        dia_semana: modalDia,
+        ejercicios: ejerciciosRutina.filter(e => e.nombre.trim()),
+      };
+      if (editandoRutina) {
+        await supabase.from("gym_routines").update(payload).eq("id", editandoRutina.id);
+        setRutinas(prev => prev.map(r => r.id === editandoRutina.id ? { ...r, ...payload } : r));
+      } else {
+        const { data } = await supabase.from("gym_routines").insert(payload).select().single();
+        if (data) setRutinas(prev => [...prev, data as GymRutina]);
+      }
+      setModalDia(null);
+    } catch(e) { console.error(e); } finally { setGuardando(false); }
   }
 
   async function eliminarRutina(id: string) {
-    await supabase.from("gym_routines").delete().eq("id", id).eq("user_id", userId);
-    await cargarRutinas();
+    await supabase.from("gym_routines").delete().eq("id", id);
+    setRutinas(prev => prev.filter(r => r.id !== id));
   }
 
-  const rutinaDelDia = rutinas.filter((r) => r.dia_semana === diaSeleccionado);
+  if (cargando) return (
+    <div className="flex h-64 items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-kb-gain border-t-transparent" />
+    </div>
+  );
+
+  const rutinasPorDia: Record<number, GymRutina[]> = {};
+  rutinas.forEach(r => {
+    if (!rutinasPorDia[r.dia_semana]) rutinasPorDia[r.dia_semana] = [];
+    rutinasPorDia[r.dia_semana].push(r);
+  });
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-kb-text">Mi Rutina</h1>
-          <p className="text-sm text-kb-text-secondary">Planifica tu semana de entrenamiento</p>
-        </div>
-        <button
-          onClick={() => abrirModal()}
-          className="flex items-center gap-2 rounded-xl bg-kb-gain px-4 py-2 text-sm font-semibold text-kb-bg hover:opacity-90 transition-opacity"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          Nueva rutina
-        </button>
+    <div className="mx-auto max-w-xl px-4 py-5">
+      <h2 className="mb-1 text-xl font-bold text-kb-text">Mi Rutina Semanal</h2>
+      <p className="mb-5 text-sm text-kb-text-secondary">Organiza tus entrenamientos por día de la semana.</p>
+
+      {/* Vista de la semana */}
+      <div className="space-y-3">
+        {DIAS.map((dia, idx) => {
+          const rs = rutinasPorDia[idx] ?? [];
+          return (
+            <div key={idx} className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-bold text-kb-text">{dia}</span>
+                <button onClick={() => abrirNuevaRutina(idx)}
+                  className="flex items-center gap-1 rounded-lg border border-kb-gain/40 px-2.5 py-1 text-xs font-semibold text-kb-gain">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" className="h-3.5 w-3.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Rutina
+                </button>
+              </div>
+              {rs.length === 0 ? (
+                <p className="text-xs text-kb-text-muted">Sin rutina — día libre</p>
+              ) : rs.map(r => (
+                <div key={r.id} className="mb-2 last:mb-0">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-kb-text">{r.nombre}</span>
+                    <div className="flex gap-1">
+                      <button onClick={() => abrirEditarRutina(r)}
+                        className="rounded p-1 text-kb-text-secondary hover:text-kb-text">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-3.5 w-3.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                      <button onClick={() => eliminarRutina(r.id)}
+                        className="rounded p-1 text-kb-loss/60 hover:text-kb-loss">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-3.5 w-3.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V4h6v2"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {(r.ejercicios ?? []).slice(0, 4).map((e, i) => (
+                      <span key={i} className="rounded-md border border-kb-border bg-kb-surface px-2 py-0.5 text-[11px] text-kb-text-secondary">
+                        {e.nombre}
+                      </span>
+                    ))}
+                    {(r.ejercicios ?? []).length > 4 && (
+                      <span className="rounded-md border border-kb-border bg-kb-surface px-2 py-0.5 text-[11px] text-kb-text-muted">
+                        +{(r.ejercicios ?? []).length - 4} más
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })}
       </div>
 
-      {/* Selector de día */}
-      <div className="flex gap-1 overflow-x-auto">
-        {GYM_DIAS_SEMANA.map((dia, i) => (
-          <button
-            key={i}
-            onClick={() => setDiaSeleccionado(i)}
-            className={`shrink-0 rounded-xl px-4 py-2.5 text-center text-xs font-semibold transition-colors ${
-              diaSeleccionado === i
-                ? "bg-kb-gain text-kb-bg"
-                : rutinas.some((r) => r.dia_semana === i)
-                ? "border border-kb-gain/40 bg-kb-gain/10 text-kb-gain"
-                : "border border-kb-border-soft bg-kb-surface/30 text-kb-text-secondary"
-            }`}
-          >
-            <span className="block">{dia}</span>
+      {/* Modal crear/editar rutina */}
+      {modalDia !== null && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center" onClick={e => { if (e.target === e.currentTarget) setModalDia(null); }}>
+          <div className="w-full max-w-lg rounded-3xl border border-kb-border bg-kb-bg p-5 max-h-[90vh] overflow-y-auto">
+            <h3 className="mb-4 text-lg font-bold text-kb-text">
+              {editandoRutina ? "Editar rutina" : `Nueva rutina — ${DIAS[modalDia]}`}
+            </h3>
+
+            <input value={nombre} onChange={e => setNombre(e.target.value)}
+              placeholder="Nombre de la rutina (ej. Pecho + Tríceps)"
+              className="mb-4 w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2.5 text-sm text-kb-text placeholder:text-kb-text-muted" />
+
+            {/* Ejercicios de la rutina */}
+            <div className="mb-3 space-y-3">
+              {ejerciciosRutina.map((e, i) => (
+                <div key={e.id} className="rounded-xl border border-kb-border-soft bg-kb-surface/30 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-kb-text-secondary">Ejercicio {i + 1}</span>
+                    <button onClick={() => setEjerciciosRutina(p => p.filter((_,j) => j !== i))}
+                      className="text-kb-loss/60 hover:text-kb-loss">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                  <input value={e.nombre} onChange={ev => updateEjRutina(i, "nombre", ev.target.value)}
+                    placeholder="Nombre (ej. Press banca)"
+                    className="w-full rounded-lg border border-kb-border bg-kb-surface/40 px-2.5 py-2 text-sm text-kb-text placeholder:text-kb-text-muted" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={e.equipo} onChange={ev => updateEjRutina(i, "equipo", ev.target.value)}
+                      className="rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-xs text-kb-text">
+                      <option value="">Equipo</option>
+                      {GYM_EQUIPOS.map(g => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                    <select value={e.grupo_muscular} onChange={ev => updateEjRutina(i, "grupo_muscular", ev.target.value)}
+                      className="rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-xs text-kb-text">
+                      <option value="">Músculo</option>
+                      {GYM_GRUPOS.map(g => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="mb-0.5 block text-[11px] font-semibold text-kb-text-secondary">Series</label>
+                      <input type="number" min={1} max={10} value={e.series}
+                        onChange={ev => updateEjRutina(i, "series", parseInt(ev.target.value) || 3)}
+                        className="w-full rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-sm text-kb-text" />
+                    </div>
+                    <div>
+                      <label className="mb-0.5 block text-[11px] font-semibold text-kb-text-secondary">Reps objetivo</label>
+                      <input type="text" value={e.reps_objetivo} onChange={ev => updateEjRutina(i, "reps_objetivo", ev.target.value)}
+                        placeholder="8-12"
+                        className="w-full rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-sm text-kb-text placeholder:text-kb-text-muted" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button onClick={addEjercicioRutina}
+              className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-kb-border py-3 text-sm text-kb-text-secondary hover:border-kb-gain hover:text-kb-gain">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" className="h-4 w-4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Añadir ejercicio
+            </button>
+
+            <div className="flex gap-2">
+              <button onClick={() => setModalDia(null)} className="rounded-xl border border-kb-border-soft px-4 py-3 text-sm text-kb-text-secondary">
+                Cancelar
+              </button>
+              <button onClick={guardarRutina} disabled={guardando || !nombre.trim()}
+                className="flex-1 rounded-xl bg-kb-gain py-3 text-sm font-bold text-kb-bg disabled:opacity-60">
+                {guardando ? "Guardando..." : "Guardar rutina"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GimProgresoView — Medidas corporales + Récords por ejercicio
+// ─────────────────────────────────────────────────────────────────────────────
+
+function GimProgresoView({ userId }: { userId: string }) {
+  const [tab, setTab] = useState<"medidas" | "records">("medidas");
+  const [medidas, setMedidas] = useState<BodyMeasurement[]>([]);
+  const [records, setRecords] = useState<{ nombre: string; peso_max: number; fecha: string }[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [mostrarForm, setMostrarForm] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+
+  // Form medida
+  const [fMedida, setFMedida] = useState({ fecha: gymFechaKey(), peso_kg: "", grasa_pct: "", musculo_kg: "", pecho_cm: "", cintura_cm: "", cadera_cm: "", brazo_cm: "", pierna_cm: "", notas: "" });
+
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      const [{ data: mData }, { data: exData }] = await Promise.all([
+        supabase.from("body_measurements").select("*").eq("user_id", userId).order("fecha", { ascending: false }).limit(12),
+        supabase.from("gym_session_exercises")
+          .select("nombre, series, gym_sessions!inner(user_id, fecha)")
+          .eq("gym_sessions.user_id", userId)
+          .order("nombre"),
+      ]);
+      if (mData) setMedidas(mData as BodyMeasurement[]);
+      if (exData) {
+        // Calcular PR por ejercicio
+        const prMap: Record<string, { peso_max: number; fecha: string }> = {};
+        (exData as unknown as Array<{ nombre: string; series: { reps: number; peso_kg: number | null }[]; gym_sessions: { fecha: string } }>).forEach(e => {
+          const max = Math.max(...e.series.map((s) => s.peso_kg ?? 0));
+          if (!prMap[e.nombre] || max > prMap[e.nombre].peso_max) {
+            prMap[e.nombre] = { peso_max: max, fecha: e.gym_sessions.fecha };
+          }
+        });
+        setRecords(Object.entries(prMap).map(([nombre, v]) => ({ nombre, ...v })).sort((a, b) => b.peso_max - a.peso_max));
+      }
+      setCargando(false);
+    })();
+  }, [userId]);
+
+  async function guardarMedida() {
+    if (guardando) return;
+    setGuardando(true);
+    try {
+      const payload = {
+        user_id: userId,
+        fecha: fMedida.fecha,
+        peso_kg: fMedida.peso_kg ? parseFloat(fMedida.peso_kg) : null,
+        grasa_pct: fMedida.grasa_pct ? parseFloat(fMedida.grasa_pct) : null,
+        musculo_kg: fMedida.musculo_kg ? parseFloat(fMedida.musculo_kg) : null,
+        pecho_cm: fMedida.pecho_cm ? parseFloat(fMedida.pecho_cm) : null,
+        cintura_cm: fMedida.cintura_cm ? parseFloat(fMedida.cintura_cm) : null,
+        cadera_cm: fMedida.cadera_cm ? parseFloat(fMedida.cadera_cm) : null,
+        brazo_cm: fMedida.brazo_cm ? parseFloat(fMedida.brazo_cm) : null,
+        pierna_cm: fMedida.pierna_cm ? parseFloat(fMedida.pierna_cm) : null,
+        notas: fMedida.notas,
+      };
+      const { data } = await supabase.from("body_measurements")
+        .upsert(payload, { onConflict: "user_id,fecha" })
+        .select().single();
+      if (data) {
+        setMedidas(prev => {
+          const filtered = prev.filter(m => m.fecha !== data.fecha);
+          return [data as BodyMeasurement, ...filtered].sort((a,b) => b.fecha.localeCompare(a.fecha));
+        });
+      }
+      setMostrarForm(false);
+    } catch(e) { console.error(e); } finally { setGuardando(false); }
+  }
+
+  // SVG chart simple de peso
+  function ChartPeso() {
+    const data = [...medidas].reverse().filter(m => m.peso_kg).slice(-8);
+    if (data.length < 2) return <p className="text-center text-sm text-kb-text-muted py-4">Añade al menos 2 medidas para ver el gráfico</p>;
+    const pesos = data.map(m => m.peso_kg as number);
+    const min = Math.min(...pesos) - 2;
+    const max = Math.max(...pesos) + 2;
+    const W = 300, H = 100;
+    const scaleX = (i: number) => (i / (data.length - 1)) * (W - 40) + 20;
+    const scaleY = (v: number) => H - 20 - ((v - min) / (max - min)) * (H - 30);
+    const pts = data.map((m, i) => `${scaleX(i)},${scaleY(m.peso_kg as number)}`).join(" ");
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 100 }}>
+        <defs>
+          <linearGradient id="pgrd" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--kb-gain, #22c55e)" stopOpacity="0.3"/>
+            <stop offset="100%" stopColor="var(--kb-gain, #22c55e)" stopOpacity="0"/>
+          </linearGradient>
+        </defs>
+        <polyline points={pts} fill="none" stroke="var(--kb-gain, #22c55e)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        {data.map((m, i) => (
+          <g key={i}>
+            <circle cx={scaleX(i)} cy={scaleY(m.peso_kg as number)} r="3" fill="var(--kb-gain, #22c55e)"/>
+            <text x={scaleX(i)} y={scaleY(m.peso_kg as number) - 6} textAnchor="middle" fontSize="9" fill="currentColor" opacity="0.6">{m.peso_kg}</text>
+          </g>
+        ))}
+      </svg>
+    );
+  }
+
+  if (cargando) return (
+    <div className="flex h-64 items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-kb-gain border-t-transparent" />
+    </div>
+  );
+
+  return (
+    <div className="mx-auto max-w-xl px-4 py-5">
+      <h2 className="mb-4 text-xl font-bold text-kb-text">Progreso</h2>
+
+      {/* Tabs */}
+      <div className="mb-5 flex gap-2 rounded-2xl border border-kb-border-soft bg-kb-surface/30 p-1">
+        {([["medidas","Medidas corporales"],["records","Récords personales"]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id as "medidas" | "records")}
+            className={`flex-1 rounded-xl py-2 text-sm font-semibold transition-all ${tab === id ? "bg-kb-gain text-kb-bg" : "text-kb-text-secondary"}`}>
+            {label}
           </button>
         ))}
       </div>
 
-      {/* Rutinas del día */}
-      {cargando ? (
-        <SkeletonBloque className="h-40 w-full" />
-      ) : rutinaDelDia.length === 0 ? (
-        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-kb-border py-12 text-center">
-          <p className="text-sm text-kb-text-secondary">No hay rutina para el {DIAS_SEMANA_COMPLETO[diaSeleccionado]}</p>
-          <button
-            onClick={() => abrirModal()}
-            className="rounded-xl border border-kb-gain/40 bg-kb-gain/10 px-5 py-2 text-sm font-semibold text-kb-gain hover:bg-kb-gain/20 transition-colors"
-          >
-            + Agregar rutina
-          </button>
-        </div>
-      ) : (
+      {tab === "medidas" && (
         <div className="space-y-4">
-          {rutinaDelDia.map((rutina) => (
-            <div key={rutina.id} className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-lg font-bold text-kb-text">{rutina.nombre}</h3>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => abrirModal(rutina)}
-                    className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
-                  >
-                    Editar
-                  </button>
-                  <button
-                    onClick={() => eliminarRutina(rutina.id)}
-                    className="rounded-lg border border-kb-border px-3 py-1.5 text-xs font-medium text-kb-text-secondary hover:border-kb-loss hover:text-kb-loss transition-colors"
-                  >
-                    Eliminar
-                  </button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {rutina.ejercicios.map((ej, idx) => (
-                  <div key={ej.id} className="flex items-center gap-3 rounded-lg bg-kb-bg/60 px-3 py-2">
-                    <span className="w-5 text-center text-xs font-mono text-kb-text-muted">{idx + 1}</span>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-kb-text">{ej.nombre}</p>
-                      <p className="text-xs text-kb-text-muted">{ej.grupo_muscular}</p>
-                    </div>
-                    <div className="text-right text-xs text-kb-text-secondary">
-                      <p className="font-semibold">{ej.series} × {ej.reps_objetivo}</p>
-                    </div>
+          {/* Gráfico */}
+          {medidas.some(m => m.peso_kg) && (
+            <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4">
+              <p className="mb-2 text-xs font-semibold text-kb-text-secondary">Peso (kg)</p>
+              <ChartPeso />
+            </div>
+          )}
+
+          {/* Botón agregar */}
+          {!mostrarForm && (
+            <button onClick={() => setMostrarForm(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-kb-gain/40 py-4 text-sm font-semibold text-kb-gain hover:border-kb-gain hover:bg-kb-gain/5">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" className="h-5 w-5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Registrar medidas
+            </button>
+          )}
+
+          {mostrarForm && (
+            <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4 space-y-3">
+              <input type="date" value={fMedida.fecha} onChange={e => setFMedida(f => ({ ...f, fecha: e.target.value }))}
+                className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2.5 text-sm text-kb-text" />
+              <div className="grid grid-cols-3 gap-2">
+                {([["peso_kg","Peso (kg)"],["grasa_pct","Grasa %"],["musculo_kg","Músculo kg"]] as const).map(([f, lbl]) => (
+                  <div key={f}>
+                    <label className="mb-0.5 block text-[11px] font-semibold text-kb-text-secondary">{lbl}</label>
+                    <input type="number" step="0.1" value={fMedida[f]} onChange={e => setFMedida(p => ({ ...p, [f]: e.target.value }))}
+                      className="w-full rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-sm text-kb-text" />
                   </div>
                 ))}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {([["pecho_cm","Pecho cm"],["cintura_cm","Cintura cm"],["cadera_cm","Cadera cm"],["brazo_cm","Brazo cm"],["pierna_cm","Pierna cm"]] as const).map(([f, lbl]) => (
+                  <div key={f}>
+                    <label className="mb-0.5 block text-[11px] font-semibold text-kb-text-secondary">{lbl}</label>
+                    <input type="number" step="0.1" value={fMedida[f]} onChange={e => setFMedida(p => ({ ...p, [f]: e.target.value }))}
+                      className="w-full rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-sm text-kb-text" />
+                  </div>
+                ))}
+              </div>
+              <textarea value={fMedida.notas} onChange={e => setFMedida(f => ({ ...f, notas: e.target.value }))}
+                placeholder="Notas..." rows={2}
+                className="w-full resize-none rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2 text-sm text-kb-text placeholder:text-kb-text-muted" />
+              <div className="flex gap-2">
+                <button onClick={() => setMostrarForm(false)} className="rounded-xl border border-kb-border-soft px-4 py-2.5 text-sm text-kb-text-secondary">Cancelar</button>
+                <button onClick={guardarMedida} disabled={guardando}
+                  className="flex-1 rounded-xl bg-kb-gain py-2.5 text-sm font-bold text-kb-bg disabled:opacity-60">
+                  {guardando ? "Guardando..." : "Guardar"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Lista medidas */}
+          {medidas.length === 0 ? (
+            <p className="text-center text-sm text-kb-text-muted py-6">Sin medidas registradas aún</p>
+          ) : medidas.map(m => (
+            <div key={m.id} className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4">
+              <p className="mb-2 text-sm font-bold text-kb-text">{gymFechaLabel(m.fecha)}</p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {m.peso_kg && <span className="text-xs text-kb-text-secondary">Peso: <b className="text-kb-text">{m.peso_kg} kg</b></span>}
+                {m.grasa_pct && <span className="text-xs text-kb-text-secondary">Grasa: <b className="text-kb-text">{m.grasa_pct}%</b></span>}
+                {m.musculo_kg && <span className="text-xs text-kb-text-secondary">Músculo: <b className="text-kb-text">{m.musculo_kg} kg</b></span>}
+                {m.pecho_cm && <span className="text-xs text-kb-text-secondary">Pecho: <b className="text-kb-text">{m.pecho_cm} cm</b></span>}
+                {m.cintura_cm && <span className="text-xs text-kb-text-secondary">Cintura: <b className="text-kb-text">{m.cintura_cm} cm</b></span>}
+                {m.cadera_cm && <span className="text-xs text-kb-text-secondary">Cadera: <b className="text-kb-text">{m.cadera_cm} cm</b></span>}
+                {m.brazo_cm && <span className="text-xs text-kb-text-secondary">Brazo: <b className="text-kb-text">{m.brazo_cm} cm</b></span>}
+                {m.pierna_cm && <span className="text-xs text-kb-text-secondary">Pierna: <b className="text-kb-text">{m.pierna_cm} cm</b></span>}
+              </div>
+              {m.notas && <p className="mt-1 text-xs text-kb-text-muted">{m.notas}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "records" && (
+        <div className="space-y-3">
+          {records.length === 0 ? (
+            <div className="py-12 text-center">
+              <p className="text-4xl mb-3">🏆</p>
+              <p className="text-sm text-kb-text-muted">Registra tus sesiones de entrenamiento<br/>para ver tus récords personales aquí.</p>
+            </div>
+          ) : records.map((r, i) => (
+            <div key={r.nombre} className="flex items-center rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4">
+              <div className="mr-3 flex h-9 w-9 items-center justify-center rounded-full border border-kb-border text-sm font-bold text-kb-text-secondary">
+                {i + 1}
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-kb-text">{r.nombre}</p>
+                <p className="text-xs text-kb-text-muted">{gymFechaLabel(r.fecha)}</p>
+              </div>
+              <div className="text-right">
+                <p className="font-bold text-kb-gain text-lg">{r.peso_max} <span className="text-xs font-normal text-kb-text-muted">kg</span></p>
+                {i === 0 && <span className="text-[10px] font-bold text-yellow-400">🥇 Más pesado</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GimHistorialView — Historial de sesiones
+// ─────────────────────────────────────────────────────────────────────────────
+
+function GimHistorialView({ userId }: { userId: string }) {
+  const [sesiones, setSesiones] = useState<(GymSesion & { ejercicios?: GymSesionEjercicio[] })[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [expandido, setExpandido] = useState<string | null>(null);
+  const [cargandoEx, setCargandoEx] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      const { data } = await supabase
+        .from("gym_sessions")
+        .select("*")
+        .eq("user_id", userId)
+        .order("fecha", { ascending: false })
+        .limit(30);
+      if (data) setSesiones(data as GymSesion[]);
+      setCargando(false);
+    })();
+  }, [userId]);
+
+  async function toggleExpand(id: string) {
+    if (expandido === id) { setExpandido(null); return; }
+    setExpandido(id);
+    const already = sesiones.find(s => s.id === id);
+    if (already?.ejercicios) return;
+    setCargandoEx(id);
+    const { data } = await supabase.from("gym_session_exercises").select("*").eq("sesion_id", id).order("orden");
+    setSesiones(prev => prev.map(s => s.id === id ? { ...s, ejercicios: data as GymSesionEjercicio[] } : s));
+    setCargandoEx(null);
+  }
+
+  async function eliminarSesion(id: string) {
+    await supabase.from("gym_sessions").delete().eq("id", id);
+    setSesiones(prev => prev.filter(s => s.id !== id));
+    if (expandido === id) setExpandido(null);
+  }
+
+  if (cargando) return (
+    <div className="flex h-64 items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-kb-gain border-t-transparent" />
+    </div>
+  );
+
+  return (
+    <div className="mx-auto max-w-xl px-4 py-5">
+      <h2 className="mb-1 text-xl font-bold text-kb-text">Historial</h2>
+      <p className="mb-5 text-sm text-kb-text-secondary">Últimas {sesiones.length} sesiones de entrenamiento.</p>
+
+      {sesiones.length === 0 ? (
+        <div className="py-16 text-center">
+          <p className="text-4xl mb-3">📋</p>
+          <p className="text-sm text-kb-text-muted">Sin sesiones registradas aún.<br/>¡Empieza tu primera en "Entrenar hoy"!</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {sesiones.map(s => (
+            <div key={s.id} className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 overflow-hidden">
+              <button onClick={() => toggleExpand(s.id)} className="w-full p-4 text-left">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-bold text-kb-text">{gymFechaLabel(s.fecha)}</p>
+                    <div className="mt-0.5 flex flex-wrap gap-2">
+                      {s.duracion_min && <span className="text-xs text-kb-text-muted">{s.duracion_min} min</span>}
+                      {s.fase && <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${GYM_FASES[s.fase as keyof typeof GYM_FASES]?.color ?? ""}`}>{GYM_FASES[s.fase as keyof typeof GYM_FASES]?.label ?? s.fase}</span>}
+                      {s.hora_inicio && <span className="text-xs text-kb-text-muted">{s.hora_inicio}{s.hora_fin ? ` – ${s.hora_fin}` : ""}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={e => { e.stopPropagation(); eliminarSesion(s.id); }}
+                      className="rounded-lg p-1.5 text-kb-loss/50 hover:text-kb-loss">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V4h6v2"/></svg>
+                    </button>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className={`h-4 w-4 text-kb-text-secondary transition-transform ${expandido === s.id ? "rotate-180" : ""}`}><polyline points="6 9 12 15 18 9"/></svg>
+                  </div>
+                </div>
+              </button>
+
+              {expandido === s.id && (
+                <div className="border-t border-kb-border-soft px-4 pb-4 pt-3">
+                  {cargandoEx === s.id ? (
+                    <div className="flex h-12 items-center justify-center">
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-kb-gain border-t-transparent" />
+                    </div>
+                  ) : (
+                    <>
+                      {s.ejercicios?.length === 0 && <p className="text-xs text-kb-text-muted">Sin ejercicios registrados</p>}
+                      {s.ejercicios?.map(e => (
+                        <div key={e.id} className="mb-3 last:mb-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-semibold text-kb-text text-sm">{e.nombre}</span>
+                            {e.equipo && <span className="text-xs text-kb-text-muted">· {e.equipo}</span>}
+                            {e.grupo_muscular && <span className="text-xs text-kb-text-muted">· {e.grupo_muscular}</span>}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {e.series.map((serie, i) => (
+                              <span key={i} className="rounded-lg border border-kb-border bg-kb-surface px-2 py-0.5 text-xs font-mono text-kb-text">
+                                {serie.reps}r × {serie.peso_kg ?? "—"}kg
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      {s.notas && <p className="mt-2 text-xs italic text-kb-text-muted">"{s.notas}"</p>}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GimGuiaView — Guía & Tips
+// ─────────────────────────────────────────────────────────────────────────────
+
+function GimGuiaView({ userId: _ }: { userId: string }) {
+  const [tab, setTab] = useState<"tipos" | "fases" | "entreno" | "nutricion">("tipos");
+
+  const tabs = [
+    { id: "tipos",    label: "Tipos de cuerpo" },
+    { id: "fases",    label: "Fases" },
+    { id: "entreno",  label: "Entrenamiento" },
+    { id: "nutricion",label: "Nutrición" },
+  ] as const;
+
+  return (
+    <div className="mx-auto max-w-xl px-4 py-5">
+      <h2 className="mb-4 text-xl font-bold text-kb-text">Guía & Tips</h2>
+
+      {/* Tabs scroll */}
+      <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${tab === t.id ? "bg-kb-gain text-kb-bg" : "border border-kb-border-soft text-kb-text-secondary"}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "tipos" && (
+        <div className="space-y-4">
+          {Object.entries(GYM_TIPOS_CUERPO).map(([key, tipo]) => (
+            <div key={key} className={`rounded-2xl border p-5 ${tipo.color}`}>
+              <div className="mb-2 flex items-center gap-3">
+                <span className="text-3xl">{tipo.emoji}</span>
+                <div>
+                  <h3 className="text-lg font-bold text-kb-text">{tipo.label}</h3>
+                  <p className="text-sm text-kb-text-secondary">{tipo.desc}</p>
+                </div>
+              </div>
+              <div className="mt-3 rounded-xl border border-kb-border-soft bg-kb-surface/50 p-3">
+                <p className="mb-1 text-xs font-bold text-kb-text-secondary uppercase tracking-wider">Estrategia</p>
+                <p className="text-sm text-kb-text">{tipo.estrategia}</p>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Modal editar/crear rutina */}
-      {modalAbierto && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center">
-          <div className="w-full max-h-[90vh] overflow-y-auto rounded-t-2xl bg-kb-surface sm:max-w-lg sm:rounded-2xl">
-            <div className="sticky top-0 flex items-center justify-between border-b border-kb-border-soft bg-kb-surface px-5 py-4">
-              <h2 className="font-display text-base font-bold text-kb-text">
-                {editando ? "Editar rutina" : "Nueva rutina"}
-              </h2>
-              <button onClick={() => setModalAbierto(false)} className="text-kb-text-muted hover:text-kb-text">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
-            </div>
-
-            <div className="space-y-5 p-5">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Nombre de la rutina</label>
-                <input
-                  value={formNombre}
-                  onChange={(e) => setFormNombre(e.target.value)}
-                  placeholder="Push day, Piernas, Full body…"
-                  className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Día</label>
-                <div className="flex gap-1 flex-wrap">
-                  {GYM_DIAS_SEMANA.map((d, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setDiaSeleccionado(i)}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${diaSeleccionado === i ? "bg-kb-gain text-kb-bg" : "border border-kb-border text-kb-text-secondary"}`}
-                    >
-                      {d}
-                    </button>
-                  ))}
+      {tab === "fases" && (
+        <div className="space-y-4">
+          {[
+            {
+              fase: "volumen" as const,
+              title: "Volumen (Bulk)",
+              icon: "📈",
+              desc: "Período de superávit calórico enfocado en ganar masa muscular.",
+              puntos: [
+                "Come 300-500 kcal sobre tu mantenimiento diario",
+                "Prioriza proteína: 1.6-2.2g por kg de peso corporal",
+                "Entrena con progresión de cargas semanalmente",
+                "El cardio moderado ayuda a la salud sin sacrificar músculo",
+                "Acepta ganar un poco de grasa — es parte del proceso",
+              ],
+            },
+            {
+              fase: "definicion" as const,
+              title: "Definición (Cut)",
+              icon: "✂️",
+              desc: "Déficit calórico para perder grasa manteniendo el músculo ganado.",
+              puntos: [
+                "Déficit de 300-500 kcal — no más para preservar músculo",
+                "Alta proteína: 2.0-2.4g/kg para proteger músculo",
+                "Mantén el entrenamiento de fuerza con los mismos pesos",
+                "Cardio puede ayudar a crear el déficit sin sacrificar fuerza",
+                "El proceso es lento — 0.5-1 kg por semana es ideal",
+              ],
+            },
+            {
+              fase: "recomposicion" as const,
+              title: "Recomposición",
+              icon: "⚖️",
+              desc: "Ganar músculo y perder grasa simultáneamente — ideal para principiantes o tras un descanso.",
+              puntos: [
+                "Come cerca del mantenimiento calórico (±100-200 kcal)",
+                "Alta proteína: 2.0-2.5g/kg es esencial aquí",
+                "El progreso es más lento — necesita paciencia y consistencia",
+                "Funciona mejor si eres principiante o tienes genética favorable",
+                "Monitorea composición corporal, no solo el peso en báscula",
+              ],
+            },
+            {
+              fase: "mantenimiento" as const,
+              title: "Mantenimiento",
+              icon: "🔒",
+              desc: "Conservar la composición corporal actual mientras mantienes salud y rendimiento.",
+              puntos: [
+                "Come en tus calorías de mantenimiento exactas",
+                "Mantén la rutina de fuerza consistente",
+                "Buena fase para descansar mentalmente del seguimiento estricto",
+                "Ideal durante períodos de estrés o viajes",
+                "Sigue siendo importante la proteína: 1.6-2g/kg",
+              ],
+            },
+          ].map(f => (
+            <div key={f.fase} className={`rounded-2xl border p-5 ${GYM_FASES[f.fase].color}`}>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="text-2xl">{f.icon}</span>
+                <div>
+                  <h3 className="font-bold text-kb-text">{f.title}</h3>
+                  <p className="text-xs text-kb-text-secondary">{f.desc}</p>
                 </div>
               </div>
+              <ul className="space-y-1.5">
+                {f.puntos.map((p, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-kb-text">
+                    <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60 mt-1.5" />
+                    {p}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
 
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <label className="text-xs font-medium text-kb-text-secondary">Ejercicios</label>
-                  <button
-                    onClick={() =>
-                      setFormEjercicios([
-                        ...formEjercicios,
-                        { nombre: "", grupo_muscular: GRUPOS_MUSCULARES[0], series: 3, reps_objetivo: "8-12", orden: formEjercicios.length },
-                      ])
-                    }
-                    className="text-xs font-medium text-kb-gain hover:opacity-80"
-                  >
-                    + Agregar
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {formEjercicios.map((ej, i) => (
-                    <div key={i} className="rounded-xl border border-kb-border-soft bg-kb-bg/60 p-3 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono text-kb-text-muted w-4">{i + 1}</span>
-                        <input
-                          value={ej.nombre}
-                          onChange={(e) => {
-                            const ne = [...formEjercicios];
-                            ne[i] = { ...ne[i], nombre: e.target.value };
-                            setFormEjercicios(ne);
-                          }}
-                          placeholder="Nombre del ejercicio"
-                          className="flex-1 rounded-lg border border-kb-border bg-kb-surface px-2 py-1.5 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
-                        />
-                        {formEjercicios.length > 1 && (
-                          <button onClick={() => setFormEjercicios(formEjercicios.filter((_, j) => j !== i))} className="text-kb-text-muted hover:text-kb-loss">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4"><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex gap-2 pl-6">
-                        <select
-                          value={ej.grupo_muscular}
-                          onChange={(e) => {
-                            const ne = [...formEjercicios];
-                            ne[i] = { ...ne[i], grupo_muscular: e.target.value };
-                            setFormEjercicios(ne);
-                          }}
-                          className="flex-1 rounded-lg border border-kb-border bg-kb-surface px-2 py-1.5 text-xs text-kb-text focus:border-kb-gain focus:outline-none"
-                        >
-                          {GRUPOS_MUSCULARES.map((g) => <option key={g}>{g}</option>)}
-                        </select>
-                        <input
-                          type="number"
-                          min={1}
-                          value={ej.series}
-                          onChange={(e) => {
-                            const ne = [...formEjercicios];
-                            ne[i] = { ...ne[i], series: parseInt(e.target.value) || 1 };
-                            setFormEjercicios(ne);
-                          }}
-                          placeholder="Series"
-                          className="w-16 rounded-lg border border-kb-border bg-kb-surface px-2 py-1.5 text-xs text-kb-text focus:border-kb-gain focus:outline-none"
-                        />
-                        <input
-                          value={ej.reps_objetivo}
-                          onChange={(e) => {
-                            const ne = [...formEjercicios];
-                            ne[i] = { ...ne[i], reps_objetivo: e.target.value };
-                            setFormEjercicios(ne);
-                          }}
-                          placeholder="Reps"
-                          className="w-20 rounded-lg border border-kb-border bg-kb-surface px-2 py-1.5 text-xs text-kb-text focus:border-kb-gain focus:outline-none"
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+      {tab === "entreno" && (
+        <div className="space-y-4">
+          {[
+            {
+              title: "Progresión de cargas",
+              icon: "📊",
+              color: "border-blue-500/30 bg-blue-500/5",
+              tips: [
+                "Aumenta el peso cuando puedas hacer el rango de reps con buena técnica",
+                "Pequeños incrementos (2.5kg) son más sostenibles que saltos grandes",
+                "Si no puedes progresar en peso, intenta más series o menos descanso",
+                "Lleva registro escrito — la memoria falla, los números no",
+              ],
+            },
+            {
+              title: "Descanso entre series",
+              icon: "⏱️",
+              color: "border-purple-500/30 bg-purple-500/5",
+              tips: [
+                "Fuerza/potencia (1-5 reps): 3-5 minutos de descanso",
+                "Hipertrofia (6-12 reps): 1-3 minutos de descanso",
+                "Resistencia muscular (15+ reps): 30-90 segundos",
+                "No apresurar el descanso compromete el rendimiento en la siguiente serie",
+              ],
+            },
+            {
+              title: "Técnica antes que peso",
+              icon: "🎯",
+              color: "border-kb-gain/30 bg-kb-gain/5",
+              tips: [
+                "La técnica incorrecta reduce resultados y aumenta riesgo de lesión",
+                "Aprende los ejercicios compuestos con peso bajo primero",
+                "Grábate de lado para verificar tu postura en sentadilla/peso muerto",
+                "El ego en el gym solo te lesiona — baja el peso si la técnica falla",
+              ],
+            },
+            {
+              title: "Recuperación",
+              icon: "😴",
+              color: "border-orange-500/30 bg-orange-500/5",
+              tips: [
+                "El músculo crece fuera del gym — el descanso es parte del entrenamiento",
+                "Duerme 7-9 horas para optimizar hormonas anabólicas",
+                "No entrenes el mismo músculo dos días seguidos sin estar recuperado",
+                "Señales de sobreentrenamiento: fatiga crónica, pérdida de fuerza, insomnio",
+              ],
+            },
+          ].map(s => (
+            <div key={s.title} className={`rounded-2xl border p-5 ${s.color}`}>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="text-2xl">{s.icon}</span>
+                <h3 className="font-bold text-kb-text">{s.title}</h3>
               </div>
+              <ul className="space-y-2">
+                {s.tips.map((tip, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-kb-text">
+                    <span className="shrink-0 text-kb-gain">→</span>{tip}
+                  </li>
+                ))}
+              </ul>
             </div>
+          ))}
+        </div>
+      )}
 
-            <div className="sticky bottom-0 flex gap-2 border-t border-kb-border-soft bg-kb-surface px-5 py-4">
-              <button
-                onClick={guardarRutina}
-                disabled={enviando || !formNombre.trim()}
-                className="flex-1 rounded-xl bg-kb-gain py-2.5 text-sm font-semibold text-kb-bg disabled:opacity-50"
-              >
-                {enviando ? "Guardando…" : editando ? "Guardar cambios" : "Crear rutina"}
-              </button>
-              <button onClick={() => setModalAbierto(false)} className="rounded-xl border border-kb-border px-4 py-2.5 text-sm font-medium text-kb-text-secondary">
-                Cancelar
-              </button>
+      {tab === "nutricion" && (
+        <div className="space-y-4">
+          {[
+            {
+              title: "Proteínas — el más importante",
+              icon: "🥩",
+              color: "border-red-500/30 bg-red-500/5",
+              tips: [
+                "1.6–2.4g de proteína por kg de peso corporal al día",
+                "Distribuye en 4-5 comidas para maximizar síntesis proteica",
+                "Fuentes: pollo, carne, pescado, huevos, lácteos, legumbres",
+                "Proteína en whey post-entreno si te cuesta llegar al objetivo",
+                "No hay diferencia significativa en el timing exacto — lo importante es el total diario",
+              ],
+            },
+            {
+              title: "Carbohidratos — tu combustible",
+              icon: "🍚",
+              color: "border-yellow-500/30 bg-yellow-500/5",
+              tips: [
+                "Fuente principal de energía para el entrenamiento de alta intensidad",
+                "Come más carbos en días de entreno, menos en días de descanso",
+                "Prioriza fuentes complejas: arroz, avena, batata, pan integral",
+                "Pre-entreno: carbos de digestión fácil 1-2h antes",
+                "Post-entreno: carbos + proteína para recargar glucógeno",
+              ],
+            },
+            {
+              title: "Hidratación",
+              icon: "💧",
+              color: "border-blue-500/30 bg-blue-500/5",
+              tips: [
+                "Mínimo 2-3L de agua diarios, más si entrenas intenso o hace calor",
+                "El rendimiento cae con solo 2% de deshidratación",
+                "Orina color amarillo claro = hidratado; amarillo oscuro = toma agua",
+                "Electrolitos (sodio, potasio) importan en sesiones largas o con mucho sudor",
+              ],
+            },
+            {
+              title: "Timing nutricional",
+              icon: "⏰",
+              color: "border-purple-500/30 bg-purple-500/5",
+              tips: [
+                "Pre-entreno (1-2h): carbos + proteína moderada, bajo en grasa",
+                "Post-entreno (dentro de 2h): proteína + carbos para recuperación",
+                "La creatina monohidratada (5g/día) es el suplemento con más evidencia",
+                "Cafeína (3-6mg/kg) mejora rendimiento — úsala 30-45min antes",
+                "No te compliques: llegar al total diario de proteína es lo que más importa",
+              ],
+            },
+          ].map(s => (
+            <div key={s.title} className={`rounded-2xl border p-5 ${s.color}`}>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="text-2xl">{s.icon}</span>
+                <h3 className="font-bold text-kb-text">{s.title}</h3>
+              </div>
+              <ul className="space-y-2">
+                {s.tips.map((tip, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-kb-text">
+                    <span className="shrink-0 text-kb-gain">→</span>{tip}
+                  </li>
+                ))}
+              </ul>
             </div>
-          </div>
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-// ── GimHistorialView: historial de sesiones ────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// GimPerfilView — Editar perfil del gym
+// ─────────────────────────────────────────────────────────────────────────────
 
-function GimHistorialView({ userId }: { userId: string }) {
-  const [sesiones, setSesiones] = useState<(GymSesion & { ejercicios: GymSesionEjercicio[] })[]>([]);
+function GimPerfilView({ userId }: { userId: string }) {
+  const DIAS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+  const [perfil, setPerfil] = useState<GymPerfil | null>(null);
   const [cargando, setCargando] = useState(true);
-  const [expandida, setExpandida] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
+  const [guardado, setGuardado] = useState(false);
+
+  // editable
+  const [tipoCuerpo, setTipoCuerpo] = useState<"ectomorfo"|"mesomorfo"|"endomorfo"|null>(null);
+  const [fase, setFase] = useState<"volumen"|"definicion"|"recomposicion"|"mantenimiento">("mantenimiento");
+  const [objetivo, setObjetivo] = useState<"ganar_musculo"|"perder_grasa"|"rendimiento"|"mantenimiento">("mantenimiento");
+  const [experiencia, setExperiencia] = useState<"principiante"|"intermedio"|"avanzado">("principiante");
+  const [horario, setHorario] = useState<"manana"|"tarde"|"noche"|null>(null);
+  const [diasEntreno, setDiasEntreno] = useState<number[]>([]);
+  const [pesoActual, setPesoActual] = useState("");
 
   useEffect(() => {
-    async function cargar() {
-      setCargando(true);
-      const { data: sesData } = await supabase
-        .from("gym_sessions")
-        .select("*")
-        .eq("user_id", userId)
-        .order("fecha", { ascending: false })
-        .limit(60);
-
-      const sesionesCargadas = sesData as GymSesion[] ?? [];
-
-      if (sesionesCargadas.length > 0) {
-        const ids = sesionesCargadas.map((s) => s.id);
-        const { data: exData } = await supabase
-          .from("gym_session_exercises")
-          .select("*")
-          .in("sesion_id", ids)
-          .order("orden");
-
-        const ejerciciosPorSesion = new Map<string, GymSesionEjercicio[]>();
-        ((exData as GymSesionEjercicio[]) ?? []).forEach((ex) => {
-          if (!ejerciciosPorSesion.has(ex.sesion_id)) ejerciciosPorSesion.set(ex.sesion_id, []);
-          ejerciciosPorSesion.get(ex.sesion_id)!.push(ex);
-        });
-
-        setSesiones(
-          sesionesCargadas.map((s) => ({
-            ...s,
-            ejercicios: ejerciciosPorSesion.get(s.id) ?? [],
-          }))
-        );
-      } else {
-        setSesiones([]);
+    if (!userId) return;
+    (async () => {
+      const { data } = await supabase.from("gym_perfil").select("*").eq("user_id", userId).maybeSingle();
+      if (data) {
+        const p = data as GymPerfil;
+        setPerfil(p);
+        setTipoCuerpo(p.tipo_cuerpo);
+        setFase(p.fase);
+        setObjetivo(p.objetivo);
+        setExperiencia(p.experiencia);
+        setHorario(p.horario_gym);
+        setDiasEntreno(p.dias_entreno ?? []);
       }
       setCargando(false);
-    }
-    cargar();
+    })();
   }, [userId]);
 
-  if (cargando) {
-    return (
-      <div className="space-y-3">
-        {[...Array(3)].map((_, i) => <SkeletonBloque key={i} className="h-20 w-full" />)}
-      </div>
-    );
+  function toggleDia(d: number) {
+    setDiasEntreno(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort());
   }
 
-  if (sesiones.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-kb-border py-16 text-center">
-        <p className="text-sm text-kb-text-secondary">Aún no tienes sesiones registradas</p>
-        <p className="text-xs text-kb-text-muted">Empieza registrando tu primera sesión en "Hoy"</p>
-      </div>
-    );
+  async function guardar() {
+    if (guardando) return;
+    setGuardando(true);
+    try {
+      const payload = {
+        user_id: userId,
+        tipo_cuerpo: tipoCuerpo,
+        fase,
+        objetivo,
+        experiencia,
+        horario_gym: horario,
+        dias_entreno: diasEntreno,
+        updated_at: new Date().toISOString(),
+      };
+      if (perfil) {
+        await supabase.from("gym_perfil").update(payload).eq("id", perfil.id);
+      } else {
+        await supabase.from("gym_perfil").insert({ ...payload, fecha_inicio: gymFechaKey() });
+      }
+
+      // Si hay peso, guardar medida
+      if (pesoActual) {
+        await supabase.from("body_measurements").upsert({
+          user_id: userId, fecha: gymFechaKey(),
+          peso_kg: parseFloat(pesoActual),
+        }, { onConflict: "user_id,fecha" });
+      }
+
+      setGuardado(true);
+      setTimeout(() => setGuardado(false), 3000);
+    } catch(e) { console.error(e); } finally { setGuardando(false); }
   }
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-kb-text">Historial</h1>
-        <p className="text-sm text-kb-text-secondary">{sesiones.length} sesiones registradas</p>
-      </div>
-
-      {/* Resumen rápido */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: "Sesiones totales", valor: sesiones.length },
-          {
-            label: "Días este mes",
-            valor: sesiones.filter((s) => s.fecha.slice(0, 7) === gymFechaKey().slice(0, 7)).length,
-          },
-          {
-            label: "Duración prom.",
-            valor: (() => {
-              const conDur = sesiones.filter((s) => s.duracion_min);
-              return conDur.length
-                ? Math.round(conDur.reduce((a, s) => a + (s.duracion_min ?? 0), 0) / conDur.length) + " min"
-                : "—";
-            })(),
-          },
-        ].map((m) => (
-          <div key={m.label} className="rounded-xl border border-kb-border-soft bg-kb-surface/30 p-3 text-center">
-            <p className="text-lg font-bold tabular-nums text-kb-text">{m.valor}</p>
-            <p className="text-[11px] text-kb-text-muted">{m.label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Lista de sesiones */}
-      <div className="space-y-3">
-        {sesiones.map((sesion) => {
-          const abierta = expandida === sesion.id;
-          const totalSeries = sesion.ejercicios.reduce((a, e) => a + e.series.length, 0);
-          return (
-            <div key={sesion.id} className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 overflow-hidden">
-              <button
-                onClick={() => setExpandida(abierta ? null : sesion.id)}
-                className="flex w-full items-center justify-between px-5 py-4 text-left"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-kb-gain/10">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-kb-gain">
-                      <path d="M3 12h2" /><path d="M19 12h2" />
-                      <path d="M5 9h2v6H5z" /><path d="M17 9h2v6h-2z" />
-                      <path d="M7 11h10v2H7z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-kb-text">{gymFechaLabel(sesion.fecha)}</p>
-                    <p className="text-xs text-kb-text-secondary">
-                      {sesion.ejercicios.length} ejercicios · {totalSeries} series
-                      {sesion.duracion_min ? ` · ${sesion.duracion_min} min` : ""}
-                    </p>
-                  </div>
-                </div>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 text-kb-text-muted transition-transform ${abierta ? "rotate-180" : ""}`}>
-                  <polyline points="6,9 12,15 18,9" />
-                </svg>
-              </button>
-
-              {abierta && (
-                <div className="border-t border-kb-border-soft px-5 pb-5 pt-4 space-y-3">
-                  {sesion.ejercicios.map((ej) => (
-                    <div key={ej.id} className="rounded-xl bg-kb-bg/60 p-3">
-                      <div className="mb-2 flex items-center gap-2">
-                        <p className="font-medium text-kb-text">{ej.nombre}</p>
-                        <span className="rounded-full bg-kb-surface px-2 py-0.5 text-[10px] text-kb-text-muted">{ej.grupo_muscular}</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {ej.series.map((s, i) => (
-                          <span key={i} className="rounded-lg bg-kb-surface px-2.5 py-1 text-xs font-mono text-kb-text-secondary">
-                            {s.reps} reps{s.peso_kg ? ` · ${s.peso_kg}kg` : ""}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  {sesion.notas && (
-                    <p className="text-sm text-kb-text-secondary italic">{sesion.notas}</p>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+  if (cargando) return (
+    <div className="flex h-64 items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-kb-gain border-t-transparent" />
     </div>
   );
-}
-
-// ── GimProgresoView: medidas corporales + gráfica ─────────────────────
-
-function GimProgresoView({ userId }: { userId: string }) {
-  const [medidas, setMedidas] = useState<BodyMeasurement[]>([]);
-  const [cargando, setCargando] = useState(true);
-  const [modalAbierto, setModalAbierto] = useState(false);
-  const [enviando, setEnviando] = useState(false);
-  const [metricaSelec, setMetricaSelec] = useState<keyof BodyMeasurement>("peso_kg");
-
-  const metricasDisponibles: { id: keyof BodyMeasurement; label: string; unidad: string }[] = [
-    { id: "peso_kg", label: "Peso", unidad: "kg" },
-    { id: "grasa_pct", label: "Grasa corporal", unidad: "%" },
-    { id: "musculo_kg", label: "Músculo", unidad: "kg" },
-    { id: "pecho_cm", label: "Pecho", unidad: "cm" },
-    { id: "cintura_cm", label: "Cintura", unidad: "cm" },
-    { id: "cadera_cm", label: "Cadera", unidad: "cm" },
-    { id: "brazo_cm", label: "Brazo", unidad: "cm" },
-    { id: "pierna_cm", label: "Pierna", unidad: "cm" },
-  ];
-
-  // Form
-  const [fPeso, setFPeso] = useState("");
-  const [fGrasa, setFGrasa] = useState("");
-  const [fMusculo, setFMusculo] = useState("");
-  const [fPecho, setFPecho] = useState("");
-  const [fCintura, setFCintura] = useState("");
-  const [fCadera, setFCadera] = useState("");
-  const [fBrazo, setFBrazo] = useState("");
-  const [fPierna, setFPierna] = useState("");
-  const [fNotas, setFNotas] = useState("");
-  const [fFecha, setFFecha] = useState(gymFechaKey());
-
-  useEffect(() => { cargarMedidas(); }, [userId]);
-
-  async function cargarMedidas() {
-    setCargando(true);
-    const { data } = await supabase
-      .from("body_measurements")
-      .select("*")
-      .eq("user_id", userId)
-      .order("fecha", { ascending: true })
-      .limit(120);
-    setMedidas((data as BodyMeasurement[]) ?? []);
-    setCargando(false);
-  }
-
-  async function guardarMedida() {
-    if (enviando) return;
-    setEnviando(true);
-    const { error } = await supabase.from("body_measurements").insert({
-      user_id: userId,
-      fecha: fFecha,
-      peso_kg: fPeso ? parseFloat(fPeso) : null,
-      grasa_pct: fGrasa ? parseFloat(fGrasa) : null,
-      musculo_kg: fMusculo ? parseFloat(fMusculo) : null,
-      pecho_cm: fPecho ? parseFloat(fPecho) : null,
-      cintura_cm: fCintura ? parseFloat(fCintura) : null,
-      cadera_cm: fCadera ? parseFloat(fCadera) : null,
-      brazo_cm: fBrazo ? parseFloat(fBrazo) : null,
-      pierna_cm: fPierna ? parseFloat(fPierna) : null,
-      notas: fNotas.trim(),
-    });
-    if (!error) {
-      setModalAbierto(false);
-      setFPeso(""); setFGrasa(""); setFMusculo(""); setFPecho("");
-      setFCintura(""); setFCadera(""); setFBrazo(""); setFPierna(""); setFNotas("");
-      setFFecha(gymFechaKey());
-      await cargarMedidas();
-    }
-    setEnviando(false);
-  }
-
-  // Datos para la gráfica SVG
-  const datosGrafica = medidas
-    .map((m) => ({ fecha: m.fecha, valor: m[metricaSelec] as number | null }))
-    .filter((d) => d.valor !== null) as { fecha: string; valor: number }[];
-
-  const ultimaMedida = medidas[medidas.length - 1] ?? null;
-  const metricaInfo = metricasDisponibles.find((m) => m.id === metricaSelec)!;
-
-  // SVG chart
-  const W = 600, H = 200, PX = 40, PY = 20;
-  const vals = datosGrafica.map((d) => d.valor);
-  const minV = vals.length ? Math.min(...vals) : 0;
-  const maxV = vals.length ? Math.max(...vals) : 1;
-  const rangoV = maxV - minV || 1;
-  const scaleX = (i: number) => PX + (i / Math.max(datosGrafica.length - 1, 1)) * (W - PX * 2);
-  const scaleY = (v: number) => PY + (1 - (v - minV) / rangoV) * (H - PY * 2);
-
-  const polyPoints = datosGrafica.map((d, i) => `${scaleX(i)},${scaleY(d.valor)}`).join(" ");
-  const areaPoints = datosGrafica.length
-    ? `${scaleX(0)},${H - PY} ${polyPoints} ${scaleX(datosGrafica.length - 1)},${H - PY}`
-    : "";
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-kb-text">Progreso</h1>
-          <p className="text-sm text-kb-text-secondary">Seguimiento de medidas corporales</p>
+    <div className="mx-auto max-w-xl px-4 py-5 space-y-5">
+      <h2 className="text-xl font-bold text-kb-text">Mi Perfil Gym</h2>
+
+      {/* Tipo de cuerpo */}
+      <div>
+        <label className="mb-2 block text-sm font-bold text-kb-text">Tipo de cuerpo</label>
+        <div className="space-y-2">
+          {Object.entries(GYM_TIPOS_CUERPO).map(([k, t]) => (
+            <button key={k} onClick={() => setTipoCuerpo(k as typeof tipoCuerpo)}
+              className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all ${tipoCuerpo === k ? `${t.color} border-current` : "border-kb-border-soft bg-kb-surface/30"}`}>
+              <span className="text-2xl">{t.emoji}</span>
+              <div>
+                <p className="font-semibold text-kb-text">{t.label}</p>
+                <p className="text-xs text-kb-text-secondary">{t.desc}</p>
+              </div>
+            </button>
+          ))}
         </div>
-        <button
-          onClick={() => setModalAbierto(true)}
-          className="flex items-center gap-2 rounded-xl bg-kb-gain px-4 py-2 text-sm font-semibold text-kb-bg hover:opacity-90 transition-opacity"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          Agregar medida
-        </button>
       </div>
 
-      {/* Última medida */}
-      {ultimaMedida && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {metricasDisponibles.slice(0, 4).map((m) => {
-            const v = ultimaMedida[m.id] as number | null;
-            return (
-              <div key={m.id} className="rounded-xl border border-kb-border-soft bg-kb-surface/30 p-3 text-center">
-                <p className="text-xs text-kb-text-muted">{m.label}</p>
-                <p className="mt-0.5 text-lg font-bold tabular-nums text-kb-text">
-                  {v != null ? `${v} ${m.unidad}` : "—"}
-                </p>
-              </div>
-            );
-          })}
+      {/* Fase actual */}
+      <div>
+        <label className="mb-2 block text-sm font-bold text-kb-text">Fase actual</label>
+        <div className="grid grid-cols-2 gap-2">
+          {Object.entries(GYM_FASES).map(([k, f]) => (
+            <button key={k} onClick={() => setFase(k as typeof fase)}
+              className={`rounded-xl border py-3 text-sm font-semibold transition-all ${fase === k ? f.color : "border-kb-border-soft text-kb-text-secondary"}`}>
+              {f.label}
+            </button>
+          ))}
         </div>
-      )}
-
-      {/* Selector de métrica */}
-      <div className="flex gap-1 flex-wrap">
-        {metricasDisponibles.map((m) => (
-          <button
-            key={m.id}
-            onClick={() => setMetricaSelec(m.id)}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              metricaSelec === m.id
-                ? "bg-kb-gain text-kb-bg"
-                : "border border-kb-border-soft text-kb-text-secondary hover:border-kb-gain hover:text-kb-gain"
-            }`}
-          >
-            {m.label}
-          </button>
-        ))}
       </div>
 
-      {/* Gráfica SVG */}
-      {cargando ? (
-        <SkeletonBloque className="h-52 w-full" />
-      ) : datosGrafica.length < 2 ? (
-        <div className="flex items-center justify-center rounded-2xl border border-dashed border-kb-border py-16">
-          <p className="text-sm text-kb-text-secondary">
-            Necesitas al menos 2 registros de {metricaInfo.label.toLowerCase()} para ver la gráfica
-          </p>
+      {/* Objetivo */}
+      <div>
+        <label className="mb-2 block text-sm font-bold text-kb-text">Objetivo principal</label>
+        <div className="grid grid-cols-2 gap-2">
+          {([["ganar_musculo","💪 Ganar músculo"],["perder_grasa","🔥 Perder grasa"],["rendimiento","⚡ Rendimiento"],["mantenimiento","🔒 Mantenimiento"]] as const).map(([v,l]) => (
+            <button key={v} onClick={() => setObjetivo(v)}
+              className={`rounded-xl border py-2.5 text-xs font-semibold transition-all ${objetivo === v ? "border-kb-gain bg-kb-gain/10 text-kb-gain" : "border-kb-border-soft text-kb-text-secondary"}`}>
+              {l}
+            </button>
+          ))}
         </div>
-      ) : (
-        <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 p-4 overflow-x-auto">
-          <p className="mb-3 text-sm font-semibold text-kb-text">{metricaInfo.label} ({metricaInfo.unidad})</p>
-          <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 280 }}>
-            {/* Área */}
-            {areaPoints && (
-              <polygon
-                points={areaPoints}
-                className="fill-kb-gain/10"
-                stroke="none"
-              />
-            )}
-            {/* Línea */}
-            {polyPoints && (
-              <polyline
-                points={polyPoints}
-                fill="none"
-                stroke="var(--color-kb-gain, #22c55e)"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            )}
-            {/* Puntos */}
-            {datosGrafica.map((d, i) => (
-              <circle
-                key={i}
-                cx={scaleX(i)}
-                cy={scaleY(d.valor)}
-                r={3}
-                fill="var(--color-kb-gain, #22c55e)"
-              />
-            ))}
-            {/* Labels eje Y */}
-            {[minV, (minV + maxV) / 2, maxV].map((v, i) => (
-              <text
-                key={i}
-                x={PX - 5}
-                y={scaleY(v) + 4}
-                fontSize={9}
-                fill="var(--color-kb-text-muted, #6b7280)"
-                textAnchor="end"
-              >
-                {v.toFixed(1)}
-              </text>
-            ))}
-            {/* Label primera y última fecha */}
-            {datosGrafica.length > 0 && (
-              <>
-                <text x={scaleX(0)} y={H - 4} fontSize={8} fill="var(--color-kb-text-muted, #6b7280)" textAnchor="middle">
-                  {gymFechaLabel(datosGrafica[0].fecha)}
-                </text>
-                {datosGrafica.length > 1 && (
-                  <text x={scaleX(datosGrafica.length - 1)} y={H - 4} fontSize={8} fill="var(--color-kb-text-muted, #6b7280)" textAnchor="middle">
-                    {gymFechaLabel(datosGrafica[datosGrafica.length - 1].fecha)}
-                  </text>
-                )}
-              </>
-            )}
-          </svg>
+      </div>
+
+      {/* Experiencia */}
+      <div>
+        <label className="mb-2 block text-sm font-bold text-kb-text">Nivel de experiencia</label>
+        <div className="flex gap-2">
+          {([["principiante","Principiante"],["intermedio","Intermedio"],["avanzado","Avanzado"]] as const).map(([v,l]) => (
+            <button key={v} onClick={() => setExperiencia(v)}
+              className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-all ${experiencia === v ? "border-kb-gain bg-kb-gain/10 text-kb-gain" : "border-kb-border-soft text-kb-text-secondary"}`}>
+              {l}
+            </button>
+          ))}
         </div>
-      )}
+      </div>
 
-      {/* Tabla de registros */}
-      {medidas.length > 0 && (
-        <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-kb-border-soft bg-kb-bg/60 text-xs text-kb-text-muted">
-                  <th className="px-4 py-3 text-left font-medium">Fecha</th>
-                  <th className="px-4 py-3 text-right font-medium">Peso</th>
-                  <th className="px-4 py-3 text-right font-medium">Grasa</th>
-                  <th className="px-4 py-3 text-right font-medium">Cintura</th>
-                  <th className="px-4 py-3 text-right font-medium">Brazo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...medidas].reverse().slice(0, 20).map((m) => (
-                  <tr key={m.id} className="border-b border-kb-border-soft/50 hover:bg-kb-surface/40">
-                    <td className="px-4 py-3 text-kb-text-secondary">{gymFechaLabel(m.fecha)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-kb-text">{m.peso_kg != null ? `${m.peso_kg} kg` : "—"}</td>
-                    <td className="px-4 py-3 text-right font-mono text-kb-text">{m.grasa_pct != null ? `${m.grasa_pct}%` : "—"}</td>
-                    <td className="px-4 py-3 text-right font-mono text-kb-text">{m.cintura_cm != null ? `${m.cintura_cm} cm` : "—"}</td>
-                    <td className="px-4 py-3 text-right font-mono text-kb-text">{m.brazo_cm != null ? `${m.brazo_cm} cm` : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {/* Horario preferido */}
+      <div>
+        <label className="mb-2 block text-sm font-bold text-kb-text">Horario preferido</label>
+        <div className="flex gap-2">
+          {([["manana","🌅 Mañana"],["tarde","☀️ Tarde"],["noche","🌙 Noche"]] as const).map(([v,l]) => (
+            <button key={v} onClick={() => setHorario(horario === v ? null : v)}
+              className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-all ${horario === v ? "border-kb-gain bg-kb-gain/10 text-kb-gain" : "border-kb-border-soft text-kb-text-secondary"}`}>
+              {l}
+            </button>
+          ))}
         </div>
-      )}
+      </div>
 
-      {/* Modal agregar medida */}
-      {modalAbierto && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center">
-          <div className="w-full max-h-[90vh] overflow-y-auto rounded-t-2xl bg-kb-surface sm:max-w-md sm:rounded-2xl">
-            <div className="sticky top-0 flex items-center justify-between border-b border-kb-border-soft bg-kb-surface px-5 py-4">
-              <h2 className="font-display text-base font-bold text-kb-text">Registrar medida</h2>
-              <button onClick={() => setModalAbierto(false)} className="text-kb-text-muted hover:text-kb-text">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
-            </div>
-
-            <div className="space-y-4 p-5">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Fecha</label>
-                <input
-                  type="date"
-                  value={fFecha}
-                  onChange={(e) => setFFecha(e.target.value)}
-                  className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: "Peso (kg)", val: fPeso, set: setFPeso },
-                  { label: "Grasa (%)", val: fGrasa, set: setFGrasa },
-                  { label: "Músculo (kg)", val: fMusculo, set: setFMusculo },
-                  { label: "Pecho (cm)", val: fPecho, set: setFPecho },
-                  { label: "Cintura (cm)", val: fCintura, set: setFCintura },
-                  { label: "Cadera (cm)", val: fCadera, set: setFCadera },
-                  { label: "Brazo (cm)", val: fBrazo, set: setFBrazo },
-                  { label: "Pierna (cm)", val: fPierna, set: setFPierna },
-                ].map((f) => (
-                  <div key={f.label}>
-                    <label className="mb-1 block text-xs font-medium text-kb-text-secondary">{f.label}</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={f.val}
-                      onChange={(e) => f.set(e.target.value)}
-                      placeholder="—"
-                      className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text focus:border-kb-gain focus:outline-none"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-medium text-kb-text-secondary">Notas</label>
-                <textarea
-                  value={fNotas}
-                  onChange={(e) => setFNotas(e.target.value)}
-                  rows={2}
-                  placeholder="Observaciones…"
-                  className="w-full rounded-lg border border-kb-border bg-kb-bg px-3 py-2 text-sm text-kb-text resize-none focus:border-kb-gain focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="sticky bottom-0 flex gap-2 border-t border-kb-border-soft bg-kb-surface px-5 py-4">
-              <button
-                onClick={guardarMedida}
-                disabled={enviando}
-                className="flex-1 rounded-xl bg-kb-gain py-2.5 text-sm font-semibold text-kb-bg disabled:opacity-50"
-              >
-                {enviando ? "Guardando…" : "Guardar medida"}
-              </button>
-              <button onClick={() => setModalAbierto(false)} className="rounded-xl border border-kb-border px-4 py-2.5 text-sm font-medium text-kb-text-secondary">
-                Cancelar
-              </button>
-            </div>
-          </div>
+      {/* Días de entrenamiento */}
+      <div>
+        <label className="mb-2 block text-sm font-bold text-kb-text">Días que entrenas</label>
+        <div className="flex gap-1.5">
+          {DIAS.map((d, i) => (
+            <button key={i} onClick={() => toggleDia(i)}
+              className={`flex-1 rounded-xl border py-2.5 text-xs font-bold transition-all ${diasEntreno.includes(i) ? "border-kb-gain bg-kb-gain text-kb-bg" : "border-kb-border-soft text-kb-text-secondary"}`}>
+              {d}
+            </button>
+          ))}
         </div>
-      )}
+        <p className="mt-1 text-xs text-kb-text-muted">{diasEntreno.length} día{diasEntreno.length !== 1 ? "s" : ""} por semana</p>
+      </div>
+
+      {/* Peso actual (opcional) */}
+      <div>
+        <label className="mb-1 block text-sm font-bold text-kb-text">Peso actual (kg) — opcional</label>
+        <input type="number" step="0.1" value={pesoActual} onChange={e => setPesoActual(e.target.value)}
+          placeholder="ej. 75.5"
+          className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2.5 text-sm text-kb-text placeholder:text-kb-text-muted" />
+        <p className="mt-0.5 text-xs text-kb-text-muted">Se guardará también en tu historial de medidas.</p>
+      </div>
+
+      {/* Guardar */}
+      <button onClick={guardar} disabled={guardando}
+        className={`w-full rounded-2xl py-4 text-sm font-bold transition-all disabled:opacity-60 ${guardado ? "bg-blue-500 text-white" : "bg-kb-gain text-kb-bg"}`}>
+        {guardando ? "Guardando..." : guardado ? "✅ ¡Guardado!" : "Guardar cambios"}
+      </button>
     </div>
   );
 }
