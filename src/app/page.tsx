@@ -15144,66 +15144,280 @@ function TablaTrades({
 
 
 
-// =====================================================================
-// MÓDULO GYM V2 — componentes completos
-// =====================================================================
+// ─────────────────────────────────────────────────────────────────────────────
+// GYM MODULE V3 — Part 1: constants, catalog, GimEjercicioPicker
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ── Helpers ───────────────────────────────────────────────────────────
-
-function gymFechaKey(d: Date = new Date()): string {
-  return d.toISOString().slice(0, 10);
-}
-function gymFechaLabel(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const meses = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
-  return `${d} ${meses[m - 1]} ${y}`;
-}
-function gymHoraActual(): string {
-  const n = new Date();
-  return `${String(n.getHours()).padStart(2,"0")}:${String(n.getMinutes()).padStart(2,"0")}`;
-}
-function gymDuracion(inicio: string, fin: string): number {
-  const [h1,m1] = inicio.split(":").map(Number);
-  const [h2,m2] = fin.split(":").map(Number);
-  return Math.max(0, (h2 * 60 + m2) - (h1 * 60 + m1));
-}
-function gymVolumenTotal(ejercicios: GymSesionEjercicio[]): number {
-  return ejercicios.reduce((sum, e) =>
-    sum + e.series.reduce((s, r) => s + (r.reps * (r.peso_kg ?? 0)), 0), 0);
-}
-
+const GYM_GRUPOS = ["Pecho","Espalda","Hombros","Bíceps","Tríceps","Piernas","Glúteos","Core","Cardio","Full Body","Otro"];
+const GYM_EQUIPOS = ["Barra","Mancuernas","Máquina","Cable","Polea","Smith Machine","Kettlebell","TRX","Peso corporal","Otro"];
 const GYM_FASES = {
   volumen:       { label: "Volumen",       color: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
   definicion:    { label: "Definición",    color: "bg-orange-500/15 text-orange-400 border-orange-500/30" },
   recomposicion: { label: "Recomposición", color: "bg-purple-500/15 text-purple-400 border-purple-500/30" },
   mantenimiento: { label: "Mantenimiento", color: "bg-kb-gain/15 text-kb-gain border-kb-gain/30" },
 } as const;
-
 const GYM_TIPOS_CUERPO = {
-  ectomorfo: {
-    label: "Ectomorfo",
-    emoji: "🔥",
-    desc: "Naturalmente delgado, metabolismo rápido, cuesta ganar masa muscular.",
-    estrategia: "Alto volumen calórico, enfócate en ejercicios compuestos (sentadilla, press, remo). Minimiza el cardio. Come más de lo que crees necesitar.",
-    color: "border-blue-500/40 bg-blue-500/5",
-  },
-  mesomorfo: {
-    label: "Mesomorfo",
-    emoji: "⚡",
-    desc: "Build atlético natural, responde bien al entrenamiento. Gana músculo y pierde grasa con relativa facilidad.",
-    estrategia: "Equilibrio entre fuerza e hipertrofia. Puedes alternar volumen y definición con buenos resultados. Entrena consistentemente 4-5 días.",
-    color: "border-kb-gain/40 bg-kb-gain/5",
-  },
-  endomorfo: {
-    label: "Endomorfo",
-    emoji: "💪",
-    desc: "Tendencia a acumular grasa, metabolismo más lento, frame más ancho. Mayor fuerza natural.",
-    estrategia: "Déficit calórico moderado, combina fuerza con cardio moderado. Alta proteína. Control nutricional es clave para tu tipo de cuerpo.",
-    color: "border-orange-500/40 bg-orange-500/5",
-  },
+  ectomorfo: { label: "Ectomorfo", emoji: "🔥", desc: "Dificultad para ganar masa muscular, metabolismo rápido", estrategia: "Calorías altas, fuerza pesada, descanso largo", color: "border-blue-500/40 bg-blue-500/5" },
+  mesomorfo: { label: "Mesomorfo", emoji: "⚡", desc: "Gana músculo y pierde grasa con facilidad", estrategia: "Entrenamiento variado, balance nutricional", color: "border-kb-gain/40 bg-kb-gain/5" },
+  endomorfo: { label: "Endomorfo", emoji: "💪", desc: "Tendencia a acumular grasa, metabolismo lento", estrategia: "Déficit calórico, cardio frecuente, pesos moderados", color: "border-orange-500/40 bg-orange-500/5" },
 } as const;
 
-// ── GimView: raíz del módulo ──────────────────────────────────────────
+const GYM_GRUPO_COLORES: Record<string, { text: string; bg: string; border: string; emoji: string }> = {
+  "Pecho":     { text: "text-red-400",    bg: "bg-red-500/10",    border: "border-red-500/30",    emoji: "🫁" },
+  "Espalda":   { text: "text-blue-400",   bg: "bg-blue-500/10",   border: "border-blue-500/30",   emoji: "🔷" },
+  "Hombros":   { text: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/30", emoji: "⚡" },
+  "Bíceps":    { text: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/30", emoji: "💪" },
+  "Tríceps":   { text: "text-yellow-400", bg: "bg-yellow-500/10", border: "border-yellow-500/30", emoji: "🦾" },
+  "Piernas":   { text: "text-cyan-400",   bg: "bg-cyan-500/10",   border: "border-cyan-500/30",   emoji: "🦵" },
+  "Glúteos":   { text: "text-pink-400",   bg: "bg-pink-500/10",   border: "border-pink-500/30",   emoji: "💎" },
+  "Core":      { text: "text-green-400",  bg: "bg-green-500/10",  border: "border-green-500/30",  emoji: "🎯" },
+  "Cardio":    { text: "text-kb-gain",    bg: "bg-kb-gain/10",    border: "border-kb-gain/30",    emoji: "🏃" },
+  "Full Body": { text: "text-violet-400", bg: "bg-violet-500/10", border: "border-violet-500/30", emoji: "🏋️" },
+  "Otro":      { text: "text-gray-400",   bg: "bg-gray-500/10",   border: "border-gray-500/30",   emoji: "🔹" },
+};
+
+interface CatalogoEjercicio {
+  nombre: string;
+  grupo: string;
+  equipo: string;
+  dificultad: "básico" | "intermedio" | "avanzado";
+  desc: string;
+  como_usar: string;
+}
+
+const GYM_CATALOGO: CatalogoEjercicio[] = [
+  // ── PECHO ─────────────────────────────────────────────────────────────────
+  { nombre:"Press Banca Plano",        grupo:"Pecho",   equipo:"Barra",         dificultad:"intermedio", desc:"Rey del pecho. Activa pectoral mayor, deltoides anterior y tríceps.", como_usar:"Barra al nivel del pecho, codos ~75°, baja controlado y empuja explosivo." },
+  { nombre:"Press Banca Inclinado",    grupo:"Pecho",   equipo:"Barra",         dificultad:"intermedio", desc:"Enfoca el pecho superior y clavicular.", como_usar:"Banco a 30-45°. Baja la barra hacia la clavícula, empuja hacia arriba." },
+  { nombre:"Press Banca Declinado",    grupo:"Pecho",   equipo:"Barra",         dificultad:"intermedio", desc:"Activa la parte inferior del pecho.", como_usar:"Banco declinado. Barra baja hacia el esternón inferior, sube y aprieta." },
+  { nombre:"Press Mancuernas Plano",   grupo:"Pecho",   equipo:"Mancuernas",    dificultad:"básico",     desc:"Mayor rango de movimiento que la barra, activa estabilizadores.", como_usar:"Mancuernas en línea del pecho, codos 75°, baja hasta sentir estiramiento." },
+  { nombre:"Aperturas Mancuernas",     grupo:"Pecho",   equipo:"Mancuernas",    dificultad:"básico",     desc:"Aislamiento total del pecho, gran estiramiento.", como_usar:"Brazos semi-extendidos, baja en arco hasta sentir estiramiento, sube apretando." },
+  { nombre:"Crossover Cable",          grupo:"Pecho",   equipo:"Cable",         dificultad:"básico",     desc:"Aislamiento pectoral con tensión constante.", como_usar:"Poleas altas, cruza las manos frente al pecho, aprieta 1 segundo." },
+  { nombre:"Fondos en Paralelas",      grupo:"Pecho",   equipo:"Peso corporal", dificultad:"intermedio", desc:"Compuesto del pecho inferior. También tríceps.", como_usar:"Inclínate al frente para activar más pecho. Baja hasta 90° de codo." },
+  { nombre:"Pullover Mancuerna",       grupo:"Pecho",   equipo:"Mancuernas",    dificultad:"básico",     desc:"Expande la caja torácica, activa serrato y pecho.", como_usar:"Espalda sobre banco, mancuerna sobre pecho, baja detrás de la cabeza y regresa." },
+  // ── ESPALDA ───────────────────────────────────────────────────────────────
+  { nombre:"Peso Muerto",              grupo:"Espalda", equipo:"Barra",         dificultad:"avanzado",   desc:"El ejercicio más completo. Activa toda la cadena posterior.", como_usar:"Espalda recta, barra pegada al cuerpo, empuja el suelo con los pies al levantar." },
+  { nombre:"Dominadas",                grupo:"Espalda", equipo:"Peso corporal", dificultad:"intermedio", desc:"Construye espalda amplia y bíceps. Agarre pronado.", como_usar:"Agarre ancho, sube hasta que la barbilla supere la barra, baja controlado." },
+  { nombre:"Jalón al Pecho",           grupo:"Espalda", equipo:"Cable",         dificultad:"básico",     desc:"Alternativa a dominadas, mayor control de peso.", como_usar:"Agarre ancho o medio, barra baja hasta la clavícula, codos apuntan al suelo." },
+  { nombre:"Remo con Barra",           grupo:"Espalda", equipo:"Barra",         dificultad:"intermedio", desc:"Espalda gruesa: trapecio medio, romboides, dorsal.", como_usar:"Torso ~45°, barra sube al abdomen bajo, codos cerca del cuerpo." },
+  { nombre:"Remo con Mancuerna",       grupo:"Espalda", equipo:"Mancuernas",    dificultad:"básico",     desc:"Aislamiento unilateral de espalda alta y media.", como_usar:"Rodilla y mano en banco, tira la mancuerna hasta la cadera, codo alto." },
+  { nombre:"Remo en Máquina",          grupo:"Espalda", equipo:"Máquina",       dificultad:"básico",     desc:"Seguro para la espalda baja, buen rango de movimiento.", como_usar:"Pecho apoyado, tira las asas hacia ti, aprieta escapulas al final." },
+  { nombre:"Remo con Cable Sentado",   grupo:"Espalda", equipo:"Cable",         dificultad:"básico",     desc:"Rango completo de movimiento con tensión constante.", como_usar:"Espalda erguida, tira el maneral al abdomen, codos atrás y junto al cuerpo." },
+  { nombre:"Face Pull",                grupo:"Espalda", equipo:"Cable",         dificultad:"básico",     desc:"Salud del manguito rotador, trapecios, deltoides posterior.", como_usar:"Polea alta, tira hacia la cara con codos altos y abiertos." },
+  { nombre:"Hiperextensiones",         grupo:"Espalda", equipo:"Máquina",       dificultad:"básico",     desc:"Fortalece erector espinal y glúteos.", como_usar:"Caderas en el apoyo, baja el torso y sube hasta posición neutral." },
+  // ── HOMBROS ───────────────────────────────────────────────────────────────
+  { nombre:"Press Militar",            grupo:"Hombros", equipo:"Barra",         dificultad:"intermedio", desc:"Construye hombros completos, deltoides anterior y lateral.", como_usar:"Barra a nivel del mentón, empuja hasta arriba sin arquear la espalda." },
+  { nombre:"Press Arnold",             grupo:"Hombros", equipo:"Mancuernas",    dificultad:"intermedio", desc:"Activa los 3 cabezas del deltoides en una sola repetición.", como_usar:"Inicia palmas hacia ti, gira hacia fuera al subir, termina con palmas al frente." },
+  { nombre:"Elevaciones Laterales",    grupo:"Hombros", equipo:"Mancuernas",    dificultad:"básico",     desc:"Ensancha el deltoides lateral para el look en V.", como_usar:"Brazos semi-extendidos, sube hasta altura del hombro, baja lento." },
+  { nombre:"Elevaciones Frontales",    grupo:"Hombros", equipo:"Mancuernas",    dificultad:"básico",     desc:"Aislamiento del deltoides anterior.", como_usar:"Alternadas o juntas, sube hasta la altura de los ojos, baja controlado." },
+  { nombre:"Vuelos Posteriores",       grupo:"Hombros", equipo:"Mancuernas",    dificultad:"básico",     desc:"Deltoides posterior. Mejora la postura.", como_usar:"Torso paralelo al suelo, abre los brazos en arco hacia atrás, aprieta arriba." },
+  { nombre:"Press Hombro Máquina",     grupo:"Hombros", equipo:"Máquina",       dificultad:"básico",     desc:"Seguro para principiantes, patrón guiado.", como_usar:"Asiento a altura correcta, empuja las asas arriba sin bloquear codos." },
+  // ── BÍCEPS ────────────────────────────────────────────────────────────────
+  { nombre:"Curl Barra",               grupo:"Bíceps",  equipo:"Barra",         dificultad:"básico",     desc:"Básico y efectivo para masa de bíceps.", como_usar:"Codos fijos al costado, sube la barra hasta los hombros, baja lento 3s." },
+  { nombre:"Curl Mancuernas",          grupo:"Bíceps",  equipo:"Mancuernas",    dificultad:"básico",     desc:"Rango completo y supinación máxima.", como_usar:"Alterna o juntos, supina la muñeca al subir para máxima contracción." },
+  { nombre:"Curl Martillo",            grupo:"Bíceps",  equipo:"Mancuernas",    dificultad:"básico",     desc:"Activa el braquial y braquiorradial además del bíceps.", como_usar:"Agarre neutro (thumbs up), sube sin rotar la muñeca." },
+  { nombre:"Curl en Predicador",       grupo:"Bíceps",  equipo:"Barra",         dificultad:"básico",     desc:"Aislamiento máximo, elimina el balanceo.", como_usar:"Codos en el apoyo, baja hasta casi extender y sube contrayendo al máximo." },
+  { nombre:"Curl Cable",               grupo:"Bíceps",  equipo:"Cable",         dificultad:"básico",     desc:"Tensión constante en todo el rango, efectivo para el pico.", como_usar:"Polea baja, curl standard con codos fijos, aprieta arriba." },
+  { nombre:"Curl Concentrado",         grupo:"Bíceps",  equipo:"Mancuernas",    dificultad:"básico",     desc:"Máximo aislamiento, forma el pico del bíceps.", como_usar:"Codo en el muslo, sube la mancuerna girando la palma hacia el hombro." },
+  // ── TRÍCEPS ───────────────────────────────────────────────────────────────
+  { nombre:"Press Francés",            grupo:"Tríceps", equipo:"Barra",         dificultad:"intermedio", desc:"Masa para la cabeza larga del tríceps.", como_usar:"Acostado, baja la barra hasta la frente doblando solo los codos, sube." },
+  { nombre:"Extensión Tríceps Cable",  grupo:"Tríceps", equipo:"Cable",         dificultad:"básico",     desc:"Aislamiento con tensión constante.", como_usar:"Polea alta, codos pegados al cuerpo, empuja hacia abajo hasta extender." },
+  { nombre:"Fondos Banca Tríceps",     grupo:"Tríceps", equipo:"Peso corporal", dificultad:"básico",     desc:"Básico para volumen de tríceps.", como_usar:"Manos en banco detrás, baja hasta 90° y sube extendiendo completamente." },
+  { nombre:"Kickback Tríceps",         grupo:"Tríceps", equipo:"Mancuernas",    dificultad:"básico",     desc:"Aislamiento de la cabeza lateral.", como_usar:"Torso paralelo al suelo, codo alto y fijo, extiende el brazo hacia atrás." },
+  { nombre:"Skull Crusher",            grupo:"Tríceps", equipo:"Mancuernas",    dificultad:"intermedio", desc:"Efectivo para las 3 cabezas del tríceps.", como_usar:"Acostado, mancuernas a los lados de la cabeza, extiende solo doblando codos." },
+  // ── PIERNAS ───────────────────────────────────────────────────────────────
+  { nombre:"Sentadilla",               grupo:"Piernas", equipo:"Barra",         dificultad:"avanzado",   desc:"La reina del tren inferior. Cuádriceps, glúteos, isquios.", como_usar:"Pies ancho de hombros, baja hasta que los muslos queden paralelos al suelo." },
+  { nombre:"Sentadilla Hack",          grupo:"Piernas", equipo:"Máquina",       dificultad:"intermedio", desc:"Cuádriceps con mayor seguridad que la sentadilla libre.", como_usar:"Espalda apoyada, baja hasta 90° de rodilla, pies a la altura de hombros." },
+  { nombre:"Prensa de Piernas",        grupo:"Piernas", equipo:"Máquina",       dificultad:"básico",     desc:"Gran volumen muscular con alto peso de forma segura.", como_usar:"Pies a la altura de hombros, baja hasta 90°, no bloquees las rodillas arriba." },
+  { nombre:"Extensión de Cuádriceps",  grupo:"Piernas", equipo:"Máquina",       dificultad:"básico",     desc:"Aislamiento de cuádriceps.", como_usar:"Rodillas en el eje de la máquina, extiende completamente y baja lento." },
+  { nombre:"Curl de Isquiotibiales",   grupo:"Piernas", equipo:"Máquina",       dificultad:"básico",     desc:"Aislamiento de isquiotibiales.", como_usar:"Acostado o sentado, sube el talón hacia el glúteo y baja controlado." },
+  { nombre:"Peso Muerto Rumano",       grupo:"Piernas", equipo:"Barra",         dificultad:"intermedio", desc:"Isquiotibiales y glúteos con carga alta.", como_usar:"Espalda recta, rodillas ligeramente dobladas, baja la barra deslizando por las piernas." },
+  { nombre:"Zancadas",                 grupo:"Piernas", equipo:"Mancuernas",    dificultad:"básico",     desc:"Unilateral para equilibrio y cuádriceps.", como_usar:"Paso largo al frente, baja la rodilla trasera cerca del suelo, regresa." },
+  { nombre:"Sentadilla Búlgara",       grupo:"Piernas", equipo:"Mancuernas",    dificultad:"avanzado",   desc:"Unilateral avanzado, cuádriceps y glúteos.", como_usar:"Pie trasero elevado, baja hasta que la rodilla trasera casi toque el suelo." },
+  { nombre:"Step Up",                  grupo:"Piernas", equipo:"Mancuernas",    dificultad:"básico",     desc:"Funcional, cuádriceps y glúteos.", como_usar:"Sube con un pie a la caja, lleva la rodilla del otro al pecho, baja controlado." },
+  { nombre:"Pantorrillas de Pie",      grupo:"Piernas", equipo:"Máquina",       dificultad:"básico",     desc:"Aislamiento del gastrocnemio.", como_usar:"Sube en puntas hasta máxima contracción, baja hasta estiramiento completo." },
+  // ── GLÚTEOS ───────────────────────────────────────────────────────────────
+  { nombre:"Hip Thrust",               grupo:"Glúteos", equipo:"Barra",         dificultad:"intermedio", desc:"El mejor ejercicio para masa y fuerza de glúteos.", como_usar:"Espalda en banco, barra sobre caderas, empuja las caderas al techo, aprieta arriba." },
+  { nombre:"Patada Glúteo Cable",      grupo:"Glúteos", equipo:"Cable",         dificultad:"básico",     desc:"Aislamiento del glúteo mayor con tensión constante.", como_usar:"Polea baja con tobillera, patada hacia atrás manteniendo espalda recta." },
+  { nombre:"Abductor Máquina",         grupo:"Glúteos", equipo:"Máquina",       dificultad:"básico",     desc:"Activa glúteo medio y tensor de la fascia lata.", como_usar:"Sentado, abre las piernas contra la resistencia, cierra lento." },
+  { nombre:"Sumo Sentadilla",          grupo:"Glúteos", equipo:"Mancuernas",    dificultad:"básico",     desc:"Glúteos y aductores con posición amplia.", como_usar:"Pies muy abiertos, puntas afuera, mancuerna colgando al centro, baja entre las piernas." },
+  { nombre:"Good Morning",             grupo:"Glúteos", equipo:"Barra",         dificultad:"intermedio", desc:"Glúteos e isquiotibiales con barra en los hombros.", como_usar:"Barra en trapecio, bisagra de cadera manteniendo espalda recta, sube apretando glúteos." },
+  // ── CORE ──────────────────────────────────────────────────────────────────
+  { nombre:"Plancha",                  grupo:"Core",    equipo:"Peso corporal", dificultad:"básico",     desc:"Isométrico para todo el core. Base de la fuerza funcional.", como_usar:"Posición de push-up en antebrazos, cuerpo recto, aguanta sin hundir la cadera." },
+  { nombre:"Crunch Abdominal",         grupo:"Core",    equipo:"Peso corporal", dificultad:"básico",     desc:"Recto abdominal, clásico y efectivo.", como_usar:"Rodillas dobladas, manos detrás de la cabeza, sube solo los hombros del suelo." },
+  { nombre:"Elevación de Piernas",     grupo:"Core",    equipo:"Peso corporal", dificultad:"intermedio", desc:"Abdominal inferior e iliopsoas.", como_usar:"Acostado o colgado, sube las piernas rectas hasta 90° y baja sin tocar el suelo." },
+  { nombre:"Russian Twist",            grupo:"Core",    equipo:"Peso corporal", dificultad:"básico",     desc:"Oblicuos y rotación del tronco.", como_usar:"Sentado en V, gira el torso de lado a lado tocando el suelo con las manos." },
+  { nombre:"Rueda Abdominal",          grupo:"Core",    equipo:"Otro",          dificultad:"avanzado",   desc:"Activa todo el core con alta demanda.", como_usar:"Rodillas en suelo, rueda hacia adelante hasta casi tocar el suelo, regresa con el core." },
+  { nombre:"Cable Crunch",             grupo:"Core",    equipo:"Cable",         dificultad:"básico",     desc:"Abdominal con carga progresiva.", como_usar:"Polea alta, rodillas en suelo, tira hacia abajo flexionando el torso." },
+  // ── CARDIO ────────────────────────────────────────────────────────────────
+  { nombre:"Caminadora",               grupo:"Cardio",  equipo:"Máquina",       dificultad:"básico",     desc:"Cardio suave, quema de grasa y recuperación activa.", como_usar:"Velocidad e inclinación según objetivo. Zona de frecuencia cardíaca 60-70%." },
+  { nombre:"Bicicleta Estática",       grupo:"Cardio",  equipo:"Máquina",       dificultad:"básico",     desc:"Cardio de bajo impacto, ideal para principiantes.", como_usar:"Asiento al nivel de la cadera, pedalea a ritmo constante o intervalos." },
+  { nombre:"Elíptica",                 grupo:"Cardio",  equipo:"Máquina",       dificultad:"básico",     desc:"Cardio sin impacto en las articulaciones.", como_usar:"Movimiento fluido, resistencia moderada, mantén el ritmo por 20-45 min." },
+  { nombre:"Remo Ergómetro",           grupo:"Cardio",  equipo:"Máquina",       dificultad:"intermedio", desc:"Cardio de cuerpo completo, alta quema calórica.", como_usar:"Jalón con las piernas primero, luego espalda y brazos. Ritmo constante." },
+  { nombre:"Salto de Cuerda",          grupo:"Cardio",  equipo:"Otro",          dificultad:"básico",     desc:"Alta intensidad, coordinación y cardio.", como_usar:"Saltitos bajos, muñecas giran la cuerda, mantén el ritmo por intervalos." },
+  { nombre:"Burpees",                  grupo:"Cardio",  equipo:"Peso corporal", dificultad:"avanzado",   desc:"Full body HIIT: cardio y fuerza.", como_usar:"Sentadilla → plancha → push-up → salto con palmas arriba. Sin parar." },
+  // ── FULL BODY ─────────────────────────────────────────────────────────────
+  { nombre:"Clean and Press",          grupo:"Full Body",equipo:"Barra",        dificultad:"avanzado",   desc:"Fuerza explosiva y coordinación de todo el cuerpo.", como_usar:"Jala la barra del suelo explosivo, atrapa en hombros, empuja hacia arriba." },
+  { nombre:"Thruster",                 grupo:"Full Body",equipo:"Mancuernas",   dificultad:"intermedio", desc:"Sentadilla + press combinados. Alta demanda metabólica.", como_usar:"Mancuernas en hombros, sentadilla completa, al subir empuja arriba sin parar." },
+  { nombre:"Swing Kettlebell",         grupo:"Full Body",equipo:"Kettlebell",   dificultad:"básico",     desc:"Cadena posterior explosiva: isquios, glúteos, core.", como_usar:"Pies ancho, bisagra de cadera potente, kettlebell vuela hasta altura de pecho." },
+  { nombre:"Turkish Get Up",           grupo:"Full Body",equipo:"Kettlebell",   dificultad:"avanzado",   desc:"Fuerza funcional completa y movilidad.", como_usar:"Desde el suelo hasta de pie con kettlebell en una mano. Cada paso controlado." },
+  { nombre:"Snatch Kettlebell",        grupo:"Full Body",equipo:"Kettlebell",   dificultad:"avanzado",   desc:"Potencia y coordinación de todo el cuerpo.", como_usar:"Balanceo explosivo y jala la kettlebell directamente sobre la cabeza en un movimiento." },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GimEjercicioPicker — Pantalla completa de selección de ejercicio por catálogo
+// ─────────────────────────────────────────────────────────────────────────────
+function GimEjercicioPicker({
+  onSelect,
+  onClose,
+}: {
+  onSelect: (e: { nombre: string; equipo: string; grupo: string }) => void;
+  onClose: () => void;
+}) {
+  const [grupoSel, setGrupoSel] = useState<string>("Todos");
+  const [busqueda, setBusqueda] = useState("");
+  const [detalle, setDetalle] = useState<CatalogoEjercicio | null>(null);
+
+  const grupos = ["Todos", ...GYM_GRUPOS];
+  const filtrado = GYM_CATALOGO.filter(e => {
+    const matchGrupo = grupoSel === "Todos" || e.grupo === grupoSel;
+    const matchBusq = busqueda === "" || e.nombre.toLowerCase().includes(busqueda.toLowerCase());
+    return matchGrupo && matchBusq;
+  });
+
+  const difColor = (d: string) =>
+    d === "básico" ? "text-green-400 bg-green-500/10 border-green-500/30" :
+    d === "intermedio" ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/30" :
+    "text-red-400 bg-red-500/10 border-red-500/30";
+
+  if (detalle) {
+    const col = GYM_GRUPO_COLORES[detalle.grupo] ?? GYM_GRUPO_COLORES["Otro"];
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-kb-bg">
+        {/* Header detalle */}
+        <div className="flex items-center gap-3 p-4 border-b border-white/10">
+          <button onClick={() => setDetalle(null)} className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
+          </button>
+          <span className="font-semibold text-white flex-1">{detalle.nombre}</span>
+          <button onClick={onClose} className="text-gray-500 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Badges */}
+          <div className="flex flex-wrap gap-2">
+            <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${col.text} ${col.bg} ${col.border}`}>
+              {col.emoji} {detalle.grupo}
+            </span>
+            <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${difColor(detalle.dificultad)}`}>
+              {detalle.dificultad}
+            </span>
+            <span className="text-xs px-2.5 py-1 rounded-full border border-white/10 text-gray-400 bg-white/5">
+              🔧 {detalle.equipo}
+            </span>
+          </div>
+          {/* Descripción */}
+          <div className={`rounded-xl p-4 ${col.bg} border ${col.border}`}>
+            <p className="text-sm text-gray-200 leading-relaxed">{detalle.desc}</p>
+          </div>
+          {/* Cómo usar */}
+          <div className="rounded-xl p-4 bg-white/5 border border-white/10">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">¿Cómo hacerlo?</p>
+            <p className="text-sm text-gray-200 leading-relaxed">{detalle.como_usar}</p>
+          </div>
+        </div>
+        {/* CTA */}
+        <div className="p-4 border-t border-white/10">
+          <button
+            onClick={() => onSelect({ nombre: detalle.nombre, equipo: detalle.equipo, grupo: detalle.grupo })}
+            className="w-full py-3.5 rounded-xl font-semibold text-sm bg-kb-gain text-kb-bg hover:bg-kb-gain/90 active:scale-95 transition-all"
+          >
+            Agregar este ejercicio
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-kb-bg">
+      {/* Header */}
+      <div className="flex items-center gap-3 p-4 border-b border-white/10">
+        <button onClick={onClose} className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+        <span className="font-bold text-white flex-1">Catálogo de Ejercicios</span>
+        <span className="text-xs text-gray-500">{filtrado.length} ejercicios</span>
+      </div>
+      {/* Búsqueda */}
+      <div className="p-3 border-b border-white/5">
+        <div className="relative">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+            placeholder="Buscar ejercicio..."
+            className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-kb-gain/50"
+          />
+        </div>
+      </div>
+      {/* Filtros de grupo */}
+      <div className="flex gap-2 px-3 py-2 overflow-x-auto scrollbar-hide border-b border-white/5">
+        {grupos.map(g => {
+          const col = GYM_GRUPO_COLORES[g];
+          const activo = grupoSel === g;
+          return (
+            <button
+              key={g}
+              onClick={() => setGrupoSel(g)}
+              className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-full border font-medium transition-all ${
+                activo
+                  ? (col ? `${col.text} ${col.bg} ${col.border}` : "text-white bg-kb-gain/20 border-kb-gain/50")
+                  : "text-gray-500 bg-white/5 border-white/10 hover:border-white/20"
+              }`}
+            >
+              {col ? `${col.emoji} ` : ""}{g}
+            </button>
+          );
+        })}
+      </div>
+      {/* Lista */}
+      <div className="flex-1 overflow-y-auto divide-y divide-white/5">
+        {filtrado.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 text-gray-500">
+            <span className="text-3xl mb-2">🔍</span>
+            <p className="text-sm">No se encontró "{busqueda}"</p>
+          </div>
+        ) : filtrado.map(ej => {
+          const col = GYM_GRUPO_COLORES[ej.grupo] ?? GYM_GRUPO_COLORES["Otro"];
+          return (
+            <button
+              key={ej.nombre}
+              onClick={() => setDetalle(ej)}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 active:bg-white/10 transition-colors text-left"
+            >
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${col.bg} border ${col.border}`}>
+                {col.emoji}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white truncate">{ej.nombre}</p>
+                <p className="text-xs text-gray-500 truncate">{ej.equipo} · <span className={col.text}>{ej.grupo}</span></p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className={`text-xs px-2 py-0.5 rounded-full border ${difColor(ej.dificultad)}`}>{ej.dificultad}</span>
+                <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// GYM MODULE V3 — Part 2: GimView, GimDashboard, GimOnboarding
+// ─────────────────────────────────────────────────────────────────────────────
 
 function GimView({
   vistaGim,
@@ -15214,207 +15428,193 @@ function GimView({
   setVistaGim: (v: GimVista) => void;
   userId: string;
 }) {
-  const tabs: { id: GimVista; label: string; icon: ReactNode }[] = [
-    { id: "dashboard",    label: "Inicio",    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
-    { id: "hoy",          label: "Hoy",       icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M3 12h2"/><path d="M19 12h2"/><path d="M5 9h2v6H5z"/><path d="M17 9h2v6h-2z"/><path d="M7 11h10v2H7z"/></svg> },
-    { id: "plan",         label: "Rutina",    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/></svg> },
-    { id: "progreso",     label: "Progreso",  icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><line x1="5" y1="21" x2="5" y2="11"/><line x1="12" y1="21" x2="12" y2="5"/><line x1="19" y1="21" x2="19" y2="14"/></svg> },
-    { id: "historial_gym",label: "Historial", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
-    { id: "guia",         label: "Guía",      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> },
-    { id: "perfil_gym",   label: "Perfil",    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg> },
+  const navItems: { id: GimVista; label: string; emoji: string }[] = [
+    { id: "dashboard",    label: "Inicio",   emoji: "🏠" },
+    { id: "hoy",          label: "Hoy",      emoji: "⚡" },
+    { id: "plan",         label: "Plan",     emoji: "📋" },
+    { id: "progreso",     label: "Progreso", emoji: "📈" },
+    { id: "historial_gym",label: "Historial",emoji: "📅" },
+    { id: "guia",         label: "Guía",     emoji: "📚" },
+    { id: "perfil_gym",   label: "Perfil",   emoji: "⚙️" },
   ];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* Tabs móvil */}
-      <div className="border-b border-kb-border-soft bg-kb-surface/60 backdrop-blur-sm lg:hidden">
-        <div className="flex overflow-x-auto">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setVistaGim(t.id)}
-              className={`flex shrink-0 flex-col items-center gap-0.5 px-4 py-2.5 text-[10px] font-semibold transition-colors ${
-                vistaGim === t.id ? "border-b-2 border-kb-gain text-kb-gain" : "text-kb-text-secondary"
-              }`}
-            >
-              {t.icon}
-              {t.label}
-            </button>
-          ))}
-        </div>
+    <div className="flex flex-col h-full">
+      {/* Nav top */}
+      <div className="flex gap-1 px-2 py-2 overflow-x-auto scrollbar-hide border-b border-white/10 bg-kb-bg/80 backdrop-blur sticky top-0 z-10">
+        {navItems.map(n => (
+          <button
+            key={n.id}
+            onClick={() => setVistaGim(n.id)}
+            className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+              vistaGim === n.id
+                ? "bg-kb-gain/20 text-kb-gain border border-kb-gain/40"
+                : "text-gray-500 hover:text-gray-300 hover:bg-white/5 border border-transparent"
+            }`}
+          >
+            <span>{n.emoji}</span>
+            <span>{n.label}</span>
+          </button>
+        ))}
       </div>
-
+      {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {vistaGim === "dashboard"    && <GimDashboard    userId={userId} setVistaGim={setVistaGim} />}
-        {vistaGim === "hoy"          && <GimHoyView      userId={userId} />}
-        {vistaGim === "plan"         && <GimPlanView     userId={userId} />}
-        {vistaGim === "progreso"     && <GimProgresoView userId={userId} />}
-        {vistaGim === "historial_gym"&& <GimHistorialView userId={userId} />}
-        {vistaGim === "guia"         && <GimGuiaView     userId={userId} />}
-        {vistaGim === "perfil_gym"   && <GimPerfilView   userId={userId} />}
+        {vistaGim === "dashboard"     && <GimDashboard     userId={userId} setVistaGim={setVistaGim} />}
+        {vistaGim === "hoy"           && <GimHoyView       userId={userId} />}
+        {vistaGim === "plan"          && <GimPlanView      userId={userId} />}
+        {vistaGim === "progreso"      && <GimProgresoView  userId={userId} />}
+        {vistaGim === "historial_gym" && <GimHistorialView userId={userId} />}
+        {vistaGim === "guia"          && <GimGuiaView />}
+        {vistaGim === "perfil_gym"    && <GimPerfilView    userId={userId} />}
       </div>
     </div>
   );
 }
 
-// ── GimDashboard: pantalla principal ─────────────────────────────────
-
+// ─────────────────────────────────────────────────────────────────────────────
+// GimDashboard
+// ─────────────────────────────────────────────────────────────────────────────
 function GimDashboard({ userId, setVistaGim }: { userId: string; setVistaGim: (v: GimVista) => void }) {
   const [perfil, setPerfil] = useState<GymPerfil | null>(null);
-  const [sesiones, setSesiones] = useState<GymSesion[]>([]);
-  const [medidas, setMedidas] = useState<BodyMeasurement[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [ultimaSesion, setUltimaSesion] = useState<GymSesion | null>(null);
+  const [sesionesEstaSemana, setSesionesEstaSemana] = useState<number>(0);
+  const [totalSesiones, setTotalSesiones] = useState<number>(0);
+  const [cargando, setCargando] = useState(true);
   const [mostrarOnboarding, setMostrarOnboarding] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      const [{ data: p }, { data: s }, { data: m }] = await Promise.all([
+    let activo = true;
+    async function cargar() {
+      setCargando(true);
+      const [{ data: p }, { data: sesiones }] = await Promise.all([
         supabase.from("gym_perfil").select("*").eq("user_id", userId).maybeSingle(),
-        supabase.from("gym_sessions").select("*").eq("user_id", userId).order("fecha", { ascending: false }).limit(60),
-        supabase.from("body_measurements").select("*").eq("user_id", userId).order("fecha", { ascending: false }).limit(1),
+        supabase.from("gym_sessions").select("*").eq("user_id", userId).order("fecha", { ascending: false }).limit(50),
       ]);
-      setPerfil(p as GymPerfil | null);
-      setSesiones((s ?? []) as GymSesion[]);
-      setMedidas((m ?? []) as BodyMeasurement[]);
-      if (!p) setMostrarOnboarding(true);
-      setLoading(false);
-    })();
+      if (!activo) return;
+      if (!p) { setMostrarOnboarding(true); setCargando(false); return; }
+      setPerfil(p as GymPerfil);
+      const arr = (sesiones as GymSesion[]) || [];
+      setTotalSesiones(arr.length);
+      setUltimaSesion(arr[0] ?? null);
+      const hoy = new Date();
+      const inicioSemana = new Date(hoy);
+      inicioSemana.setDate(hoy.getDate() - hoy.getDay());
+      const esSemana = arr.filter(s => new Date(s.fecha) >= inicioSemana).length;
+      setSesionesEstaSemana(esSemana);
+      setCargando(false);
+    }
+    cargar();
+    return () => { activo = false; };
   }, [userId]);
 
-  if (loading) return <div className="flex items-center justify-center py-20 text-kb-text-secondary text-sm">Cargando...</div>;
+  if (cargando) return (
+    <div className="flex items-center justify-center h-48">
+      <div className="w-8 h-8 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" />
+    </div>
+  );
 
-  if (mostrarOnboarding) {
-    return <GimOnboarding userId={userId} onComplete={(p) => { setPerfil(p); setMostrarOnboarding(false); }} />;
-  }
+  if (mostrarOnboarding) return <GimOnboarding userId={userId} onDone={() => setMostrarOnboarding(false)} />;
 
-  const hoy = gymFechaKey();
-  const mesActual = hoy.slice(0, 7);
-  const sesionesMes = sesiones.filter(s => s.fecha.slice(0, 7) === mesActual);
-  const entrenohoy = sesiones.find(s => s.fecha === hoy);
-
-  // Racha actual
-  let racha = 0;
-  const diasOrdenados = [...new Set(sesiones.map(s => s.fecha))].sort().reverse();
-  for (let i = 0; i < diasOrdenados.length; i++) {
-    const esperado = new Date();
-    esperado.setDate(esperado.getDate() - i);
-    if (diasOrdenados[i] === gymFechaKey(esperado)) racha++;
-    else break;
-  }
-
-  const durPromedio = sesionesMes.length
-    ? Math.round(sesionesMes.reduce((a, s) => a + (s.duracion_min ?? 0), 0) / sesionesMes.filter(s => s.duracion_min).length || 0)
-    : 0;
-
-  const fase = perfil?.fase ?? "mantenimiento";
-  const faseInfo = GYM_FASES[fase as keyof typeof GYM_FASES];
-  const tipoCuerpo = perfil?.tipo_cuerpo ? GYM_TIPOS_CUERPO[perfil.tipo_cuerpo] : null;
-
-  // Recomendación del día según fase
-  const recs: Record<string, string> = {
-    volumen: "Enfócate en superar el peso o reps de la sesión anterior. Come suficiente proteína post-entreno (1.8–2.2g/kg de peso corporal).",
-    definicion: "Mantén la intensidad alta. El déficit calórico viene de la nutrición, no de reducir el entrenamiento. Preserva el músculo.",
-    recomposicion: "Prioriza proteína alta (2.2–2.5g/kg). Entrena con intensidad moderada-alta. La paciencia es clave en esta fase.",
-    mantenimiento: "Mantén la consistencia. Semana a semana pequeñas mejoras en técnica y forma valen más que subidas de peso agresivas.",
-  };
+  const fase = perfil?.fase ? GYM_FASES[perfil.fase] : null;
+  const tipo = perfil?.tipo_cuerpo ? GYM_TIPOS_CUERPO[perfil.tipo_cuerpo] : null;
+  const diasLabel = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+  const hoy = new Date().getDay();
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
-      {/* Header con fase */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-kb-text">Buenos días 💪</h1>
-          <p className="mt-0.5 text-sm text-kb-text-secondary">{gymFechaLabel(hoy)}</p>
+    <div className="p-4 space-y-4 pb-8">
+      {/* Hero bienvenida */}
+      <div className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-kb-gain/20 via-kb-gain/10 to-transparent border border-kb-gain/30 p-5">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-kb-gain/5 rounded-full -translate-y-8 translate-x-8" />
+        <div className="relative">
+          <div className="flex items-center gap-3 mb-3">
+            {tipo && <span className="text-3xl">{tipo.emoji}</span>}
+            <div>
+              <p className="text-xs text-gray-400 font-medium">Tu fase actual</p>
+              {fase && (
+                <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold ${fase.color}`}>
+                  {fase.label}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-xl bg-white/5 p-3 text-center">
+              <p className="text-2xl font-bold text-white">{sesionesEstaSemana}</p>
+              <p className="text-xs text-gray-400 mt-0.5">Esta semana</p>
+            </div>
+            <div className="rounded-xl bg-white/5 p-3 text-center">
+              <p className="text-2xl font-bold text-white">{totalSesiones}</p>
+              <p className="text-xs text-gray-400 mt-0.5">Total sesiones</p>
+            </div>
+            <div className="rounded-xl bg-white/5 p-3 text-center">
+              <p className="text-2xl font-bold text-white">{perfil?.dias_entreno?.length ?? 0}</p>
+              <p className="text-xs text-gray-400 mt-0.5">Días/semana</p>
+            </div>
+          </div>
         </div>
-        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${faseInfo.color}`}>
-          {faseInfo.label}
-        </span>
       </div>
 
-      {/* CTA entrenar hoy */}
-      {entrenohoy ? (
-        <div className="rounded-2xl border border-kb-gain/30 bg-kb-gain/5 p-4">
+      {/* Días de la semana */}
+      {perfil?.dias_entreno && perfil.dias_entreno.length > 0 && (
+        <div className="rounded-xl bg-white/5 border border-white/10 p-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Tu semana</p>
+          <div className="flex gap-1.5 justify-between">
+            {diasLabel.map((d, i) => {
+              const esDiaEntreno = perfil.dias_entreno.includes(i);
+              const esHoy = i === hoy;
+              return (
+                <div key={i} className={`flex-1 flex flex-col items-center gap-1`}>
+                  <span className={`text-xs font-medium ${esHoy ? "text-kb-gain" : "text-gray-500"}`}>{d}</span>
+                  <div className={`w-full aspect-square max-w-9 rounded-xl flex items-center justify-center text-xs font-bold transition-all ${
+                    esHoy && esDiaEntreno ? "bg-kb-gain text-kb-bg" :
+                    esHoy ? "bg-white/10 text-white ring-1 ring-kb-gain/40" :
+                    esDiaEntreno ? "bg-kb-gain/20 text-kb-gain" :
+                    "bg-white/5 text-gray-600"
+                  }`}>
+                    {esDiaEntreno ? "💪" : "·"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Última sesión */}
+      {ultimaSesion && (
+        <div className="rounded-xl bg-white/5 border border-white/10 p-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Última sesión</p>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-semibold text-kb-gain">✅ Ya entrenaste hoy</p>
-              <p className="text-xs text-kb-text-secondary mt-0.5">
-                {entrenohoy.hora_inicio && entrenohoy.hora_fin
-                  ? `${entrenohoy.hora_inicio} – ${entrenohoy.hora_fin} · ${entrenohoy.duracion_min} min`
-                  : entrenohoy.duracion_min ? `${entrenohoy.duracion_min} min` : "Sesión registrada"}
-              </p>
+              <p className="text-sm font-medium text-white">{new Date(ultimaSesion.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "short" })}</p>
+              {ultimaSesion.duracion_min && (
+                <p className="text-xs text-gray-400 mt-0.5">⏱ {ultimaSesion.duracion_min} min</p>
+              )}
             </div>
-            <button onClick={() => setVistaGim("hoy")} className="rounded-xl bg-kb-gain/20 px-3 py-1.5 text-xs font-semibold text-kb-gain">
-              Ver sesión
-            </button>
+            {ultimaSesion.fase && (
+              <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${GYM_FASES[ultimaSesion.fase as keyof typeof GYM_FASES]?.color ?? "text-gray-400 bg-white/5 border-white/10"}`}>
+                {GYM_FASES[ultimaSesion.fase as keyof typeof GYM_FASES]?.label ?? ultimaSesion.fase}
+              </span>
+            )}
           </div>
-        </div>
-      ) : (
-        <button
-          onClick={() => setVistaGim("hoy")}
-          className="w-full rounded-2xl bg-kb-gain px-5 py-4 text-left shadow-lg transition-opacity hover:opacity-90"
-        >
-          <p className="text-sm font-bold text-kb-bg">Registrar entrenamiento de hoy →</p>
-          <p className="mt-0.5 text-xs text-kb-bg/70">Toca para iniciar la sesión</p>
-        </button>
-      )}
-
-      {/* Stats del mes */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: "Sesiones", value: sesionesMes.length, sub: "este mes" },
-          { label: "Racha", value: `${racha}🔥`, sub: "días seguidos" },
-          { label: "Duración", value: durPromedio ? `${durPromedio}m` : "—", sub: "promedio" },
-        ].map((s) => (
-          <div key={s.label} className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4 text-center">
-            <p className="text-xl font-bold text-kb-text">{s.value}</p>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-kb-text-muted">{s.label}</p>
-            <p className="text-[10px] text-kb-text-secondary">{s.sub}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Tipo de cuerpo + fase */}
-      {tipoCuerpo && (
-        <div className={`rounded-2xl border p-4 ${tipoCuerpo.color}`}>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-lg">{tipoCuerpo.emoji}</span>
-            <p className="text-sm font-bold text-kb-text">{tipoCuerpo.label}</p>
-          </div>
-          <p className="text-xs text-kb-text-secondary">{tipoCuerpo.estrategia}</p>
-        </div>
-      )}
-
-      {/* Recomendación del día */}
-      <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 p-4">
-        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-kb-text-muted">💡 Consejo del día</p>
-        <p className="text-sm text-kb-text-secondary">{recs[fase]}</p>
-      </div>
-
-      {/* Última medida */}
-      {medidas[0] && (
-        <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-kb-text-muted">Últimas medidas</p>
-            <p className="text-xs text-kb-text-secondary">{gymFechaLabel(medidas[0].fecha)}</p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            {medidas[0].peso_kg && <div className="flex justify-between"><span className="text-kb-text-secondary">Peso</span><span className="font-semibold text-kb-text">{medidas[0].peso_kg} kg</span></div>}
-            {medidas[0].grasa_pct && <div className="flex justify-between"><span className="text-kb-text-secondary">Grasa</span><span className="font-semibold text-kb-text">{medidas[0].grasa_pct}%</span></div>}
-          </div>
-          <button onClick={() => setVistaGim("progreso")} className="mt-3 text-xs text-kb-gain font-medium">Ver progreso completo →</button>
         </div>
       )}
 
       {/* Accesos rápidos */}
       <div className="grid grid-cols-2 gap-3">
-        {([
-          { id: "plan" as GimVista, label: "Mi Rutina", sub: "Ver plan semanal" },
-          { id: "guia" as GimVista, label: "Guía & Tips", sub: "Consejos por fase" },
-        ] as const).map(({ id, label, sub }) => (
-          <button key={id} onClick={() => setVistaGim(id)}
-            className="rounded-2xl border border-kb-border-soft bg-kb-surface/30 p-4 text-left transition-colors hover:bg-kb-surface/60">
-            <p className="text-sm font-semibold text-kb-text">{label}</p>
-            <p className="text-xs text-kb-text-secondary">{sub}</p>
+        {[
+          { id: "hoy" as GimVista,           label: "Registrar sesión",  emoji: "⚡", color: "from-kb-gain/20 to-kb-gain/5 border-kb-gain/30" },
+          { id: "progreso" as GimVista,      label: "Ver progreso",      emoji: "📈", color: "from-purple-500/20 to-purple-500/5 border-purple-500/30" },
+          { id: "plan" as GimVista,          label: "Mi plan semanal",   emoji: "📋", color: "from-blue-500/20 to-blue-500/5 border-blue-500/30" },
+          { id: "historial_gym" as GimVista, label: "Historial",         emoji: "📅", color: "from-orange-500/20 to-orange-500/5 border-orange-500/30" },
+        ].map(acc => (
+          <button
+            key={acc.id}
+            onClick={() => setVistaGim(acc.id)}
+            className={`relative rounded-xl p-4 text-left bg-gradient-to-br border transition-all hover:scale-[1.02] active:scale-95 ${acc.color}`}
+          >
+            <span className="text-2xl">{acc.emoji}</span>
+            <p className="text-sm font-semibold text-white mt-2">{acc.label}</p>
           </button>
         ))}
       </div>
@@ -15422,503 +15622,426 @@ function GimDashboard({ userId, setVistaGim }: { userId: string; setVistaGim: (v
   );
 }
 
-// ── GimOnboarding: configuración inicial ─────────────────────────────
-
-function GimOnboarding({ userId, onComplete }: { userId: string; onComplete: (p: GymPerfil) => void }) {
-  const [paso, setPaso] = useState<1|2|3|4>(1);
-  const [tipoCuerpo, setTipoCuerpo] = useState<"ectomorfo"|"mesomorfo"|"endomorfo"|null>(null);
-  const [objetivo, setObjetivo] = useState<GymPerfil["objetivo"]>("ganar_musculo");
-  const [fase, setFase] = useState<GymPerfil["fase"]>("volumen");
-  const [experiencia, setExperiencia] = useState<GymPerfil["experiencia"]>("principiante");
-  const [fechaInicio, setFechaInicio] = useState(gymFechaKey());
-  const [pesoInicial, setPesoInicial] = useState("");
+// ─────────────────────────────────────────────────────────────────────────────
+// GimOnboarding
+// ─────────────────────────────────────────────────────────────────────────────
+function GimOnboarding({ userId, onDone }: { userId: string; onDone: () => void }) {
+  const [paso, setPaso] = useState(0);
+  const [tipo, setTipo] = useState<"ectomorfo"|"mesomorfo"|"endomorfo"|"">("");
+  const [fase, setFase] = useState<"volumen"|"definicion"|"recomposicion"|"mantenimiento">("volumen");
+  const [objetivo, setObjetivo] = useState<"ganar_musculo"|"perder_grasa"|"rendimiento"|"mantenimiento">("ganar_musculo");
+  const [experiencia, setExperiencia] = useState<"principiante"|"intermedio"|"avanzado">("principiante");
+  const [dias, setDias] = useState<number[]>([1,3,5]);
   const [guardando, setGuardando] = useState(false);
 
+  const toggleDia = (d: number) => setDias(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
+  const diasLabel = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+
   async function guardar() {
-    if (guardando) return; setGuardando(true);
-    const payload = {
+    if (guardando) return;
+    setGuardando(true);
+    const hoy = new Date().toISOString().split("T")[0];
+    await supabase.from("gym_perfil").upsert({
       user_id: userId,
-      tipo_cuerpo: tipoCuerpo,
-      fase,
-      objetivo,
-      experiencia,
-      fecha_inicio: fechaInicio,
-      peso_inicial: pesoInicial ? parseFloat(pesoInicial) : null,
-      dias_entreno: [1,2,3,4,5],
-      horario_gym: null,
-    };
-    const { data, error } = await supabase.from("gym_perfil").upsert(payload, { onConflict: "user_id" }).select().single();
-    if (!error && data) onComplete(data as GymPerfil);
+      tipo_cuerpo: tipo || null,
+      fase, objetivo, experiencia,
+      dias_entreno: dias,
+      fecha_inicio: hoy,
+      updated_at: new Date().toISOString(),
+    });
     setGuardando(false);
+    onDone();
   }
 
-  const progressPct = (paso / 4) * 100;
-
-  return (
-    <div className="mx-auto max-w-lg px-4 py-10">
-      {/* Progress */}
-      <div className="mb-8">
-        <div className="h-1.5 rounded-full bg-kb-border-soft">
-          <div className="h-1.5 rounded-full bg-kb-gain transition-all" style={{ width: `${progressPct}%` }} />
-        </div>
-        <p className="mt-2 text-right text-xs text-kb-text-secondary">Paso {paso} de 4</p>
+  const pasos = [
+    // Paso 0: tipo de cuerpo
+    <div key="0" className="space-y-4">
+      <div className="text-center">
+        <p className="text-4xl mb-3">🏋️</p>
+        <h2 className="text-xl font-bold text-white">¿Cuál es tu tipo de cuerpo?</h2>
+        <p className="text-sm text-gray-400 mt-1">Esto ayuda a personalizar tus recomendaciones</p>
       </div>
-
-      {/* Paso 1: Tipo de cuerpo */}
-      {paso === 1 && (
-        <div className="space-y-5">
-          <div>
-            <h2 className="text-xl font-bold text-kb-text">¿Cuál es tu tipo de cuerpo?</h2>
-            <p className="mt-1 text-sm text-kb-text-secondary">Esto nos ayuda a personalizar tu plan de entrenamiento.</p>
-          </div>
-          <div className="space-y-3">
-            {(Object.entries(GYM_TIPOS_CUERPO) as [keyof typeof GYM_TIPOS_CUERPO, typeof GYM_TIPOS_CUERPO[keyof typeof GYM_TIPOS_CUERPO]][]).map(([key, t]) => (
-              <button
-                key={key}
-                onClick={() => setTipoCuerpo(key)}
-                className={`w-full rounded-2xl border p-4 text-left transition-all ${tipoCuerpo === key ? "border-kb-gain bg-kb-gain/10 shadow-sm" : "border-kb-border-soft bg-kb-surface/30 hover:border-kb-border"}`}
-              >
-                <div className="flex items-center gap-3 mb-1">
-                  <span className="text-2xl">{t.emoji}</span>
-                  <p className="font-bold text-kb-text">{t.label}</p>
-                </div>
-                <p className="text-sm text-kb-text-secondary">{t.desc}</p>
-                {tipoCuerpo === key && (
-                  <div className="mt-3 rounded-xl bg-kb-gain/10 p-3">
-                    <p className="text-xs font-semibold text-kb-gain mb-1">Tu estrategia:</p>
-                    <p className="text-xs text-kb-text-secondary">{t.estrategia}</p>
-                  </div>
-                )}
-              </button>
-            ))}
-          </div>
+      <div className="space-y-3">
+        {(Object.entries(GYM_TIPOS_CUERPO) as Array<[keyof typeof GYM_TIPOS_CUERPO, typeof GYM_TIPOS_CUERPO[keyof typeof GYM_TIPOS_CUERPO]]>).map(([k, v]) => (
           <button
-            onClick={() => tipoCuerpo && setPaso(2)}
-            disabled={!tipoCuerpo}
-            className="w-full rounded-xl bg-kb-gain py-3 text-sm font-bold text-kb-bg disabled:opacity-40"
+            key={k}
+            onClick={() => { setTipo(k); setPaso(1); }}
+            className={`w-full rounded-xl p-4 text-left border transition-all ${tipo === k ? "border-kb-gain/60 bg-kb-gain/10" : "border-white/10 bg-white/5 hover:border-white/20"}`}
           >
-            Continuar →
-          </button>
-        </div>
-      )}
-
-      {/* Paso 2: Objetivo y fase */}
-      {paso === 2 && (
-        <div className="space-y-5">
-          <div>
-            <h2 className="text-xl font-bold text-kb-text">¿Cuál es tu objetivo?</h2>
-            <p className="mt-1 text-sm text-kb-text-secondary">Define qué quieres lograr en el gimnasio.</p>
-          </div>
-          <div className="space-y-2">
-            {([
-              { v: "ganar_musculo", l: "Ganar músculo", d: "Aumentar masa muscular y fuerza" },
-              { v: "perder_grasa",  l: "Perder grasa",   d: "Reducir grasa corporal y definir" },
-              { v: "rendimiento",   l: "Mejorar rendimiento", d: "Potencia, resistencia o deporte" },
-              { v: "mantenimiento", l: "Mantenimiento",  d: "Mantener tu composición actual" },
-            ] as const).map(({ v, l, d }) => (
-              <button key={v} onClick={() => setObjetivo(v as GymPerfil["objetivo"])}
-                className={`w-full rounded-xl border px-4 py-3 text-left transition-all ${objetivo === v ? "border-kb-gain bg-kb-gain/10" : "border-kb-border-soft bg-kb-surface/30"}`}>
-                <p className="text-sm font-semibold text-kb-text">{l}</p>
-                <p className="text-xs text-kb-text-secondary">{d}</p>
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setPaso(1)} className="rounded-xl border border-kb-border-soft px-4 py-3 text-sm font-medium text-kb-text-secondary">← Atrás</button>
-            <button onClick={() => setPaso(3)} className="flex-1 rounded-xl bg-kb-gain py-3 text-sm font-bold text-kb-bg">Continuar →</button>
-          </div>
-        </div>
-      )}
-
-      {/* Paso 3: Fase actual */}
-      {paso === 3 && (
-        <div className="space-y-5">
-          <div>
-            <h2 className="text-xl font-bold text-kb-text">¿En qué fase estás ahora?</h2>
-            <p className="mt-1 text-sm text-kb-text-secondary">La fase define tu estrategia nutricional y de entrenamiento.</p>
-          </div>
-          <div className="space-y-3">
-            {([
-              { v: "volumen",       l: "Volumen (Bulk)",       d: "Superávit calórico (+300–500 kcal). Construyes músculo, aceptas algo de grasa. Alta proteína + carbohidratos.", emoji: "📈" },
-              { v: "definicion",    l: "Definición (Cut)",     d: "Déficit calórico (−300–500 kcal). Pierdes grasa preservando músculo. Proteína muy alta (2.2–2.5g/kg).", emoji: "🔥" },
-              { v: "recomposicion", l: "Recomposición",        d: "Calorías de mantenimiento. Ganas músculo y pierdes grasa lentamente. Ideal para intermedios.", emoji: "⚖️" },
-              { v: "mantenimiento", l: "Mantenimiento",        d: "Mantienes tu composición actual. Mejoras fuerza, técnica y rendimiento.", emoji: "✅" },
-            ] as const).map(({ v, l, d, emoji }) => (
-              <button key={v} onClick={() => setFase(v as GymPerfil["fase"])}
-                className={`w-full rounded-2xl border p-4 text-left transition-all ${fase === v ? "border-kb-gain bg-kb-gain/10" : "border-kb-border-soft bg-kb-surface/30"}`}>
-                <p className="flex items-center gap-2 text-sm font-bold text-kb-text"><span>{emoji}</span>{l}</p>
-                <p className="mt-1 text-xs text-kb-text-secondary">{d}</p>
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setPaso(2)} className="rounded-xl border border-kb-border-soft px-4 py-3 text-sm font-medium text-kb-text-secondary">← Atrás</button>
-            <button onClick={() => setPaso(4)} className="flex-1 rounded-xl bg-kb-gain py-3 text-sm font-bold text-kb-bg">Continuar →</button>
-          </div>
-        </div>
-      )}
-
-      {/* Paso 4: Datos base */}
-      {paso === 4 && (
-        <div className="space-y-5">
-          <div>
-            <h2 className="text-xl font-bold text-kb-text">Datos de inicio</h2>
-            <p className="mt-1 text-sm text-kb-text-secondary">Tu punto de partida para medir el progreso.</p>
-          </div>
-          <div className="space-y-3">
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-kb-text-secondary">Nivel de experiencia</label>
-              <div className="flex gap-2">
-                {([["principiante","Principiante"],["intermedio","Intermedio"],["avanzado","Avanzado"]] as const).map(([v,l]) => (
-                  <button key={v} onClick={() => setExperiencia(v)}
-                    className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-all ${experiencia === v ? "border-kb-gain bg-kb-gain/10 text-kb-gain" : "border-kb-border-soft text-kb-text-secondary"}`}>
-                    {l}
-                  </button>
-                ))}
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">{v.emoji}</span>
+              <div>
+                <p className="font-semibold text-white">{v.label}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{v.desc}</p>
               </div>
             </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-kb-text-secondary">Fecha de inicio en el gym</label>
-              <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)}
-                className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2.5 text-sm text-kb-text" />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-kb-text-secondary">Peso inicial (kg) — opcional</label>
-              <input type="number" step="0.1" placeholder="75.5" value={pesoInicial} onChange={e => setPesoInicial(e.target.value)}
-                className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2.5 text-sm text-kb-text placeholder:text-kb-text-muted" />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setPaso(3)} className="rounded-xl border border-kb-border-soft px-4 py-3 text-sm font-medium text-kb-text-secondary">← Atrás</button>
-            <button onClick={guardar} disabled={guardando}
-              className="flex-1 rounded-xl bg-kb-gain py-3 text-sm font-bold text-kb-bg disabled:opacity-60">
-              {guardando ? "Guardando..." : "Empezar 🚀"}
+          </button>
+        ))}
+        <button onClick={() => { setTipo(""); setPaso(1); }} className="w-full py-3 text-sm text-gray-500 hover:text-gray-300">No sé / Saltar</button>
+      </div>
+    </div>,
+
+    // Paso 1: objetivo
+    <div key="1" className="space-y-4">
+      <div className="text-center">
+        <p className="text-4xl mb-3">🎯</p>
+        <h2 className="text-xl font-bold text-white">¿Tu objetivo principal?</h2>
+      </div>
+      <div className="space-y-2">
+        {([
+          ["ganar_musculo","Ganar músculo","💪","Volumen y fuerza"],
+          ["perder_grasa","Perder grasa","🔥","Definición y cardio"],
+          ["rendimiento","Rendimiento","⚡","Fuerza y potencia"],
+          ["mantenimiento","Mantenimiento","⚖️","Mantener forma actual"],
+        ] as const).map(([v, l, e, d]) => (
+          <button
+            key={v}
+            onClick={() => { setObjetivo(v); setPaso(2); }}
+            className={`w-full rounded-xl p-4 text-left border flex items-center gap-3 transition-all ${objetivo === v ? "border-kb-gain/60 bg-kb-gain/10" : "border-white/10 bg-white/5 hover:border-white/20"}`}
+          >
+            <span className="text-2xl">{e}</span>
+            <div><p className="font-semibold text-white">{l}</p><p className="text-xs text-gray-400">{d}</p></div>
+          </button>
+        ))}
+      </div>
+    </div>,
+
+    // Paso 2: fase + experiencia + días
+    <div key="2" className="space-y-4">
+      <div className="text-center">
+        <p className="text-4xl mb-3">📅</p>
+        <h2 className="text-xl font-bold text-white">Configura tu programa</h2>
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Fase actual</p>
+        <div className="grid grid-cols-2 gap-2">
+          {(Object.entries(GYM_FASES) as Array<[keyof typeof GYM_FASES, typeof GYM_FASES[keyof typeof GYM_FASES]]>).map(([k, v]) => (
+            <button key={k} onClick={() => setFase(k)}
+              className={`py-2.5 px-3 rounded-xl text-sm font-medium border transition-all ${fase === k ? `${v.color}` : "border-white/10 bg-white/5 text-gray-400"}`}>
+              {v.label}
             </button>
-          </div>
+          ))}
         </div>
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Experiencia</p>
+        <div className="grid grid-cols-3 gap-2">
+          {(["principiante","intermedio","avanzado"] as const).map(e => (
+            <button key={e} onClick={() => setExperiencia(e)}
+              className={`py-2.5 rounded-xl text-xs font-medium border transition-all capitalize ${experiencia === e ? "border-kb-gain/60 bg-kb-gain/10 text-kb-gain" : "border-white/10 bg-white/5 text-gray-400"}`}>
+              {e}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Días de entreno</p>
+        <div className="flex gap-1.5">
+          {diasLabel.map((d, i) => (
+            <button key={i} onClick={() => toggleDia(i)}
+              className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all ${dias.includes(i) ? "border-kb-gain/60 bg-kb-gain/20 text-kb-gain" : "border-white/10 bg-white/5 text-gray-500"}`}>
+              {d.slice(0,1)}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-gray-500 mt-1.5">{dias.length} días seleccionados</p>
+      </div>
+    </div>,
+  ];
+
+  return (
+    <div className="p-4 max-w-md mx-auto">
+      <div className="flex gap-1 mb-6">
+        {pasos.map((_, i) => (
+          <div key={i} className={`flex-1 h-1 rounded-full transition-all ${i <= paso ? "bg-kb-gain" : "bg-white/10"}`} />
+        ))}
+      </div>
+      {pasos[paso]}
+      {paso === 2 && (
+        <button
+          onClick={guardar}
+          disabled={guardando}
+          className="w-full mt-6 py-3.5 rounded-xl font-bold text-sm bg-kb-gain text-kb-bg hover:bg-kb-gain/90 disabled:opacity-50 active:scale-95 transition-all"
+        >
+          {guardando ? "Guardando..." : "Empezar →"}
+        </button>
+      )}
+      {paso > 0 && paso < 2 && (
+        <button onClick={() => setPaso(p => p - 1)} className="w-full mt-3 py-2 text-sm text-gray-500 hover:text-gray-300">← Atrás</button>
       )}
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
-// GYM V2 — Parte 2: GimHoyView, GimPlanView, GimProgresoView,
-//                   GimHistorialView, GimGuiaView, GimPerfilView
-// ─────────────────────────────────────────────────────────────────────────────
-
-const GYM_GRUPOS = ["Pecho","Espalda","Hombros","Bíceps","Tríceps","Piernas","Glúteos","Core","Cardio","Full Body","Otro"];
-const GYM_EQUIPOS = ["Barra","Mancuernas","Máquina","Cable","Polea","Smith Machine","Kettlebell","TRX","Peso corporal","Otro"];
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GimHoyView — Registrar la sesión de hoy
+// GYM MODULE V3 — Part 3: GimHoyView (con catálogo + historial de peso)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function GimHoyView({ userId }: { userId: string }) {
-  const hoy = gymFechaKey();
   const [sesion, setSesion] = useState<GymSesion | null>(null);
   const [ejercicios, setEjercicios] = useState<GymSesionEjercicio[]>([]);
   const [rutinas, setRutinas] = useState<GymRutina[]>([]);
   const [perfil, setPerfil] = useState<GymPerfil | null>(null);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
-  const [horaInicio, setHoraInicio] = useState(gymHoraActual());
+  const [horaInicio, setHoraInicio] = useState("");
   const [horaFin, setHoraFin] = useState("");
   const [notas, setNotas] = useState("");
-  const [rutinaId, setRutinaId] = useState<string | null>(null);
-  const [comparativas, setComparativas] = useState<Record<string, GymSesionEjercicio>>({});
-  const [prs, setPrs] = useState<Record<string, boolean>>({});
+  const [rutinaId, setRuntinaId] = useState<string | null>(null);
   const [sesionGuardada, setSesionGuardada] = useState(false);
 
-  // ejercicio que se está añadiendo
-  const [exNombre, setExNombre] = useState("");
-  const [exEquipo, setExEquipo] = useState("");
-  const [exGrupo, setExGrupo] = useState("");
-  const [exSeries, setExSeries] = useState<{ reps: number; peso_kg: number | null }[]>([{ reps: 10, peso_kg: null }]);
-  const [editandoIdx, setEditandoIdx] = useState<number | null>(null);
+  // Ejercicio form
   const [mostrarFormEx, setMostrarFormEx] = useState(false);
+  const [mostrarCatalogo, setMostrarCatalogo] = useState(false);
+  const [editandoIdx, setEditandoIdx] = useState<number | null>(null);
+  const [exNombre, setExNombre] = useState("");
+  const [exEquipo, setExEquipo] = useState(GYM_EQUIPOS[0]);
+  const [exGrupo, setExGrupo] = useState(GYM_GRUPOS[0]);
+  const [exSeries, setExSeries] = useState<{ reps: string; peso_kg: string }[]>([{ reps: "10", peso_kg: "" }]);
+
+  // Historial / comparativa
+  const [historial, setHistorial] = useState<Record<string, { fecha: string; pesoMax: number; series: { reps: number; peso_kg: number | null }[] }[]>>({});
+  const [prs, setPrs] = useState<Record<string, boolean>>({});
+
+  const hoyStr = new Date().toISOString().split("T")[0];
 
   useEffect(() => {
-    if (!userId) return;
-    (async () => {
+    let activo = true;
+    async function cargar() {
       setCargando(true);
-      const diaSemana = new Date().getDay();
-      const [{ data: sesData }, { data: rutData }, { data: perfData }] = await Promise.all([
-        supabase.from("gym_sessions").select("*").eq("user_id", userId).eq("fecha", hoy).maybeSingle(),
-        supabase.from("gym_routines").select("*").eq("user_id", userId).eq("dia_semana", diaSemana),
+      const [{ data: sesHoy }, { data: ruts }, { data: prof }] = await Promise.all([
+        supabase.from("gym_sessions").select("*").eq("user_id", userId).eq("fecha", hoyStr).maybeSingle(),
+        supabase.from("gym_routines").select("*").eq("user_id", userId).order("dia_semana"),
         supabase.from("gym_perfil").select("*").eq("user_id", userId).maybeSingle(),
       ]);
-      if (sesData) {
-        setSesion(sesData as GymSesion);
-        setHoraInicio((sesData as GymSesion).hora_inicio ?? gymHoraActual());
-        setHoraFin((sesData as GymSesion).hora_fin ?? "");
-        setNotas((sesData as GymSesion).notas ?? "");
-        setRutinaId((sesData as GymSesion).rutina_id);
-        // cargar ejercicios de esta sesión
-        const { data: exData } = await supabase
+      if (!activo) return;
+      setSesion(sesHoy as GymSesion | null);
+      setRutinas((ruts as GymRutina[]) || []);
+      setPerfil(prof as GymPerfil | null);
+      if (sesHoy) {
+        const { data: exs } = await supabase
           .from("gym_session_exercises")
           .select("*")
-          .eq("sesion_id", sesData.id)
+          .eq("sesion_id", sesHoy.id)
           .order("orden");
-        if (exData) setEjercicios(exData as GymSesionEjercicio[]);
+        if (!activo) return;
+        const arr = (exs as GymSesionEjercicio[]) || [];
+        setEjercicios(arr);
+        for (const ex of arr) await buscarHistorial(ex.nombre);
       }
-      if (rutData) setRutinas(rutData as GymRutina[]);
-      if (perfData) setPerfil(perfData as GymPerfil);
       setCargando(false);
-    })();
-  }, [userId, hoy]);
+    }
+    cargar();
+    return () => { activo = false; };
+  }, [userId, hoyStr]);
 
-  // Comparar ejercicio vs última sesión donde se hizo
-  async function buscarComparativa(nombre: string): Promise<GymSesionEjercicio | null> {
-    if (comparativas[nombre]) return comparativas[nombre];
-    const { data: prev } = await supabase
+  async function buscarHistorial(nombre: string) {
+    if (historial[nombre]) return;
+    const { data } = await supabase
       .from("gym_session_exercises")
-      .select("*, gym_sessions!inner(user_id, fecha)")
+      .select("series, gym_sessions!inner(user_id, fecha)")
       .eq("gym_sessions.user_id", userId)
       .eq("nombre", nombre)
+      .neq("gym_sessions.fecha", hoyStr)
       .order("gym_sessions(fecha)", { ascending: false })
-      .limit(1);
-    const found = prev?.[0] ?? null;
-    if (found) setComparativas(c => ({ ...c, [nombre]: found as GymSesionEjercicio }));
-    return found as GymSesionEjercicio | null;
+      .limit(5);
+
+    type Row = { series: { reps: number; peso_kg: number | null }[]; gym_sessions: { fecha: string } };
+    const rows = (data as unknown as Row[]) || [];
+
+    // Agrupar por fecha (pueden existir múltiples sets del mismo ejercicio en una sesión)
+    const byDate = new Map<string, { reps: number; peso_kg: number | null }[]>();
+    for (const r of rows) {
+      const f = r.gym_sessions.fecha;
+      if (!byDate.has(f)) byDate.set(f, r.series);
+    }
+
+    const hist = [...byDate.entries()]
+      .slice(0, 3)
+      .map(([fecha, series]) => {
+        const pesoMax = Math.max(...series.map(s => s.peso_kg ?? 0), 0);
+        return { fecha, pesoMax, series };
+      });
+
+    setHistorial(prev => ({ ...prev, [nombre]: hist }));
+
+    // Verificar PR: si el peso actual es mayor al máximo histórico
+    if (hist.length > 0) {
+      const { data: sesActual } = await supabase
+        .from("gym_session_exercises")
+        .select("series")
+        .eq("sesion_id", sesion?.id ?? "")
+        .eq("nombre", nombre)
+        .maybeSingle();
+      if (sesActual) {
+        const pesosActual = ((sesActual as { series: { reps: number; peso_kg: number | null }[] }).series || []).map(s => s.peso_kg ?? 0);
+        const maxActual = Math.max(...pesosActual, 0);
+        const maxHistorico = Math.max(...hist.map(h => h.pesoMax), 0);
+        if (maxActual > maxHistorico && maxActual > 0) {
+          setPrs(prev => ({ ...prev, [nombre]: true }));
+        }
+      }
+    }
   }
 
-  function mejorSerie(e: GymSesionEjercicio) {
-    return e.series.reduce((best, s) => {
-      const vol = s.reps * (s.peso_kg ?? 0);
-      const bVol = best.reps * (best.peso_kg ?? 0);
-      return vol > bVol ? s : best;
-    }, e.series[0] ?? { reps: 0, peso_kg: null });
+  async function iniciarSesion() {
+    if (guardando) return;
+    setGuardando(true);
+    const hora = new Date().toTimeString().slice(0, 5);
+    const { data: nueva } = await supabase.from("gym_sessions").insert({
+      user_id: userId,
+      fecha: hoyStr,
+      hora_inicio: hora,
+      fase: perfil?.fase ?? "mantenimiento",
+      rutina_id: rutinaId,
+    }).select().single();
+    if (nueva) {
+      setSesion(nueva as GymSesion);
+      setHoraInicio(hora);
+    }
+    setGuardando(false);
   }
 
-  async function crearOCargarSesion(): Promise<string> {
-    if (sesion) return sesion.id;
-    const fase = perfil?.fase ?? "mantenimiento";
-    const { data, error } = await supabase
-      .from("gym_sessions")
-      .upsert({
-        user_id: userId,
-        fecha: hoy,
-        hora_inicio: horaInicio,
-        rutina_id: rutinaId,
-        fase,
-        notas,
-      }, { onConflict: "user_id,fecha" })
-      .select()
-      .single();
-    if (error) throw error;
-    setSesion(data as GymSesion);
-    return (data as GymSesion).id;
+  function abrirFormNuevo() {
+    setEditandoIdx(null);
+    setExNombre("");
+    setExEquipo(GYM_EQUIPOS[0]);
+    setExGrupo(GYM_GRUPOS[0]);
+    setExSeries([{ reps: "10", peso_kg: "" }]);
+    setMostrarFormEx(true);
+  }
+
+  function abrirFormEditar(idx: number) {
+    const ex = ejercicios[idx];
+    setEditandoIdx(idx);
+    setExNombre(ex.nombre);
+    setExEquipo(ex.equipo);
+    setExGrupo(ex.grupo_muscular);
+    setExSeries(ex.series.map(s => ({ reps: String(s.reps), peso_kg: s.peso_kg != null ? String(s.peso_kg) : "" })));
+    setMostrarFormEx(true);
   }
 
   async function guardarEjercicio() {
-    if (!exNombre.trim()) return;
-    if (guardando) return;
+    if (!sesion || !exNombre.trim() || guardando) return;
     setGuardando(true);
-    try {
-      const sesId = await crearOCargarSesion();
-      const serie: GymSesionEjercicio = {
-        id: crypto.randomUUID(),
-        sesion_id: sesId,
-        nombre: exNombre.trim(),
-        equipo: exEquipo,
-        grupo_muscular: exGrupo,
-        series: exSeries.filter(s => s.reps > 0),
-        orden: ejercicios.length,
-      };
+    const seriesData = exSeries.map(s => ({ reps: parseInt(s.reps) || 0, peso_kg: s.peso_kg ? parseFloat(s.peso_kg) : null }));
 
-      if (editandoIdx !== null) {
-        // update existing
-        const target = ejercicios[editandoIdx];
-        await supabase.from("gym_session_exercises").update({
-          nombre: serie.nombre, equipo: serie.equipo,
-          grupo_muscular: serie.grupo_muscular, series: serie.series,
-        }).eq("id", target.id);
-        const updated = [...ejercicios];
-        updated[editandoIdx] = { ...target, ...serie, id: target.id };
-        setEjercicios(updated);
-        // detectar PR
-        const prev = await buscarComparativa(serie.nombre);
-        if (prev) {
-          const maxPrev = Math.max(...prev.series.map(s => s.peso_kg ?? 0));
-          const maxNow  = Math.max(...serie.series.map(s => s.peso_kg ?? 0));
-          if (maxNow > maxPrev) setPrs(p => ({ ...p, [serie.nombre]: true }));
-        }
-      } else {
-        const { data } = await supabase
-          .from("gym_session_exercises")
-          .insert({ sesion_id: sesId, nombre: serie.nombre, equipo: serie.equipo,
-            grupo_muscular: serie.grupo_muscular, series: serie.series, orden: serie.orden })
-          .select().single();
-        if (data) {
-          setEjercicios(prev => [...prev, data as GymSesionEjercicio]);
-          const prevEx = await buscarComparativa(serie.nombre);
-          if (prevEx) {
-            const maxPrev = Math.max(...prevEx.series.map(s => s.peso_kg ?? 0));
-            const maxNow  = Math.max(...serie.series.map(s => s.peso_kg ?? 0));
-            if (maxNow > maxPrev) setPrs(p => ({ ...p, [serie.nombre]: true }));
-          }
-        }
+    if (editandoIdx !== null) {
+      const ex = ejercicios[editandoIdx];
+      await supabase.from("gym_session_exercises").update({
+        nombre: exNombre.trim(), equipo: exEquipo, grupo_muscular: exGrupo, series: seriesData,
+      }).eq("id", ex.id);
+      const updArr = ejercicios.map((e, i) => i === editandoIdx ? { ...e, nombre: exNombre.trim(), equipo: exEquipo, grupo_muscular: exGrupo, series: seriesData } : e);
+      setEjercicios(updArr);
+    } else {
+      const { data: nuevo } = await supabase.from("gym_session_exercises").insert({
+        sesion_id: sesion.id, nombre: exNombre.trim(), equipo: exEquipo, grupo_muscular: exGrupo,
+        series: seriesData, orden: ejercicios.length,
+      }).select().single();
+      if (nuevo) {
+        const newArr = [...ejercicios, nuevo as GymSesionEjercicio];
+        setEjercicios(newArr);
+        await buscarHistorial(exNombre.trim());
       }
-      resetForm();
-      setMostrarFormEx(false);
-    } catch(e) { console.error(e); } finally { setGuardando(false); }
+    }
+    setMostrarFormEx(false);
+    setGuardando(false);
   }
 
   async function eliminarEjercicio(idx: number) {
-    const e = ejercicios[idx];
-    await supabase.from("gym_session_exercises").delete().eq("id", e.id);
+    if (guardando) return;
+    setGuardando(true);
+    await supabase.from("gym_session_exercises").delete().eq("id", ejercicios[idx].id);
     setEjercicios(prev => prev.filter((_, i) => i !== idx));
+    setGuardando(false);
   }
 
   async function cerrarSesion() {
-    if (guardando) return;
+    if (!sesion || guardando) return;
     setGuardando(true);
-    try {
-      const sesId = await crearOCargarSesion();
-      const fin = horaFin || gymHoraActual();
-      setHoraFin(fin);
-      const duracion = gymDuracion(horaInicio, fin);
-      await supabase.from("gym_sessions").update({
-        hora_fin: fin, duracion_min: duracion, notas,
-        rutina_id: rutinaId,
-      }).eq("id", sesId);
-      setSesionGuardada(true);
-    } catch(e) { console.error(e); } finally { setGuardando(false); }
-  }
-
-  function resetForm() {
-    setExNombre(""); setExEquipo(""); setExGrupo("");
-    setExSeries([{ reps: 10, peso_kg: null }]);
-    setEditandoIdx(null);
-  }
-
-  function cargarDesdeRutina(r: GymRutina) {
-    setRutinaId(r.id);
-    // Pre-fill ejercicios into the session
-    // Just set the routine, exercises are added manually
-  }
-
-  function editarEjercicio(idx: number) {
-    const e = ejercicios[idx];
-    setExNombre(e.nombre); setExEquipo(e.equipo ?? "");
-    setExGrupo(e.grupo_muscular ?? "");
-    setExSeries([...e.series]);
-    setEditandoIdx(idx);
-    setMostrarFormEx(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const hora = new Date().toTimeString().slice(0, 5);
+    const inicio = horaInicio || sesion.hora_inicio || "00:00";
+    const [hI, mI] = inicio.split(":").map(Number);
+    const [hF, mF] = hora.split(":").map(Number);
+    const durMin = (hF * 60 + mF) - (hI * 60 + mI);
+    await supabase.from("gym_sessions").update({
+      hora_fin: hora, duracion_min: durMin > 0 ? durMin : null, notas: notas || null,
+    }).eq("id", sesion.id);
+    setHoraFin(hora);
+    setSesionGuardada(true);
+    setGuardando(false);
   }
 
   if (cargando) return (
-    <div className="flex h-64 items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-kb-gain border-t-transparent" />
+    <div className="flex items-center justify-center h-48">
+      <div className="w-8 h-8 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" />
     </div>
   );
 
-  if (sesionGuardada) return (
-    <div className="mx-auto max-w-xl px-4 py-10 text-center">
-      <div className="text-5xl mb-4">🏆</div>
-      <h2 className="text-2xl font-bold text-kb-text mb-2">¡Sesión completada!</h2>
-      <p className="text-kb-text-secondary mb-2">
-        Duración: {gymDuracion(horaInicio, horaFin)} min · {ejercicios.length} ejercicio{ejercicios.length !== 1 ? "s" : ""}
-      </p>
-      <p className="text-kb-text-secondary mb-6">
-        Volumen total: {gymVolumenTotal(ejercicios).toLocaleString()} kg
-      </p>
-      {Object.keys(prs).length > 0 && (
-        <div className="mb-6 rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4">
-          <p className="font-bold text-yellow-400 mb-1">🥇 ¡Nuevo récord personal!</p>
-          {Object.keys(prs).map(n => <p key={n} className="text-sm text-yellow-300">{n}</p>)}
-        </div>
-      )}
-      <button onClick={() => { setSesionGuardada(false); }} className="rounded-xl border border-kb-border-soft px-6 py-3 text-sm font-semibold text-kb-text">
-        Ver sesión
-      </button>
-    </div>
+  // Modal catálogo
+  if (mostrarCatalogo) return (
+    <GimEjercicioPicker
+      onSelect={({ nombre, equipo, grupo }) => {
+        setExNombre(nombre); setExEquipo(equipo); setExGrupo(grupo);
+        setMostrarCatalogo(false);
+      }}
+      onClose={() => setMostrarCatalogo(false)}
+    />
   );
 
-  const diaLabel = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][new Date().getDay()];
-
-  return (
-    <div className="mx-auto max-w-xl space-y-4 px-4 py-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-kb-text">Sesión de hoy</h2>
-          <p className="text-sm text-kb-text-secondary">{diaLabel} · {gymFechaLabel(hoy)}</p>
+  // Modal form ejercicio
+  if (mostrarFormEx) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-kb-bg">
+        <div className="flex items-center gap-3 p-4 border-b border-white/10">
+          <button onClick={() => setMostrarFormEx(false)} className="text-gray-400 hover:text-white p-1">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+          <span className="font-bold text-white flex-1">{editandoIdx !== null ? "Editar ejercicio" : "Agregar ejercicio"}</span>
         </div>
-        {perfil && (
-          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${GYM_FASES[perfil.fase]?.color}`}>
-            {GYM_FASES[perfil.fase]?.label}
-          </span>
-        )}
-      </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Botón catálogo */}
+          <button
+            onClick={() => setMostrarCatalogo(true)}
+            className="w-full py-3 rounded-xl border border-kb-gain/40 bg-kb-gain/10 text-kb-gain text-sm font-semibold flex items-center justify-center gap-2 hover:bg-kb-gain/20 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+            Elegir del catálogo
+          </button>
 
-      {/* Hora + rutina */}
-      <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4 space-y-3">
-        <div className="grid grid-cols-2 gap-3">
+          {/* Nombre seleccionado o input libre */}
           <div>
-            <label className="mb-1 block text-xs font-semibold text-kb-text-secondary">Hora inicio</label>
-            <input type="time" value={horaInicio} onChange={e => setHoraInicio(e.target.value)}
-              className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2 text-sm text-kb-text" />
+            <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Ejercicio</label>
+            <div className="flex gap-2">
+              <input
+                value={exNombre}
+                onChange={e => setExNombre(e.target.value)}
+                placeholder="Nombre del ejercicio"
+                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-kb-gain/50"
+              />
+            </div>
+            {exNombre && GYM_GRUPO_COLORES[exGrupo] && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className={`text-xs px-2.5 py-1 rounded-full border ${GYM_GRUPO_COLORES[exGrupo].text} ${GYM_GRUPO_COLORES[exGrupo].bg} ${GYM_GRUPO_COLORES[exGrupo].border}`}>
+                  {GYM_GRUPO_COLORES[exGrupo].emoji} {exGrupo}
+                </span>
+                <span className="text-xs text-gray-500">{exEquipo}</span>
+              </div>
+            )}
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-kb-text-secondary">Hora fin</label>
-            <input type="time" value={horaFin} onChange={e => setHoraFin(e.target.value)}
-              placeholder="—"
-              className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2 text-sm text-kb-text" />
-          </div>
-        </div>
-        {horaFin && (
-          <p className="text-xs text-kb-text-secondary">Duración estimada: <span className="font-bold text-kb-text">{gymDuracion(horaInicio, horaFin)} min</span></p>
-        )}
-        {rutinas.length > 0 && (
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-kb-text-secondary">Rutina de hoy</label>
-            <select value={rutinaId ?? ""} onChange={e => setRutinaId(e.target.value || null)}
-              className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2 text-sm text-kb-text">
-              <option value="">Sin rutina asignada</option>
-              {rutinas.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
-            </select>
-          </div>
-        )}
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-kb-text-secondary">Notas de la sesión</label>
-          <textarea value={notas} onChange={e => setNotas(e.target.value)} rows={2} placeholder="Cómo te sentiste, qué mejorar..."
-            className="w-full resize-none rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2 text-sm text-kb-text placeholder:text-kb-text-muted" />
-        </div>
-      </div>
 
-      {/* Botón añadir ejercicio */}
-      {!mostrarFormEx && (
-        <button onClick={() => { resetForm(); setMostrarFormEx(true); }}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-kb-gain/40 py-4 text-sm font-semibold text-kb-gain transition-all hover:border-kb-gain hover:bg-kb-gain/5">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Añadir ejercicio
-        </button>
-      )}
-
-      {/* Formulario ejercicio */}
-      {mostrarFormEx && (
-        <div className="rounded-2xl border border-kb-gain/30 bg-kb-gain/5 p-4 space-y-3">
-          <h3 className="font-bold text-kb-text">{editandoIdx !== null ? "Editar ejercicio" : "Nuevo ejercicio"}</h3>
-
-          <input value={exNombre} onChange={e => setExNombre(e.target.value)} placeholder="Nombre del ejercicio (ej. Press banca)"
-            className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2.5 text-sm text-kb-text placeholder:text-kb-text-muted" />
-
-          <div className="grid grid-cols-2 gap-2">
+          {/* Equipo y grupo */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs font-semibold text-kb-text-secondary">Equipo/máquina</label>
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Equipo</label>
               <select value={exEquipo} onChange={e => setExEquipo(e.target.value)}
-                className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2 text-sm text-kb-text">
-                <option value="">Seleccionar</option>
-                {GYM_EQUIPOS.map(g => <option key={g} value={g}>{g}</option>)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-kb-gain/50">
+                {GYM_EQUIPOS.map(eq => <option key={eq} value={eq}>{eq}</option>)}
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-semibold text-kb-text-secondary">Músculo</label>
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Músculo</label>
               <select value={exGrupo} onChange={e => setExGrupo(e.target.value)}
-                className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2 text-sm text-kb-text">
-                <option value="">Seleccionar</option>
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-kb-gain/50">
                 {GYM_GRUPOS.map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
@@ -15926,37 +16049,44 @@ function GimHoyView({ userId }: { userId: string }) {
 
           {/* Series */}
           <div>
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-semibold text-kb-text-secondary">Series</span>
-              <button onClick={() => setExSeries(s => [...s, { reps: 10, peso_kg: null }])}
-                className="rounded-lg border border-kb-gain/40 px-2 py-0.5 text-[11px] font-semibold text-kb-gain">
-                + Serie
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Series</label>
+              <button onClick={() => setExSeries(prev => [...prev, { reps: "10", peso_kg: "" }])}
+                className="text-xs text-kb-gain font-semibold flex items-center gap-1 hover:opacity-80">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
+                Agregar serie
               </button>
             </div>
             <div className="space-y-2">
               {exSeries.map((s, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <span className="w-6 text-center text-xs font-bold text-kb-text-secondary">{i + 1}</span>
-                  <input type="number" min={1} max={99} placeholder="Reps"
-                    value={s.reps || ""} onChange={e => {
-                      const copy = [...exSeries];
-                      copy[i] = { ...copy[i], reps: parseInt(e.target.value) || 0 };
-                      setExSeries(copy);
-                    }}
-                    className="w-16 rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-center text-sm text-kb-text" />
-                  <span className="text-xs text-kb-text-secondary">reps</span>
-                  <input type="number" min={0} step={0.5} placeholder="Peso"
-                    value={s.peso_kg ?? ""} onChange={e => {
-                      const copy = [...exSeries];
-                      copy[i] = { ...copy[i], peso_kg: e.target.value ? parseFloat(e.target.value) : null };
-                      setExSeries(copy);
-                    }}
-                    className="w-20 rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-center text-sm text-kb-text" />
-                  <span className="text-xs text-kb-text-secondary">kg</span>
+                  <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-xs font-bold text-gray-400 flex-shrink-0">{i+1}</div>
+                  <div className="flex-1 flex gap-2">
+                    <div className="flex-1">
+                      <input
+                        type="number"
+                        value={s.reps}
+                        onChange={e => setExSeries(prev => prev.map((x,j) => j===i ? {...x, reps: e.target.value} : x))}
+                        placeholder="Reps"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white text-center focus:outline-none focus:border-kb-gain/50"
+                      />
+                      <p className="text-xs text-gray-600 text-center mt-0.5">reps</p>
+                    </div>
+                    <div className="flex-1">
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={s.peso_kg}
+                        onChange={e => setExSeries(prev => prev.map((x,j) => j===i ? {...x, peso_kg: e.target.value} : x))}
+                        placeholder="—"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white text-center focus:outline-none focus:border-kb-gain/50"
+                      />
+                      <p className="text-xs text-gray-600 text-center mt-0.5">kg</p>
+                    </div>
+                  </div>
                   {exSeries.length > 1 && (
-                    <button onClick={() => setExSeries(s => s.filter((_, j) => j !== i))}
-                      className="ml-auto text-kb-loss/70 hover:text-kb-loss">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    <button onClick={() => setExSeries(prev => prev.filter((_,j) => j!==i))} className="text-gray-600 hover:text-red-400 p-1 transition-colors">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
                     </button>
                   )}
                 </div>
@@ -15964,163 +16094,291 @@ function GimHoyView({ userId }: { userId: string }) {
             </div>
           </div>
 
-          {/* Comparativa previa */}
-          {exNombre.trim() && comparativas[exNombre.trim()] && (
-            <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3">
-              <p className="text-xs font-semibold text-blue-400 mb-1">Última vez que hiciste este ejercicio</p>
-              {comparativas[exNombre.trim()].series.map((s, i) => (
-                <p key={i} className="text-xs text-kb-text-secondary">
-                  Serie {i+1}: {s.reps} reps × {s.peso_kg ?? 0} kg
-                </p>
-              ))}
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <button onClick={() => { setMostrarFormEx(false); resetForm(); }}
-              className="rounded-xl border border-kb-border-soft px-4 py-2.5 text-sm text-kb-text-secondary">
-              Cancelar
-            </button>
-            <button onClick={() => {
-              if (exNombre.trim()) buscarComparativa(exNombre.trim());
-              guardarEjercicio();
-            }} disabled={guardando || !exNombre.trim()}
-              className="flex-1 rounded-xl bg-kb-gain py-2.5 text-sm font-bold text-kb-bg disabled:opacity-60">
-              {guardando ? "Guardando..." : editandoIdx !== null ? "Actualizar" : "Añadir"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Lista de ejercicios registrados */}
-      {ejercicios.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-bold text-kb-text-secondary uppercase tracking-wider">Ejercicios de hoy</h3>
-          {ejercicios.map((e, i) => (
-            <div key={e.id} className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4">
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-kb-text">{e.nombre}</span>
-                    {prs[e.nombre] && <span className="rounded-full bg-yellow-500/20 px-2 py-0.5 text-[10px] font-bold text-yellow-400">🥇 PR</span>}
+          {/* Historial previo del ejercicio */}
+          {exNombre.trim() && historial[exNombre.trim()] && historial[exNombre.trim()].length > 0 && (
+            <div className="rounded-xl bg-white/5 border border-white/10 p-3">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Historial reciente</p>
+              <div className="space-y-1.5">
+                {historial[exNombre.trim()].map(h => (
+                  <div key={h.fecha} className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">{new Date(h.fecha + "T12:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short" })}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-gray-400">{h.series.length} series</span>
+                      {h.pesoMax > 0 && <span className="text-xs font-semibold text-white">{h.pesoMax} kg</span>}
+                    </div>
                   </div>
-                  <div className="flex gap-2 mt-0.5">
-                    {e.equipo && <span className="text-xs text-kb-text-muted">{e.equipo}</span>}
-                    {e.grupo_muscular && <span className="text-xs text-kb-text-muted">· {e.grupo_muscular}</span>}
-                  </div>
-                </div>
-                <div className="flex gap-1">
-                  <button onClick={() => editarEjercicio(i)} className="rounded-lg p-1.5 text-kb-text-secondary hover:text-kb-text">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                  </button>
-                  <button onClick={() => eliminarEjercicio(i)} className="rounded-lg p-1.5 text-kb-loss/60 hover:text-kb-loss">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                  </button>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {e.series.map((s, j) => (
-                  <span key={j} className="rounded-lg border border-kb-border bg-kb-surface px-2 py-1 text-xs font-mono text-kb-text">
-                    {s.reps}r × {s.peso_kg ?? "—"}kg
-                  </span>
                 ))}
               </div>
-              {comparativas[e.nombre] && (
-                <p className="mt-2 text-xs text-kb-text-muted">
-                  Última vez: mejor {Math.max(...comparativas[e.nombre].series.map(s => s.peso_kg ?? 0))} kg
-                  {prs[e.nombre] && " → ¡Superado! 🔥"}
-                </p>
-              )}
             </div>
-          ))}
+          )}
+        </div>
+        <div className="p-4 border-t border-white/10">
+          <button
+            onClick={guardarEjercicio}
+            disabled={guardando || !exNombre.trim()}
+            className="w-full py-3.5 rounded-xl font-bold text-sm bg-kb-gain text-kb-bg hover:bg-kb-gain/90 disabled:opacity-50 active:scale-95 transition-all"
+          >
+            {guardando ? "Guardando..." : editandoIdx !== null ? "Actualizar ejercicio" : "Agregar ejercicio"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Vista principal
+  if (sesionGuardada) return (
+    <div className="flex flex-col items-center justify-center h-full p-8 text-center gap-4">
+      <div className="w-20 h-20 rounded-full bg-kb-gain/20 border border-kb-gain/40 flex items-center justify-center text-4xl">🏆</div>
+      <h2 className="text-xl font-bold text-white">¡Sesión completada!</h2>
+      <p className="text-sm text-gray-400">
+        {ejercicios.length} ejercicios · {horaInicio && horaFin ? `${horaInicio} – ${horaFin}` : ""}
+      </p>
+      {Object.values(prs).some(Boolean) && (
+        <div className="rounded-xl bg-kb-gain/10 border border-kb-gain/30 px-4 py-3 flex items-center gap-2">
+          <span className="text-xl">🔥</span>
+          <p className="text-sm font-semibold text-kb-gain">¡Nuevo récord personal!</p>
+        </div>
+      )}
+    </div>
+  );
+
+  if (!sesion) return (
+    <div className="p-4 space-y-4">
+      {/* Estado sin sesión */}
+      <div className="rounded-2xl bg-gradient-to-br from-kb-gain/15 to-kb-gain/5 border border-kb-gain/30 p-6 text-center">
+        <p className="text-5xl mb-4">⚡</p>
+        <h2 className="text-xl font-bold text-white mb-1">¿Listo para entrenar?</h2>
+        <p className="text-sm text-gray-400 mb-5">{new Date().toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" })}</p>
+        {rutinas.length > 0 && (
+          <div className="mb-4 text-left">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Cargar rutina del día</p>
+            <div className="grid gap-2">
+              {rutinas.map(r => (
+                <button
+                  key={r.id}
+                  onClick={() => setRuntinaId(r.id)}
+                  className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all ${rutinaId === r.id ? "border-kb-gain/60 bg-kb-gain/10" : "border-white/10 bg-white/5 hover:border-white/20"}`}
+                >
+                  <span className="text-lg">📋</span>
+                  <div>
+                    <p className="text-sm font-medium text-white">{r.nombre}</p>
+                    <p className="text-xs text-gray-500">{["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][r.dia_semana]}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <button onClick={iniciarSesion} disabled={guardando}
+          className="w-full py-3.5 rounded-xl font-bold text-sm bg-kb-gain text-kb-bg hover:bg-kb-gain/90 disabled:opacity-50 active:scale-95 transition-all">
+          {guardando ? "Iniciando..." : "Iniciar sesión de hoy 🚀"}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="p-4 space-y-4 pb-8">
+      {/* Header sesión activa */}
+      <div className="rounded-2xl bg-gradient-to-br from-kb-gain/15 to-transparent border border-kb-gain/30 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-xs text-gray-400 font-medium">Sesión activa</p>
+            <p className="text-sm font-bold text-white">{new Date().toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "short" })}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-kb-gain animate-pulse" />
+            <span className="text-xs font-semibold text-kb-gain">EN CURSO</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {sesion.hora_inicio && <span className="text-xs text-gray-400">⏱ Inicio: {sesion.hora_inicio}</span>}
+          <span className="text-xs text-gray-600">·</span>
+          <span className="text-xs text-gray-400">{ejercicios.length} ejercicios</span>
+        </div>
+      </div>
+
+      {/* Ejercicios de la sesión */}
+      {ejercicios.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Ejercicios de hoy</p>
+          {ejercicios.map((ex, idx) => {
+            const col = GYM_GRUPO_COLORES[ex.grupo_muscular] ?? GYM_GRUPO_COLORES["Otro"];
+            const esPR = prs[ex.nombre];
+            const hist = historial[ex.nombre] ?? [];
+            const ultimoPeso = hist[0]?.pesoMax ?? null;
+            const pesoActual = Math.max(...ex.series.map(s => s.peso_kg ?? 0), 0);
+            const mejoro = ultimoPeso !== null && pesoActual > ultimoPeso && pesoActual > 0;
+            const igual = ultimoPeso !== null && pesoActual === ultimoPeso && pesoActual > 0;
+
+            return (
+              <div key={ex.id} className={`rounded-xl border bg-white/3 border-l-4 overflow-hidden ${col.border}`}>
+                <div className="p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-white truncate">{ex.nombre}</span>
+                        {esPR && <span className="text-xs px-1.5 py-0.5 rounded-md bg-kb-gain/20 text-kb-gain border border-kb-gain/40 font-bold">🔥 PR</span>}
+                        {mejoro && !esPR && <span className="text-xs px-1.5 py-0.5 rounded-md bg-green-500/15 text-green-400 border border-green-500/30 font-medium">↑ Mejor</span>}
+                        {igual && <span className="text-xs px-1.5 py-0.5 rounded-md bg-yellow-500/15 text-yellow-400 border border-yellow-500/30 font-medium">= Igual</span>}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className={`text-xs font-medium ${col.text}`}>{col.emoji} {ex.grupo_muscular}</span>
+                        <span className="text-xs text-gray-600">·</span>
+                        <span className="text-xs text-gray-500">{ex.equipo}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => abrirFormEditar(idx)} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                      </button>
+                      <button onClick={() => eliminarEjercicio(idx)} className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Series del ejercicio */}
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {ex.series.map((s, si) => (
+                      <div key={si} className={`rounded-lg px-2.5 py-1 border text-xs font-medium ${col.bg} ${col.border}`}>
+                        <span className={col.text}>{s.reps} reps</span>
+                        {s.peso_kg != null && <span className="text-gray-400"> · {s.peso_kg}kg</span>}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Historial de sesiones previas */}
+                  {hist.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-white/5">
+                      <div className="flex items-center gap-3 overflow-x-auto">
+                        {hist.map(h => (
+                          <div key={h.fecha} className="flex-shrink-0 text-center">
+                            <p className="text-xs text-gray-600">{new Date(h.fecha + "T12:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short" })}</p>
+                            <p className="text-xs font-semibold text-gray-400 mt-0.5">{h.pesoMax > 0 ? `${h.pesoMax}kg` : `${h.series.length}s`}</p>
+                          </div>
+                        ))}
+                        {ultimoPeso !== null && pesoActual > 0 && (
+                          <div className="flex-shrink-0 ml-1 pl-2 border-l border-white/10 text-center">
+                            <p className="text-xs text-gray-500">Hoy</p>
+                            <p className={`text-xs font-bold mt-0.5 ${mejoro ? "text-green-400" : igual ? "text-yellow-400" : "text-white"}`}>
+                              {pesoActual}kg
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Botón cerrar sesión */}
-      {(ejercicios.length > 0 || sesion) && (
-        <button onClick={cerrarSesion} disabled={guardando}
-          className="w-full rounded-2xl bg-kb-gain py-4 text-sm font-bold text-kb-bg disabled:opacity-60">
-          {guardando ? "Guardando..." : "✅ Finalizar sesión"}
-        </button>
+      {/* Botón agregar ejercicio */}
+      <button
+        onClick={abrirFormNuevo}
+        className="w-full py-3 rounded-xl border border-dashed border-white/20 text-gray-400 text-sm font-medium flex items-center justify-center gap-2 hover:border-kb-gain/40 hover:text-kb-gain hover:bg-kb-gain/5 transition-all"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
+        Agregar ejercicio
+      </button>
+
+      {/* Cerrar sesión */}
+      {ejercicios.length > 0 && (
+        <div className="space-y-3 pt-2">
+          <textarea
+            value={notas}
+            onChange={e => setNotas(e.target.value)}
+            placeholder="Notas de la sesión (opcional)..."
+            rows={2}
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-kb-gain/50 resize-none"
+          />
+          <button
+            onClick={cerrarSesion}
+            disabled={guardando}
+            className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-kb-gain to-kb-gain/80 text-kb-bg hover:opacity-90 disabled:opacity-50 active:scale-95 transition-all"
+          >
+            {guardando ? "Guardando..." : "✅ Finalizar sesión"}
+          </button>
+        </div>
       )}
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
-// GimPlanView — Constructor de rutinas semanales
+// GYM MODULE V3 — Part 4: GimPlanView (con catálogo)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function GimPlanView({ userId }: { userId: string }) {
-  const DIAS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
   const [rutinas, setRutinas] = useState<GymRutina[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [modalDia, setModalDia] = useState<number | null>(null);
-  const [editandoRutina, setEditandoRutina] = useState<GymRutina | null>(null);
   const [guardando, setGuardando] = useState(false);
+  const [modalAbierto, setModalAbierto] = useState(false);
+  const [editandoRutina, setEditandoRutina] = useState<GymRutina | null>(null);
+  const [mostrarCatalogo, setMostrarCatalogo] = useState(false);
+  const [insertandoEnIdx, setInsertandoEnIdx] = useState<number | null>(null);
 
-  // Form state
   const [nombre, setNombre] = useState("");
-  const [ejerciciosRutina, setEjerciciosRutina] = useState<GymRutinaEjercicio[]>([]);
+  const [diaSemana, setDiaSemana] = useState(1);
+  const [ejerciciosPlan, setEjerciciosPlan] = useState<GymRutinaEjercicio[]>([]);
+
+  const diasLabel = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 
   useEffect(() => {
-    if (!userId) return;
-    (async () => {
+    let activo = true;
+    async function cargar() {
+      setCargando(true);
       const { data } = await supabase.from("gym_routines").select("*").eq("user_id", userId).order("dia_semana");
-      if (data) setRutinas(data as GymRutina[]);
+      if (!activo) return;
+      setRutinas((data as GymRutina[]) || []);
       setCargando(false);
-    })();
+    }
+    cargar();
+    return () => { activo = false; };
   }, [userId]);
 
-  function abrirNuevaRutina(dia: number) {
-    setModalDia(dia);
-    setEditandoRutina(null);
-    setNombre("");
-    setEjerciciosRutina([]);
+  function abrirModal(r?: GymRutina) {
+    if (r) {
+      setEditandoRutina(r);
+      setNombre(r.nombre);
+      setDiaSemana(r.dia_semana);
+      setEjerciciosPlan(r.ejercicios || []);
+    } else {
+      setEditandoRutina(null);
+      setNombre("");
+      setDiaSemana(1);
+      setEjerciciosPlan([]);
+    }
+    setModalAbierto(true);
   }
 
-  function abrirEditarRutina(r: GymRutina) {
-    setModalDia(r.dia_semana);
-    setEditandoRutina(r);
-    setNombre(r.nombre);
-    setEjerciciosRutina([...(r.ejercicios ?? [])]);
-  }
-
-  function addEjercicioRutina() {
-    setEjerciciosRutina(prev => [...prev, {
+  function agregarEjercicioPlan() {
+    setEjerciciosPlan(prev => [...prev, {
       id: crypto.randomUUID(),
-      nombre: "", equipo: "", grupo_muscular: "",
+      nombre: "", equipo: GYM_EQUIPOS[0], grupo_muscular: GYM_GRUPOS[0],
       series: 3, reps_objetivo: "8-12", orden: prev.length,
     }]);
   }
 
-  function updateEjRutina(idx: number, field: keyof GymRutinaEjercicio, val: string | number) {
-    setEjerciciosRutina(prev => {
-      const copy = [...prev];
-      copy[idx] = { ...copy[idx], [field]: val };
-      return copy;
-    });
-  }
-
   async function guardarRutina() {
-    if (!nombre.trim() || modalDia === null || guardando) return;
+    if (!nombre.trim() || guardando) return;
     setGuardando(true);
-    try {
-      const payload = {
-        user_id: userId,
-        nombre: nombre.trim(),
-        dia_semana: modalDia,
-        ejercicios: ejerciciosRutina.filter(e => e.nombre.trim()),
-      };
-      if (editandoRutina) {
-        await supabase.from("gym_routines").update(payload).eq("id", editandoRutina.id);
-        setRutinas(prev => prev.map(r => r.id === editandoRutina.id ? { ...r, ...payload } : r));
-      } else {
-        const { data } = await supabase.from("gym_routines").insert(payload).select().single();
-        if (data) setRutinas(prev => [...prev, data as GymRutina]);
-      }
-      setModalDia(null);
-    } catch(e) { console.error(e); } finally { setGuardando(false); }
+    const ejerciciosConOrden = ejerciciosPlan.map((e, i) => ({ ...e, orden: i }));
+    if (editandoRutina) {
+      await supabase.from("gym_routines").update({
+        nombre: nombre.trim(), dia_semana: diaSemana, ejercicios: ejerciciosConOrden, updated_at: new Date().toISOString(),
+      }).eq("id", editandoRutina.id);
+      setRutinas(prev => prev.map(r => r.id === editandoRutina.id ? { ...r, nombre: nombre.trim(), dia_semana: diaSemana, ejercicios: ejerciciosConOrden } : r));
+    } else {
+      const { data } = await supabase.from("gym_routines").insert({
+        user_id: userId, nombre: nombre.trim(), dia_semana: diaSemana, ejercicios: ejerciciosConOrden,
+      }).select().single();
+      if (data) setRutinas(prev => [...prev, data as GymRutina].sort((a, b) => a.dia_semana - b.dia_semana));
+    }
+    setModalAbierto(false);
+    setGuardando(false);
   }
 
   async function eliminarRutina(id: string) {
@@ -16128,537 +16386,759 @@ function GimPlanView({ userId }: { userId: string }) {
     setRutinas(prev => prev.filter(r => r.id !== id));
   }
 
-  if (cargando) return (
-    <div className="flex h-64 items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-kb-gain border-t-transparent" />
+  if (cargando) return <div className="flex items-center justify-center h-48"><div className="w-8 h-8 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" /></div>;
+
+  // Modal catálogo dentro del plan
+  if (mostrarCatalogo) return (
+    <GimEjercicioPicker
+      onSelect={({ nombre: n, equipo: eq, grupo: gr }) => {
+        if (insertandoEnIdx !== null) {
+          setEjerciciosPlan(prev => prev.map((e, i) => i === insertandoEnIdx ? { ...e, nombre: n, equipo: eq, grupo_muscular: gr } : e));
+        } else {
+          setEjerciciosPlan(prev => [...prev, {
+            id: crypto.randomUUID(), nombre: n, equipo: eq, grupo_muscular: gr,
+            series: 3, reps_objetivo: "8-12", orden: prev.length,
+          }]);
+        }
+        setMostrarCatalogo(false);
+        setInsertandoEnIdx(null);
+        setModalAbierto(true);
+      }}
+      onClose={() => { setMostrarCatalogo(false); setInsertandoEnIdx(null); setModalAbierto(true); }}
+    />
+  );
+
+  // Modal crear/editar rutina
+  if (modalAbierto) return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-kb-bg">
+      <div className="flex items-center gap-3 p-4 border-b border-white/10">
+        <button onClick={() => setModalAbierto(false)} className="text-gray-400 hover:text-white p-1">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+        <span className="font-bold text-white flex-1">{editandoRutina ? "Editar rutina" : "Nueva rutina"}</span>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div>
+          <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Nombre de la rutina</label>
+          <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: Pecho y Tríceps"
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-kb-gain/50" />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-2">Día de la semana</label>
+          <div className="flex gap-1.5">
+            {diasLabel.map((d, i) => (
+              <button key={i} onClick={() => setDiaSemana(i)}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${diaSemana === i ? "border-kb-gain/60 bg-kb-gain/20 text-kb-gain" : "border-white/10 bg-white/5 text-gray-500"}`}>
+                {d.slice(0,1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Ejercicios</label>
+            <button
+              onClick={() => { setMostrarCatalogo(true); setInsertandoEnIdx(null); setModalAbierto(false); }}
+              className="text-xs text-kb-gain font-semibold flex items-center gap-1 hover:opacity-80">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
+              Del catálogo
+            </button>
+          </div>
+          <div className="space-y-2">
+            {ejerciciosPlan.map((ej, i) => {
+              const col = GYM_GRUPO_COLORES[ej.grupo_muscular] ?? GYM_GRUPO_COLORES["Otro"];
+              return (
+                <div key={ej.id} className={`rounded-xl border p-3 bg-white/3 border-l-4 ${col.border}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <button
+                      onClick={() => { setInsertandoEnIdx(i); setMostrarCatalogo(true); setModalAbierto(false); }}
+                      className={`flex-1 text-left text-sm font-medium ${ej.nombre ? "text-white" : "text-gray-500"}`}>
+                      {ej.nombre || "Seleccionar ejercicio..."}
+                    </button>
+                    <button onClick={() => setEjerciciosPlan(prev => prev.filter((_,j) => j !== i))}
+                      className="text-gray-600 hover:text-red-400 p-1 transition-colors">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                  </div>
+                  {ej.nombre && (
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`text-xs ${col.text}`}>{col.emoji} {ej.grupo_muscular}</span>
+                      <span className="text-xs text-gray-600">· {ej.equipo}</span>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <input type="number" value={ej.series}
+                        onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, series: parseInt(e.target.value)||3} : x))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 text-xs text-white text-center focus:outline-none focus:border-kb-gain/50" />
+                      <p className="text-xs text-gray-600 text-center mt-0.5">series</p>
+                    </div>
+                    <div className="flex-1">
+                      <input value={ej.reps_objetivo}
+                        onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, reps_objetivo: e.target.value} : x))}
+                        placeholder="8-12"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 text-xs text-white text-center focus:outline-none focus:border-kb-gain/50" />
+                      <p className="text-xs text-gray-600 text-center mt-0.5">reps</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            <button onClick={agregarEjercicioPlan}
+              className="w-full py-2.5 rounded-xl border border-dashed border-white/20 text-gray-500 text-xs font-medium flex items-center justify-center gap-1.5 hover:border-white/30 hover:text-gray-400 transition-all">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
+              Agregar manualmente
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="p-4 border-t border-white/10">
+        <button onClick={guardarRutina} disabled={guardando || !nombre.trim()}
+          className="w-full py-3.5 rounded-xl font-bold text-sm bg-kb-gain text-kb-bg hover:bg-kb-gain/90 disabled:opacity-50 active:scale-95 transition-all">
+          {guardando ? "Guardando..." : "Guardar rutina"}
+        </button>
+      </div>
     </div>
   );
 
-  const rutinasPorDia: Record<number, GymRutina[]> = {};
-  rutinas.forEach(r => {
-    if (!rutinasPorDia[r.dia_semana]) rutinasPorDia[r.dia_semana] = [];
-    rutinasPorDia[r.dia_semana].push(r);
-  });
-
   return (
-    <div className="mx-auto max-w-xl px-4 py-5">
-      <h2 className="mb-1 text-xl font-bold text-kb-text">Mi Rutina Semanal</h2>
-      <p className="mb-5 text-sm text-kb-text-secondary">Organiza tus entrenamientos por día de la semana.</p>
-
-      {/* Vista de la semana */}
-      <div className="space-y-3">
-        {DIAS.map((dia, idx) => {
-          const rs = rutinasPorDia[idx] ?? [];
-          return (
-            <div key={idx} className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-kb-text">{dia}</span>
-                <button onClick={() => abrirNuevaRutina(idx)}
-                  className="flex items-center gap-1 rounded-lg border border-kb-gain/40 px-2.5 py-1 text-xs font-semibold text-kb-gain">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" className="h-3.5 w-3.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  Rutina
-                </button>
-              </div>
-              {rs.length === 0 ? (
-                <p className="text-xs text-kb-text-muted">Sin rutina — día libre</p>
-              ) : rs.map(r => (
-                <div key={r.id} className="mb-2 last:mb-0">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-kb-text">{r.nombre}</span>
-                    <div className="flex gap-1">
-                      <button onClick={() => abrirEditarRutina(r)}
-                        className="rounded p-1 text-kb-text-secondary hover:text-kb-text">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-3.5 w-3.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                      </button>
-                      <button onClick={() => eliminarRutina(r.id)}
-                        className="rounded p-1 text-kb-loss/60 hover:text-kb-loss">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-3.5 w-3.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V4h6v2"/></svg>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {(r.ejercicios ?? []).slice(0, 4).map((e, i) => (
-                      <span key={i} className="rounded-md border border-kb-border bg-kb-surface px-2 py-0.5 text-[11px] text-kb-text-secondary">
-                        {e.nombre}
-                      </span>
-                    ))}
-                    {(r.ejercicios ?? []).length > 4 && (
-                      <span className="rounded-md border border-kb-border bg-kb-surface px-2 py-0.5 text-[11px] text-kb-text-muted">
-                        +{(r.ejercicios ?? []).length - 4} más
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          );
-        })}
+    <div className="p-4 space-y-4 pb-8">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold text-white">Plan semanal</h2>
+        <button onClick={() => abrirModal()}
+          className="flex items-center gap-1.5 text-xs font-semibold text-kb-gain bg-kb-gain/10 border border-kb-gain/30 px-3 py-1.5 rounded-xl hover:bg-kb-gain/20 transition-colors">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
+          Nueva rutina
+        </button>
       </div>
 
-      {/* Modal crear/editar rutina */}
-      {modalDia !== null && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center" onClick={e => { if (e.target === e.currentTarget) setModalDia(null); }}>
-          <div className="w-full max-w-lg rounded-3xl border border-kb-border bg-kb-bg p-5 max-h-[90vh] overflow-y-auto">
-            <h3 className="mb-4 text-lg font-bold text-kb-text">
-              {editandoRutina ? "Editar rutina" : `Nueva rutina — ${DIAS[modalDia]}`}
-            </h3>
-
-            <input value={nombre} onChange={e => setNombre(e.target.value)}
-              placeholder="Nombre de la rutina (ej. Pecho + Tríceps)"
-              className="mb-4 w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2.5 text-sm text-kb-text placeholder:text-kb-text-muted" />
-
-            {/* Ejercicios de la rutina */}
-            <div className="mb-3 space-y-3">
-              {ejerciciosRutina.map((e, i) => (
-                <div key={e.id} className="rounded-xl border border-kb-border-soft bg-kb-surface/30 p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-kb-text-secondary">Ejercicio {i + 1}</span>
-                    <button onClick={() => setEjerciciosRutina(p => p.filter((_,j) => j !== i))}
-                      className="text-kb-loss/60 hover:text-kb-loss">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    </button>
-                  </div>
-                  <input value={e.nombre} onChange={ev => updateEjRutina(i, "nombre", ev.target.value)}
-                    placeholder="Nombre (ej. Press banca)"
-                    className="w-full rounded-lg border border-kb-border bg-kb-surface/40 px-2.5 py-2 text-sm text-kb-text placeholder:text-kb-text-muted" />
-                  <div className="grid grid-cols-2 gap-2">
-                    <select value={e.equipo} onChange={ev => updateEjRutina(i, "equipo", ev.target.value)}
-                      className="rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-xs text-kb-text">
-                      <option value="">Equipo</option>
-                      {GYM_EQUIPOS.map(g => <option key={g} value={g}>{g}</option>)}
-                    </select>
-                    <select value={e.grupo_muscular} onChange={ev => updateEjRutina(i, "grupo_muscular", ev.target.value)}
-                      className="rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-xs text-kb-text">
-                      <option value="">Músculo</option>
-                      {GYM_GRUPOS.map(g => <option key={g} value={g}>{g}</option>)}
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="mb-0.5 block text-[11px] font-semibold text-kb-text-secondary">Series</label>
-                      <input type="number" min={1} max={10} value={e.series}
-                        onChange={ev => updateEjRutina(i, "series", parseInt(ev.target.value) || 3)}
-                        className="w-full rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-sm text-kb-text" />
-                    </div>
-                    <div>
-                      <label className="mb-0.5 block text-[11px] font-semibold text-kb-text-secondary">Reps objetivo</label>
-                      <input type="text" value={e.reps_objetivo} onChange={ev => updateEjRutina(i, "reps_objetivo", ev.target.value)}
-                        placeholder="8-12"
-                        className="w-full rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-sm text-kb-text placeholder:text-kb-text-muted" />
-                    </div>
-                  </div>
+      {rutinas.length === 0 ? (
+        <div className="rounded-2xl bg-white/5 border border-white/10 p-8 text-center">
+          <p className="text-4xl mb-3">📋</p>
+          <p className="text-sm font-semibold text-white mb-1">Sin rutinas</p>
+          <p className="text-xs text-gray-400 mb-4">Crea tu primera rutina semanal</p>
+          <button onClick={() => abrirModal()}
+            className="px-4 py-2 rounded-xl text-sm font-semibold bg-kb-gain/20 text-kb-gain border border-kb-gain/40 hover:bg-kb-gain/30 transition-colors">
+            Crear rutina
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {diasLabel.map((dia, dIdx) => {
+            const rutsDelDia = rutinas.filter(r => r.dia_semana === dIdx);
+            const esHoy = new Date().getDay() === dIdx;
+            return (
+              <div key={dIdx} className={`rounded-xl border p-3 transition-all ${esHoy ? "border-kb-gain/30 bg-kb-gain/5" : "border-white/10 bg-white/3"}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-xs font-bold uppercase tracking-wider ${esHoy ? "text-kb-gain" : "text-gray-500"}`}>
+                    {esHoy ? "🔥 " : ""}{dia}
+                  </span>
+                  {rutsDelDia.length === 0 && (
+                    <span className="text-xs text-gray-700">Descanso</span>
+                  )}
                 </div>
-              ))}
-            </div>
-
-            <button onClick={addEjercicioRutina}
-              className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-kb-border py-3 text-sm text-kb-text-secondary hover:border-kb-gain hover:text-kb-gain">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" className="h-4 w-4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Añadir ejercicio
-            </button>
-
-            <div className="flex gap-2">
-              <button onClick={() => setModalDia(null)} className="rounded-xl border border-kb-border-soft px-4 py-3 text-sm text-kb-text-secondary">
-                Cancelar
-              </button>
-              <button onClick={guardarRutina} disabled={guardando || !nombre.trim()}
-                className="flex-1 rounded-xl bg-kb-gain py-3 text-sm font-bold text-kb-bg disabled:opacity-60">
-                {guardando ? "Guardando..." : "Guardar rutina"}
-              </button>
-            </div>
-          </div>
+                {rutsDelDia.map(r => (
+                  <div key={r.id} className="mb-2 last:mb-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-white">{r.nombre}</span>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => abrirModal(r)} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                        </button>
+                        <button onClick={() => eliminarRutina(r.id)} className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                    {r.ejercicios && r.ejercicios.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {r.ejercicios.slice(0,5).map(e => {
+                          const col = GYM_GRUPO_COLORES[e.grupo_muscular] ?? GYM_GRUPO_COLORES["Otro"];
+                          return (
+                            <span key={e.id} className={`text-xs px-2 py-0.5 rounded-lg border ${col.text} ${col.bg} ${col.border}`}>
+                              {col.emoji} {e.nombre || e.grupo_muscular}
+                            </span>
+                          );
+                        })}
+                        {r.ejercicios.length > 5 && <span className="text-xs text-gray-600">+{r.ejercicios.length-5}</span>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
-// GimProgresoView — Medidas corporales + Récords por ejercicio
+// GYM MODULE V3 — Part 5: GimProgresoView (con tab Progresión + gráfica SVG)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function GimProgresoView({ userId }: { userId: string }) {
-  const [tab, setTab] = useState<"medidas" | "records">("medidas");
-  const [medidas, setMedidas] = useState<BodyMeasurement[]>([]);
-  const [records, setRecords] = useState<{ nombre: string; peso_max: number; fecha: string }[]>([]);
-  const [cargando, setCargando] = useState(true);
-  const [mostrarForm, setMostrarForm] = useState(false);
-  const [guardando, setGuardando] = useState(false);
+  const [tab, setTab] = useState<"medidas" | "records" | "progresion">("records");
 
-  // Form medida
-  const [fMedida, setFMedida] = useState({ fecha: gymFechaKey(), peso_kg: "", grasa_pct: "", musculo_kg: "", pecho_cm: "", cintura_cm: "", cadera_cm: "", brazo_cm: "", pierna_cm: "", notas: "" });
+  // ── MEDIDAS tab ────────────────────────────────────────────────────────────
+  const [medidas, setMedidas] = useState<BodyMeasurement[]>([]);
+  const [cargandoMedidas, setCargandoMedidas] = useState(false);
+  const [nuevoPeso, setNuevoPeso] = useState("");
+  const [nuevaCintura, setNuevaCintura] = useState("");
+  const [guardandoMedida, setGuardandoMedida] = useState(false);
+
+  // ── RECORDS tab ────────────────────────────────────────────────────────────
+  const [records, setRecords] = useState<Record<string, { pesoMax: number; fecha: string }>>({});
+  const [cargandoRec, setCargandoRec] = useState(false);
+
+  // ── PROGRESIÓN tab ─────────────────────────────────────────────────────────
+  const [ejercicioSel, setEjercicioSel] = useState("");
+  const [mostrarPickerProg, setMostrarPickerProg] = useState(false);
+  const [puntosProg, setPuntosProg] = useState<{ fecha: string; pesoMax: number }[]>([]);
+  const [cargandoProg, setCargandoProg] = useState(false);
+  const [nombresEjercicios, setNombresEjercicios] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!userId) return;
-    (async () => {
-      const [{ data: mData }, { data: exData }] = await Promise.all([
-        supabase.from("body_measurements").select("*").eq("user_id", userId).order("fecha", { ascending: false }).limit(12),
-        supabase.from("gym_session_exercises")
-          .select("nombre, series, gym_sessions!inner(user_id, fecha)")
-          .eq("gym_sessions.user_id", userId)
-          .order("nombre"),
-      ]);
-      if (mData) setMedidas(mData as BodyMeasurement[]);
-      if (exData) {
-        // Calcular PR por ejercicio
-        const prMap: Record<string, { peso_max: number; fecha: string }> = {};
-        (exData as unknown as Array<{ nombre: string; series: { reps: number; peso_kg: number | null }[]; gym_sessions: { fecha: string } }>).forEach(e => {
-          const max = Math.max(...e.series.map((s) => s.peso_kg ?? 0));
-          if (!prMap[e.nombre] || max > prMap[e.nombre].peso_max) {
-            prMap[e.nombre] = { peso_max: max, fecha: e.gym_sessions.fecha };
-          }
-        });
-        setRecords(Object.entries(prMap).map(([nombre, v]) => ({ nombre, ...v })).sort((a, b) => b.peso_max - a.peso_max));
-      }
-      setCargando(false);
-    })();
-  }, [userId]);
+    if (tab === "medidas" && medidas.length === 0) cargarMedidas();
+    else if (tab === "records" && Object.keys(records).length === 0) cargarRecords();
+    else if (tab === "progresion" && nombresEjercicios.length === 0) cargarNombres();
+  }, [tab]);
 
-  async function guardarMedida() {
-    if (guardando) return;
-    setGuardando(true);
-    try {
-      const payload = {
-        user_id: userId,
-        fecha: fMedida.fecha,
-        peso_kg: fMedida.peso_kg ? parseFloat(fMedida.peso_kg) : null,
-        grasa_pct: fMedida.grasa_pct ? parseFloat(fMedida.grasa_pct) : null,
-        musculo_kg: fMedida.musculo_kg ? parseFloat(fMedida.musculo_kg) : null,
-        pecho_cm: fMedida.pecho_cm ? parseFloat(fMedida.pecho_cm) : null,
-        cintura_cm: fMedida.cintura_cm ? parseFloat(fMedida.cintura_cm) : null,
-        cadera_cm: fMedida.cadera_cm ? parseFloat(fMedida.cadera_cm) : null,
-        brazo_cm: fMedida.brazo_cm ? parseFloat(fMedida.brazo_cm) : null,
-        pierna_cm: fMedida.pierna_cm ? parseFloat(fMedida.pierna_cm) : null,
-        notas: fMedida.notas,
-      };
-      const { data } = await supabase.from("body_measurements")
-        .upsert(payload, { onConflict: "user_id,fecha" })
-        .select().single();
-      if (data) {
-        setMedidas(prev => {
-          const filtered = prev.filter(m => m.fecha !== data.fecha);
-          return [data as BodyMeasurement, ...filtered].sort((a,b) => b.fecha.localeCompare(a.fecha));
-        });
-      }
-      setMostrarForm(false);
-    } catch(e) { console.error(e); } finally { setGuardando(false); }
+  async function cargarMedidas() {
+    setCargandoMedidas(true);
+    const { data } = await supabase.from("body_measurements").select("*").eq("user_id", userId).order("fecha", { ascending: false }).limit(30);
+    setMedidas((data as BodyMeasurement[]) || []);
+    setCargandoMedidas(false);
   }
 
-  // SVG chart simple de peso
-  function ChartPeso() {
-    const data = [...medidas].reverse().filter(m => m.peso_kg).slice(-8);
-    if (data.length < 2) return <p className="text-center text-sm text-kb-text-muted py-4">Añade al menos 2 medidas para ver el gráfico</p>;
-    const pesos = data.map(m => m.peso_kg as number);
-    const min = Math.min(...pesos) - 2;
-    const max = Math.max(...pesos) + 2;
-    const W = 300, H = 100;
-    const scaleX = (i: number) => (i / (data.length - 1)) * (W - 40) + 20;
-    const scaleY = (v: number) => H - 20 - ((v - min) / (max - min)) * (H - 30);
-    const pts = data.map((m, i) => `${scaleX(i)},${scaleY(m.peso_kg as number)}`).join(" ");
+  async function guardarMedida() {
+    if (!nuevoPeso && !nuevaCintura || guardandoMedida) return;
+    setGuardandoMedida(true);
+    const hoy = new Date().toISOString().split("T")[0];
+    await supabase.from("body_measurements").insert({
+      user_id: userId,
+      fecha: hoy,
+      peso_kg: nuevoPeso ? parseFloat(nuevoPeso) : null,
+      cintura_cm: nuevaCintura ? parseFloat(nuevaCintura) : null,
+    });
+    setNuevoPeso("");
+    setNuevaCintura("");
+    await cargarMedidas();
+    setGuardandoMedida(false);
+  }
+
+  async function cargarRecords() {
+    setCargandoRec(true);
+    const { data } = await supabase
+      .from("gym_session_exercises")
+      .select("nombre, series, gym_sessions!inner(user_id, fecha)")
+      .eq("gym_sessions.user_id", userId)
+      .order("nombre");
+    type Row = { nombre: string; series: { reps: number; peso_kg: number | null }[]; gym_sessions: { fecha: string } };
+    const rows = (data as unknown as Row[]) || [];
+    const map: Record<string, { pesoMax: number; fecha: string }> = {};
+    for (const r of rows) {
+      const pesoMax = Math.max(...r.series.map(s => s.peso_kg ?? 0), 0);
+      if (pesoMax > 0) {
+        if (!map[r.nombre] || pesoMax > map[r.nombre].pesoMax) {
+          map[r.nombre] = { pesoMax, fecha: r.gym_sessions.fecha };
+        }
+      }
+    }
+    setRecords(map);
+    setCargandoRec(false);
+  }
+
+  async function cargarNombres() {
+    const { data } = await supabase
+      .from("gym_session_exercises")
+      .select("nombre, gym_sessions!inner(user_id)")
+      .eq("gym_sessions.user_id", userId);
+    type Row = { nombre: string };
+    const rows = (data as unknown as Row[]) || [];
+    const unicos = [...new Set(rows.map(r => r.nombre))].sort();
+    setNombresEjercicios(unicos);
+  }
+
+  async function cargarProgresion(nombre: string) {
+    if (!nombre) return;
+    setCargandoProg(true);
+    const { data } = await supabase
+      .from("gym_session_exercises")
+      .select("series, gym_sessions!inner(user_id, fecha)")
+      .eq("gym_sessions.user_id", userId)
+      .eq("nombre", nombre)
+      .limit(50);
+    type Row = { series: { reps: number; peso_kg: number | null }[]; gym_sessions: { fecha: string } };
+    const rows = (data as unknown as Row[]) || [];
+    const byDate = new Map<string, number>();
+    for (const r of rows) {
+      const fecha = r.gym_sessions.fecha;
+      const pesoMax = Math.max(...r.series.map(s => s.peso_kg ?? 0), 0);
+      byDate.set(fecha, Math.max(byDate.get(fecha) ?? 0, pesoMax));
+    }
+    const puntos = [...byDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([fecha, pesoMax]) => ({ fecha, pesoMax }));
+    setPuntosProg(puntos);
+    setCargandoProg(false);
+  }
+
+  function handleSelEjercicio(nombre: string) {
+    setEjercicioSel(nombre);
+    cargarProgresion(nombre);
+  }
+
+  // SVG Line Chart
+  function ChartProgresion({ puntos }: { puntos: { fecha: string; pesoMax: number }[] }) {
+    if (puntos.length < 2) return (
+      <div className="flex flex-col items-center justify-center h-40 text-gray-600">
+        <p className="text-3xl mb-2">📈</p>
+        <p className="text-sm">{puntos.length === 1 ? "Solo 1 sesión registrada. Necesitas al menos 2 para ver la gráfica." : "Sin datos suficientes"}</p>
+      </div>
+    );
+
+    const W = 300, H = 150, padX = 40, padY = 16;
+    const drawW = W - padX * 2;
+    const drawH = H - padY * 2;
+    const pesos = puntos.map(p => p.pesoMax).filter(p => p > 0);
+    const minP = Math.max(0, Math.floor(Math.min(...pesos) * 0.9));
+    const maxP = Math.ceil(Math.max(...pesos) * 1.05);
+    const rango = maxP - minP || 1;
+
+    const toX = (i: number) => padX + (i / (puntos.length - 1)) * drawW;
+    const toY = (p: number) => padY + (1 - (p - minP) / rango) * drawH;
+
+    const path = puntos.map((p, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toY(p.pesoMax)}`).join(" ");
+    const area = `${path} L ${toX(puntos.length-1)} ${H - padY} L ${padX} ${H - padY} Z`;
+
+    // Líneas de guía
+    const guias = [minP, minP + rango/2, maxP].map(v => Math.round(v));
+
+    // Primer y último PR
+    const maxIdx = puntos.reduce((mi, p, i) => p.pesoMax > puntos[mi].pesoMax ? i : mi, 0);
+
     return (
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 100 }}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 160 }}>
         <defs>
-          <linearGradient id="pgrd" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--kb-gain, #22c55e)" stopOpacity="0.3"/>
-            <stop offset="100%" stopColor="var(--kb-gain, #22c55e)" stopOpacity="0"/>
+          <linearGradient id="progGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--kb-gain, #00e5a0)" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="var(--kb-gain, #00e5a0)" stopOpacity="0" />
           </linearGradient>
         </defs>
-        <polyline points={pts} fill="none" stroke="var(--kb-gain, #22c55e)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        {data.map((m, i) => (
+        {/* Líneas de guía */}
+        {guias.map((v, i) => (
           <g key={i}>
-            <circle cx={scaleX(i)} cy={scaleY(m.peso_kg as number)} r="3" fill="var(--kb-gain, #22c55e)"/>
-            <text x={scaleX(i)} y={scaleY(m.peso_kg as number) - 6} textAnchor="middle" fontSize="9" fill="currentColor" opacity="0.6">{m.peso_kg}</text>
+            <line x1={padX} y1={toY(v)} x2={W - padX} y2={toY(v)} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+            <text x={padX - 4} y={toY(v) + 4} fill="rgba(255,255,255,0.3)" fontSize="9" textAnchor="end">{v}kg</text>
           </g>
+        ))}
+        {/* Área */}
+        <path d={area} fill="url(#progGrad)" />
+        {/* Línea */}
+        <path d={path} fill="none" stroke="#00e5a0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Puntos */}
+        {puntos.map((p, i) => (
+          <g key={i}>
+            <circle cx={toX(i)} cy={toY(p.pesoMax)} r={i === maxIdx ? 5 : 3}
+              fill={i === maxIdx ? "#00e5a0" : "#1a2e26"} stroke="#00e5a0" strokeWidth="1.5" />
+            {i === maxIdx && (
+              <text x={toX(i)} y={toY(p.pesoMax) - 9} fill="#00e5a0" fontSize="9" textAnchor="middle" fontWeight="bold">
+                🔥 {p.pesoMax}kg
+              </text>
+            )}
+          </g>
+        ))}
+        {/* Etiquetas eje X */}
+        {[0, Math.floor((puntos.length-1)/2), puntos.length-1].filter((v,i,a) => a.indexOf(v) === i).map(i => (
+          <text key={i} x={toX(i)} y={H - 2} fill="rgba(255,255,255,0.3)" fontSize="8" textAnchor="middle">
+            {new Date(puntos[i].fecha + "T12:00:00").toLocaleDateString("es-MX", { day:"numeric", month:"short" })}
+          </text>
         ))}
       </svg>
     );
   }
 
-  if (cargando) return (
-    <div className="flex h-64 items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-kb-gain border-t-transparent" />
-    </div>
+  if (mostrarPickerProg) return (
+    <GimEjercicioPicker
+      onSelect={({ nombre }) => { handleSelEjercicio(nombre); setMostrarPickerProg(false); }}
+      onClose={() => setMostrarPickerProg(false)}
+    />
   );
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-5">
-      <h2 className="mb-4 text-xl font-bold text-kb-text">Progreso</h2>
-
+    <div className="p-4 pb-8">
       {/* Tabs */}
-      <div className="mb-5 flex gap-2 rounded-2xl border border-kb-border-soft bg-kb-surface/30 p-1">
-        {([["medidas","Medidas corporales"],["records","Récords personales"]] as const).map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id as "medidas" | "records")}
-            className={`flex-1 rounded-xl py-2 text-sm font-semibold transition-all ${tab === id ? "bg-kb-gain text-kb-bg" : "text-kb-text-secondary"}`}>
-            {label}
+      <div className="flex gap-1 mb-4 p-1 bg-white/5 rounded-xl border border-white/10">
+        {([
+          { id: "records", label: "Récords", emoji: "🏆" },
+          { id: "progresion", label: "Progresión", emoji: "📈" },
+          { id: "medidas", label: "Medidas", emoji: "⚖️" },
+        ] as const).map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
+              tab === t.id ? "bg-kb-gain/20 text-kb-gain border border-kb-gain/40" : "text-gray-500 hover:text-gray-300"
+            }`}>
+            <span>{t.emoji}</span>
+            <span>{t.label}</span>
           </button>
         ))}
       </div>
 
-      {tab === "medidas" && (
-        <div className="space-y-4">
-          {/* Gráfico */}
-          {medidas.some(m => m.peso_kg) && (
-            <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4">
-              <p className="mb-2 text-xs font-semibold text-kb-text-secondary">Peso (kg)</p>
-              <ChartPeso />
-            </div>
-          )}
-
-          {/* Botón agregar */}
-          {!mostrarForm && (
-            <button onClick={() => setMostrarForm(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-kb-gain/40 py-4 text-sm font-semibold text-kb-gain hover:border-kb-gain hover:bg-kb-gain/5">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" className="h-5 w-5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Registrar medidas
-            </button>
-          )}
-
-          {mostrarForm && (
-            <div className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4 space-y-3">
-              <input type="date" value={fMedida.fecha} onChange={e => setFMedida(f => ({ ...f, fecha: e.target.value }))}
-                className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2.5 text-sm text-kb-text" />
-              <div className="grid grid-cols-3 gap-2">
-                {([["peso_kg","Peso (kg)"],["grasa_pct","Grasa %"],["musculo_kg","Músculo kg"]] as const).map(([f, lbl]) => (
-                  <div key={f}>
-                    <label className="mb-0.5 block text-[11px] font-semibold text-kb-text-secondary">{lbl}</label>
-                    <input type="number" step="0.1" value={fMedida[f]} onChange={e => setFMedida(p => ({ ...p, [f]: e.target.value }))}
-                      className="w-full rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-sm text-kb-text" />
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {([["pecho_cm","Pecho cm"],["cintura_cm","Cintura cm"],["cadera_cm","Cadera cm"],["brazo_cm","Brazo cm"],["pierna_cm","Pierna cm"]] as const).map(([f, lbl]) => (
-                  <div key={f}>
-                    <label className="mb-0.5 block text-[11px] font-semibold text-kb-text-secondary">{lbl}</label>
-                    <input type="number" step="0.1" value={fMedida[f]} onChange={e => setFMedida(p => ({ ...p, [f]: e.target.value }))}
-                      className="w-full rounded-lg border border-kb-border bg-kb-surface/40 px-2 py-1.5 text-sm text-kb-text" />
-                  </div>
-                ))}
-              </div>
-              <textarea value={fMedida.notas} onChange={e => setFMedida(f => ({ ...f, notas: e.target.value }))}
-                placeholder="Notas..." rows={2}
-                className="w-full resize-none rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2 text-sm text-kb-text placeholder:text-kb-text-muted" />
-              <div className="flex gap-2">
-                <button onClick={() => setMostrarForm(false)} className="rounded-xl border border-kb-border-soft px-4 py-2.5 text-sm text-kb-text-secondary">Cancelar</button>
-                <button onClick={guardarMedida} disabled={guardando}
-                  className="flex-1 rounded-xl bg-kb-gain py-2.5 text-sm font-bold text-kb-bg disabled:opacity-60">
-                  {guardando ? "Guardando..." : "Guardar"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Lista medidas */}
-          {medidas.length === 0 ? (
-            <p className="text-center text-sm text-kb-text-muted py-6">Sin medidas registradas aún</p>
-          ) : medidas.map(m => (
-            <div key={m.id} className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4">
-              <p className="mb-2 text-sm font-bold text-kb-text">{gymFechaLabel(m.fecha)}</p>
-              <div className="flex flex-wrap gap-x-4 gap-y-1">
-                {m.peso_kg && <span className="text-xs text-kb-text-secondary">Peso: <b className="text-kb-text">{m.peso_kg} kg</b></span>}
-                {m.grasa_pct && <span className="text-xs text-kb-text-secondary">Grasa: <b className="text-kb-text">{m.grasa_pct}%</b></span>}
-                {m.musculo_kg && <span className="text-xs text-kb-text-secondary">Músculo: <b className="text-kb-text">{m.musculo_kg} kg</b></span>}
-                {m.pecho_cm && <span className="text-xs text-kb-text-secondary">Pecho: <b className="text-kb-text">{m.pecho_cm} cm</b></span>}
-                {m.cintura_cm && <span className="text-xs text-kb-text-secondary">Cintura: <b className="text-kb-text">{m.cintura_cm} cm</b></span>}
-                {m.cadera_cm && <span className="text-xs text-kb-text-secondary">Cadera: <b className="text-kb-text">{m.cadera_cm} cm</b></span>}
-                {m.brazo_cm && <span className="text-xs text-kb-text-secondary">Brazo: <b className="text-kb-text">{m.brazo_cm} cm</b></span>}
-                {m.pierna_cm && <span className="text-xs text-kb-text-secondary">Pierna: <b className="text-kb-text">{m.pierna_cm} cm</b></span>}
-              </div>
-              {m.notas && <p className="mt-1 text-xs text-kb-text-muted">{m.notas}</p>}
-            </div>
-          ))}
-        </div>
-      )}
-
+      {/* ── Tab RECORDS ── */}
       {tab === "records" && (
         <div className="space-y-3">
-          {records.length === 0 ? (
-            <div className="py-12 text-center">
-              <p className="text-4xl mb-3">🏆</p>
-              <p className="text-sm text-kb-text-muted">Registra tus sesiones de entrenamiento<br/>para ver tus récords personales aquí.</p>
+          {cargandoRec ? (
+            <div className="flex justify-center h-24 items-center"><div className="w-6 h-6 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" /></div>
+          ) : Object.keys(records).length === 0 ? (
+            <div className="rounded-xl bg-white/5 border border-white/10 p-8 text-center">
+              <p className="text-3xl mb-2">🏆</p>
+              <p className="text-sm text-gray-400">Aún no hay récords. ¡Empieza a entrenar!</p>
             </div>
-          ) : records.map((r, i) => (
-            <div key={r.nombre} className="flex items-center rounded-2xl border border-kb-border-soft bg-kb-surface/40 p-4">
-              <div className="mr-3 flex h-9 w-9 items-center justify-center rounded-full border border-kb-border text-sm font-bold text-kb-text-secondary">
-                {i + 1}
-              </div>
-              <div className="flex-1">
-                <p className="font-semibold text-kb-text">{r.nombre}</p>
-                <p className="text-xs text-kb-text-muted">{gymFechaLabel(r.fecha)}</p>
-              </div>
-              <div className="text-right">
-                <p className="font-bold text-kb-gain text-lg">{r.peso_max} <span className="text-xs font-normal text-kb-text-muted">kg</span></p>
-                {i === 0 && <span className="text-[10px] font-bold text-yellow-400">🥇 Más pesado</span>}
-              </div>
-            </div>
-          ))}
+          ) : (
+            Object.entries(records)
+              .sort(([,a],[,b]) => b.pesoMax - a.pesoMax)
+              .map(([nombre, r]) => {
+                const cat = GYM_CATALOGO.find(e => e.nombre === nombre);
+                const col = cat ? (GYM_GRUPO_COLORES[cat.grupo] ?? GYM_GRUPO_COLORES["Otro"]) : GYM_GRUPO_COLORES["Otro"];
+                return (
+                  <div key={nombre} className={`rounded-xl border p-3 bg-white/3 border-l-4 ${col.border} flex items-center justify-between gap-3`}>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">{nombre}</p>
+                      <p className={`text-xs mt-0.5 ${col.text}`}>{col.emoji} {cat?.grupo ?? "—"}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-lg font-bold text-white">{r.pesoMax}<span className="text-xs text-gray-400 ml-0.5">kg</span></p>
+                      <p className="text-xs text-gray-500">{new Date(r.fecha + "T12:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short" })}</p>
+                    </div>
+                  </div>
+                );
+              })
+          )}
         </div>
       )}
-    </div>
-  );
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GimHistorialView — Historial de sesiones
-// ─────────────────────────────────────────────────────────────────────────────
-
-function GimHistorialView({ userId }: { userId: string }) {
-  const [sesiones, setSesiones] = useState<(GymSesion & { ejercicios?: GymSesionEjercicio[] })[]>([]);
-  const [cargando, setCargando] = useState(true);
-  const [expandido, setExpandido] = useState<string | null>(null);
-  const [cargandoEx, setCargandoEx] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!userId) return;
-    (async () => {
-      const { data } = await supabase
-        .from("gym_sessions")
-        .select("*")
-        .eq("user_id", userId)
-        .order("fecha", { ascending: false })
-        .limit(30);
-      if (data) setSesiones(data as GymSesion[]);
-      setCargando(false);
-    })();
-  }, [userId]);
-
-  async function toggleExpand(id: string) {
-    if (expandido === id) { setExpandido(null); return; }
-    setExpandido(id);
-    const already = sesiones.find(s => s.id === id);
-    if (already?.ejercicios) return;
-    setCargandoEx(id);
-    const { data } = await supabase.from("gym_session_exercises").select("*").eq("sesion_id", id).order("orden");
-    setSesiones(prev => prev.map(s => s.id === id ? { ...s, ejercicios: data as GymSesionEjercicio[] } : s));
-    setCargandoEx(null);
-  }
-
-  async function eliminarSesion(id: string) {
-    await supabase.from("gym_sessions").delete().eq("id", id);
-    setSesiones(prev => prev.filter(s => s.id !== id));
-    if (expandido === id) setExpandido(null);
-  }
-
-  if (cargando) return (
-    <div className="flex h-64 items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-kb-gain border-t-transparent" />
-    </div>
-  );
-
-  return (
-    <div className="mx-auto max-w-xl px-4 py-5">
-      <h2 className="mb-1 text-xl font-bold text-kb-text">Historial</h2>
-      <p className="mb-5 text-sm text-kb-text-secondary">Últimas {sesiones.length} sesiones de entrenamiento.</p>
-
-      {sesiones.length === 0 ? (
-        <div className="py-16 text-center">
-          <p className="text-4xl mb-3">📋</p>
-          <p className="text-sm text-kb-text-muted">Sin sesiones registradas aún.<br/>¡Empieza tu primera en "Entrenar hoy"!</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {sesiones.map(s => (
-            <div key={s.id} className="rounded-2xl border border-kb-border-soft bg-kb-surface/40 overflow-hidden">
-              <button onClick={() => toggleExpand(s.id)} className="w-full p-4 text-left">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-bold text-kb-text">{gymFechaLabel(s.fecha)}</p>
-                    <div className="mt-0.5 flex flex-wrap gap-2">
-                      {s.duracion_min && <span className="text-xs text-kb-text-muted">{s.duracion_min} min</span>}
-                      {s.fase && <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${GYM_FASES[s.fase as keyof typeof GYM_FASES]?.color ?? ""}`}>{GYM_FASES[s.fase as keyof typeof GYM_FASES]?.label ?? s.fase}</span>}
-                      {s.hora_inicio && <span className="text-xs text-kb-text-muted">{s.hora_inicio}{s.hora_fin ? ` – ${s.hora_fin}` : ""}</span>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={e => { e.stopPropagation(); eliminarSesion(s.id); }}
-                      className="rounded-lg p-1.5 text-kb-loss/50 hover:text-kb-loss">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="h-4 w-4"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V4h6v2"/></svg>
+      {/* ── Tab PROGRESIÓN ── */}
+      {tab === "progresion" && (
+        <div className="space-y-4">
+          {/* Selector */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Selecciona un ejercicio</p>
+            <button
+              onClick={() => setMostrarPickerProg(true)}
+              className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:border-kb-gain/40 hover:bg-kb-gain/5 transition-all"
+            >
+              <span className={`text-sm ${ejercicioSel ? "text-white font-medium" : "text-gray-500"}`}>
+                {ejercicioSel || "Elegir del catálogo..."}
+              </span>
+              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+            </button>
+            {/* O buscar en lista */}
+            {nombresEjercicios.length > 0 && (
+              <div className="mt-2">
+                <p className="text-xs text-gray-600 mb-1.5">O elige del historial:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {nombresEjercicios.slice(0, 10).map(n => (
+                    <button key={n} onClick={() => handleSelEjercicio(n)}
+                      className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${ejercicioSel === n ? "border-kb-gain/60 bg-kb-gain/15 text-kb-gain" : "border-white/10 bg-white/5 text-gray-400 hover:border-white/20"}`}>
+                      {n}
                     </button>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className={`h-4 w-4 text-kb-text-secondary transition-transform ${expandido === s.id ? "rotate-180" : ""}`}><polyline points="6 9 12 15 18 9"/></svg>
-                  </div>
+                  ))}
+                  {nombresEjercicios.length > 10 && (
+                    <span className="text-xs text-gray-600 self-center">+{nombresEjercicios.length - 10} más</span>
+                  )}
                 </div>
-              </button>
+              </div>
+            )}
+          </div>
 
-              {expandido === s.id && (
-                <div className="border-t border-kb-border-soft px-4 pb-4 pt-3">
-                  {cargandoEx === s.id ? (
-                    <div className="flex h-12 items-center justify-center">
-                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-kb-gain border-t-transparent" />
+          {/* Gráfica */}
+          {ejercicioSel && (
+            <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+              <div className="p-3 border-b border-white/5">
+                <p className="text-sm font-semibold text-white">{ejercicioSel}</p>
+                {puntosProg.length > 0 && (() => {
+                  const cat = GYM_CATALOGO.find(e => e.nombre === ejercicioSel);
+                  const col = cat ? (GYM_GRUPO_COLORES[cat.grupo] ?? GYM_GRUPO_COLORES["Otro"]) : GYM_GRUPO_COLORES["Otro"];
+                  return <span className={`text-xs ${col.text}`}>{col.emoji} {cat?.grupo ?? ""}</span>;
+                })()}
+              </div>
+              {cargandoProg ? (
+                <div className="flex justify-center h-40 items-center"><div className="w-6 h-6 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" /></div>
+              ) : (
+                <div className="p-3">
+                  <ChartProgresion puntos={puntosProg} />
+                  {puntosProg.length >= 2 && (
+                    <div className="mt-3 grid grid-cols-3 gap-2 pt-3 border-t border-white/5">
+                      <div className="text-center">
+                        <p className="text-xs text-gray-500">Inicio</p>
+                        <p className="text-sm font-bold text-white">{puntosProg[0].pesoMax}kg</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-gray-500">Máximo</p>
+                        <p className="text-sm font-bold text-kb-gain">{Math.max(...puntosProg.map(p => p.pesoMax))}kg</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-gray-500">Progreso</p>
+                        {(() => {
+                          const diff = puntosProg[puntosProg.length-1].pesoMax - puntosProg[0].pesoMax;
+                          return (
+                            <p className={`text-sm font-bold ${diff > 0 ? "text-green-400" : diff < 0 ? "text-red-400" : "text-gray-400"}`}>
+                              {diff > 0 ? "+" : ""}{diff}kg
+                            </p>
+                          );
+                        })()}
+                      </div>
                     </div>
-                  ) : (
-                    <>
-                      {s.ejercicios?.length === 0 && <p className="text-xs text-kb-text-muted">Sin ejercicios registrados</p>}
-                      {s.ejercicios?.map(e => (
-                        <div key={e.id} className="mb-3 last:mb-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold text-kb-text text-sm">{e.nombre}</span>
-                            {e.equipo && <span className="text-xs text-kb-text-muted">· {e.equipo}</span>}
-                            {e.grupo_muscular && <span className="text-xs text-kb-text-muted">· {e.grupo_muscular}</span>}
-                          </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {e.series.map((serie, i) => (
-                              <span key={i} className="rounded-lg border border-kb-border bg-kb-surface px-2 py-0.5 text-xs font-mono text-kb-text">
-                                {serie.reps}r × {serie.peso_kg ?? "—"}kg
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                      {s.notas && <p className="mt-2 text-xs italic text-kb-text-muted">"{s.notas}"</p>}
-                    </>
                   )}
                 </div>
               )}
             </div>
-          ))}
+          )}
+
+          {/* Lista histórica por sesión */}
+          {ejercicioSel && puntosProg.length > 0 && !cargandoProg && (
+            <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/5 overflow-hidden">
+              <div className="px-3 py-2.5">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Historial de pesos</p>
+              </div>
+              {[...puntosProg].reverse().map((p, i) => {
+                const prevPeso = i < puntosProg.length - 1 ? [...puntosProg].reverse()[i+1]?.pesoMax : null;
+                const mejoro = prevPeso !== null && p.pesoMax > prevPeso;
+                return (
+                  <div key={p.fecha} className="flex items-center justify-between px-3 py-2.5">
+                    <span className="text-sm text-gray-300">{new Date(p.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "short", day: "numeric", month: "short" })}</span>
+                    <div className="flex items-center gap-2">
+                      {mejoro && <span className="text-xs text-green-400">↑</span>}
+                      <span className={`text-sm font-bold ${mejoro ? "text-green-400" : "text-white"}`}>{p.pesoMax} kg</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {!ejercicioSel && (
+            <div className="rounded-xl bg-white/5 border border-white/10 p-8 text-center">
+              <p className="text-3xl mb-2">📈</p>
+              <p className="text-sm text-gray-400">Selecciona un ejercicio para ver cómo has progresado</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab MEDIDAS ── */}
+      {tab === "medidas" && (
+        <div className="space-y-4">
+          {/* Form */}
+          <div className="rounded-xl bg-white/5 border border-white/10 p-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Registrar medida de hoy</p>
+            <div className="flex gap-3 mb-3">
+              <div className="flex-1">
+                <input type="number" step="0.1" value={nuevoPeso} onChange={e => setNuevoPeso(e.target.value)}
+                  placeholder="Peso (kg)"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-kb-gain/50" />
+              </div>
+              <div className="flex-1">
+                <input type="number" step="0.5" value={nuevaCintura} onChange={e => setNuevaCintura(e.target.value)}
+                  placeholder="Cintura (cm)"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-kb-gain/50" />
+              </div>
+            </div>
+            <button onClick={guardarMedida} disabled={guardandoMedida || (!nuevoPeso && !nuevaCintura)}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold bg-kb-gain/20 text-kb-gain border border-kb-gain/40 hover:bg-kb-gain/30 disabled:opacity-50 transition-all">
+              {guardandoMedida ? "Guardando..." : "Guardar medida"}
+            </button>
+          </div>
+
+          {/* Historial */}
+          {cargandoMedidas ? (
+            <div className="flex justify-center h-24 items-center"><div className="w-6 h-6 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" /></div>
+          ) : medidas.length === 0 ? (
+            <div className="rounded-xl bg-white/5 border border-white/10 p-8 text-center">
+              <p className="text-3xl mb-2">⚖️</p>
+              <p className="text-sm text-gray-400">Sin medidas registradas todavía</p>
+            </div>
+          ) : (
+            <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden divide-y divide-white/5">
+              {medidas.slice(0, 20).map((m, i) => {
+                const prev = medidas[i+1];
+                const diffPeso = m.peso_kg && prev?.peso_kg ? m.peso_kg - prev.peso_kg : null;
+                return (
+                  <div key={m.id} className="flex items-center justify-between px-4 py-3">
+                    <span className="text-sm text-gray-400">{new Date(m.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday:"short", day:"numeric", month:"short" })}</span>
+                    <div className="flex items-center gap-4">
+                      {m.cintura_cm && <span className="text-xs text-gray-500">{m.cintura_cm}cm</span>}
+                      {m.peso_kg && (
+                        <div className="flex items-center gap-1">
+                          {diffPeso !== null && (
+                            <span className={`text-xs ${diffPeso < 0 ? "text-green-400" : diffPeso > 0 ? "text-orange-400" : "text-gray-500"}`}>
+                              {diffPeso > 0 ? "+" : ""}{diffPeso.toFixed(1)}
+                            </span>
+                          )}
+                          <span className="text-sm font-bold text-white">{m.peso_kg}kg</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
-// GimGuiaView — Guía & Tips
+// GYM MODULE V3 — Part 6: GimHistorialView, GimGuiaView, GimPerfilView
 // ─────────────────────────────────────────────────────────────────────────────
 
-function GimGuiaView({ userId: _ }: { userId: string }) {
-  const [tab, setTab] = useState<"tipos" | "fases" | "entreno" | "nutricion">("tipos");
+function GimHistorialView({ userId }: { userId: string }) {
+  const [sesiones, setSesiones] = useState<GymSesion[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [abierto, setAbierto] = useState<string | null>(null);
+  const [ejerciciosPorSesion, setEjerciciosPorSesion] = useState<Record<string, GymSesionEjercicio[]>>({});
 
-  const tabs = [
-    { id: "tipos",    label: "Tipos de cuerpo" },
-    { id: "fases",    label: "Fases" },
-    { id: "entreno",  label: "Entrenamiento" },
-    { id: "nutricion",label: "Nutrición" },
-  ] as const;
+  useEffect(() => {
+    let activo = true;
+    async function cargar() {
+      setCargando(true);
+      const { data } = await supabase.from("gym_sessions").select("*").eq("user_id", userId).order("fecha", { ascending: false }).limit(30);
+      if (!activo) return;
+      setSesiones((data as GymSesion[]) || []);
+      setCargando(false);
+    }
+    cargar();
+    return () => { activo = false; };
+  }, [userId]);
+
+  async function cargarEjercicios(sesionId: string) {
+    if (ejerciciosPorSesion[sesionId]) return;
+    const { data } = await supabase.from("gym_session_exercises").select("*").eq("sesion_id", sesionId).order("orden");
+    setEjerciciosPorSesion(prev => ({ ...prev, [sesionId]: (data as GymSesionEjercicio[]) || [] }));
+  }
+
+  function toggleSesion(id: string) {
+    if (abierto === id) { setAbierto(null); return; }
+    setAbierto(id);
+    cargarEjercicios(id);
+  }
+
+  if (cargando) return <div className="flex items-center justify-center h-48"><div className="w-8 h-8 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" /></div>;
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-5">
-      <h2 className="mb-4 text-xl font-bold text-kb-text">Guía & Tips</h2>
+    <div className="p-4 pb-8 space-y-3">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-base font-bold text-white">Historial</h2>
+        <span className="text-xs text-gray-500">{sesiones.length} sesiones</span>
+      </div>
 
-      {/* Tabs scroll */}
-      <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
+      {sesiones.length === 0 ? (
+        <div className="rounded-xl bg-white/5 border border-white/10 p-8 text-center">
+          <p className="text-3xl mb-2">📅</p>
+          <p className="text-sm text-gray-400">Sin sesiones registradas aún</p>
+        </div>
+      ) : sesiones.map(s => {
+        const estaAbierto = abierto === s.id;
+        const exs = ejerciciosPorSesion[s.id] ?? [];
+        const fase = s.fase ? GYM_FASES[s.fase as keyof typeof GYM_FASES] : null;
+
+        return (
+          <div key={s.id} className="rounded-xl border border-white/10 bg-white/3 overflow-hidden transition-all">
+            <button onClick={() => toggleSesion(s.id)} className="w-full p-3 flex items-center gap-3 text-left">
+              <div className="w-10 h-10 rounded-xl bg-kb-gain/10 border border-kb-gain/20 flex flex-col items-center justify-center flex-shrink-0">
+                <span className="text-xs font-bold text-kb-gain leading-none">{new Date(s.fecha + "T12:00:00").getDate()}</span>
+                <span className="text-xs text-gray-500 leading-none">{new Date(s.fecha + "T12:00:00").toLocaleDateString("es-MX", { month: "short" })}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-white">{new Date(s.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "long" })}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  {s.duracion_min && <span className="text-xs text-gray-500">⏱ {s.duracion_min}min</span>}
+                  {fase && <span className={`text-xs px-1.5 py-0.5 rounded-md border ${fase.color}`}>{fase.label}</span>}
+                </div>
+              </div>
+              <svg className={`w-4 h-4 text-gray-600 transition-transform flex-shrink-0 ${estaAbierto ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+
+            {estaAbierto && (
+              <div className="border-t border-white/5 p-3 space-y-2">
+                {exs.length === 0 ? (
+                  <p className="text-xs text-gray-500 text-center py-2">Sin ejercicios registrados</p>
+                ) : exs.map(ex => {
+                  const col = GYM_GRUPO_COLORES[ex.grupo_muscular] ?? GYM_GRUPO_COLORES["Otro"];
+                  const pesoMax = Math.max(...ex.series.map(s => s.peso_kg ?? 0), 0);
+                  return (
+                    <div key={ex.id} className={`rounded-lg border p-2.5 border-l-4 ${col.border} bg-white/3`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <span className="text-sm font-medium text-white">{ex.nombre}</span>
+                          <span className={`ml-2 text-xs ${col.text}`}>{col.emoji}</span>
+                        </div>
+                        {pesoMax > 0 && <span className="text-xs font-bold text-white">{pesoMax}kg</span>}
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {ex.series.map((ser, si) => (
+                          <span key={si} className={`text-xs px-2 py-0.5 rounded-md border ${col.bg} ${col.border} ${col.text}`}>
+                            {ser.reps} reps{ser.peso_kg != null ? ` · ${ser.peso_kg}kg` : ""}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+                {s.notas && (
+                  <p className="text-xs text-gray-500 italic mt-1 pt-1 border-t border-white/5">📝 {s.notas}</p>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GimGuiaView
+// ─────────────────────────────────────────────────────────────────────────────
+function GimGuiaView() {
+  const [tab, setTab] = useState<"cuerpo"|"fases"|"entreno"|"nutricion">("cuerpo");
+
+  const tabs = [
+    { id: "cuerpo" as const, label: "Tipo cuerpo", emoji: "💪" },
+    { id: "fases" as const, label: "Fases", emoji: "📊" },
+    { id: "entreno" as const, label: "Entrenamiento", emoji: "🏋️" },
+    { id: "nutricion" as const, label: "Nutrición", emoji: "🥗" },
+  ];
+
+  return (
+    <div className="p-4 pb-8">
+      <div className="flex gap-1 mb-4 overflow-x-auto scrollbar-hide">
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${tab === t.id ? "bg-kb-gain text-kb-bg" : "border border-kb-border-soft text-kb-text-secondary"}`}>
-            {t.label}
+            className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
+              tab === t.id ? "bg-kb-gain/20 text-kb-gain border-kb-gain/40" : "text-gray-500 border-white/10 bg-white/5 hover:text-gray-300"
+            }`}>
+            <span>{t.emoji}</span><span>{t.label}</span>
           </button>
         ))}
       </div>
 
-      {tab === "tipos" && (
-        <div className="space-y-4">
-          {Object.entries(GYM_TIPOS_CUERPO).map(([key, tipo]) => (
-            <div key={key} className={`rounded-2xl border p-5 ${tipo.color}`}>
-              <div className="mb-2 flex items-center gap-3">
-                <span className="text-3xl">{tipo.emoji}</span>
-                <div>
-                  <h3 className="text-lg font-bold text-kb-text">{tipo.label}</h3>
-                  <p className="text-sm text-kb-text-secondary">{tipo.desc}</p>
-                </div>
+      {tab === "cuerpo" && (
+        <div className="space-y-3">
+          {(Object.entries(GYM_TIPOS_CUERPO) as Array<[string, typeof GYM_TIPOS_CUERPO[keyof typeof GYM_TIPOS_CUERPO]]>).map(([k, v]) => (
+            <div key={k} className={`rounded-xl p-4 border ${v.color}`}>
+              <div className="flex items-center gap-3 mb-2">
+                <span className="text-2xl">{v.emoji}</span>
+                <h3 className="font-bold text-white">{v.label}</h3>
               </div>
-              <div className="mt-3 rounded-xl border border-kb-border-soft bg-kb-surface/50 p-3">
-                <p className="mb-1 text-xs font-bold text-kb-text-secondary uppercase tracking-wider">Estrategia</p>
-                <p className="text-sm text-kb-text">{tipo.estrategia}</p>
+              <p className="text-sm text-gray-300 mb-2">{v.desc}</p>
+              <div className="rounded-lg bg-white/5 p-2.5">
+                <p className="text-xs font-semibold text-gray-400 mb-1">Estrategia recomendada</p>
+                <p className="text-xs text-gray-300">{v.estrategia}</p>
               </div>
             </div>
           ))}
@@ -16666,210 +17146,58 @@ function GimGuiaView({ userId: _ }: { userId: string }) {
       )}
 
       {tab === "fases" && (
-        <div className="space-y-4">
-          {[
-            {
-              fase: "volumen" as const,
-              title: "Volumen (Bulk)",
-              icon: "📈",
-              desc: "Período de superávit calórico enfocado en ganar masa muscular.",
-              puntos: [
-                "Come 300-500 kcal sobre tu mantenimiento diario",
-                "Prioriza proteína: 1.6-2.2g por kg de peso corporal",
-                "Entrena con progresión de cargas semanalmente",
-                "El cardio moderado ayuda a la salud sin sacrificar músculo",
-                "Acepta ganar un poco de grasa — es parte del proceso",
-              ],
-            },
-            {
-              fase: "definicion" as const,
-              title: "Definición (Cut)",
-              icon: "✂️",
-              desc: "Déficit calórico para perder grasa manteniendo el músculo ganado.",
-              puntos: [
-                "Déficit de 300-500 kcal — no más para preservar músculo",
-                "Alta proteína: 2.0-2.4g/kg para proteger músculo",
-                "Mantén el entrenamiento de fuerza con los mismos pesos",
-                "Cardio puede ayudar a crear el déficit sin sacrificar fuerza",
-                "El proceso es lento — 0.5-1 kg por semana es ideal",
-              ],
-            },
-            {
-              fase: "recomposicion" as const,
-              title: "Recomposición",
-              icon: "⚖️",
-              desc: "Ganar músculo y perder grasa simultáneamente — ideal para principiantes o tras un descanso.",
-              puntos: [
-                "Come cerca del mantenimiento calórico (±100-200 kcal)",
-                "Alta proteína: 2.0-2.5g/kg es esencial aquí",
-                "El progreso es más lento — necesita paciencia y consistencia",
-                "Funciona mejor si eres principiante o tienes genética favorable",
-                "Monitorea composición corporal, no solo el peso en báscula",
-              ],
-            },
-            {
-              fase: "mantenimiento" as const,
-              title: "Mantenimiento",
-              icon: "🔒",
-              desc: "Conservar la composición corporal actual mientras mantienes salud y rendimiento.",
-              puntos: [
-                "Come en tus calorías de mantenimiento exactas",
-                "Mantén la rutina de fuerza consistente",
-                "Buena fase para descansar mentalmente del seguimiento estricto",
-                "Ideal durante períodos de estrés o viajes",
-                "Sigue siendo importante la proteína: 1.6-2g/kg",
-              ],
-            },
-          ].map(f => (
-            <div key={f.fase} className={`rounded-2xl border p-5 ${GYM_FASES[f.fase].color}`}>
-              <div className="mb-3 flex items-center gap-2">
-                <span className="text-2xl">{f.icon}</span>
-                <div>
-                  <h3 className="font-bold text-kb-text">{f.title}</h3>
-                  <p className="text-xs text-kb-text-secondary">{f.desc}</p>
-                </div>
-              </div>
-              <ul className="space-y-1.5">
-                {f.puntos.map((p, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-kb-text">
-                    <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60 mt-1.5" />
-                    {p}
-                  </li>
-                ))}
-              </ul>
+        <div className="space-y-3">
+          {(Object.entries(GYM_FASES) as Array<[string, typeof GYM_FASES[keyof typeof GYM_FASES]]>).map(([k, v]) => (
+            <div key={k} className={`rounded-xl p-4 border ${v.color}`}>
+              <h3 className="font-bold text-white mb-2">{v.label}</h3>
+              <p className="text-xs text-gray-300">{
+                k === "volumen" ? "Fase de ganancia de masa muscular con superávit calórico. Entrena pesado con descansos largos entre series (2-4 min). Objetivo: superar los pesos previos sesión a sesión." :
+                k === "definicion" ? "Fase de pérdida de grasa con déficit calórico. Entrena con volumen alto y descansos cortos (30-90s). Prioriza conservar la masa muscular ganada." :
+                k === "recomposicion" ? "Fase de cambio corporal simultáneo: perder grasa y ganar músculo. Ideal para principiantes o intermedios. Calorías de mantenimiento, proteína alta." :
+                "Mantener el físico actual. Frecuencia moderada, intensidad media. Ideal entre fases de competición o para la salud a largo plazo."
+              }</p>
             </div>
           ))}
         </div>
       )}
 
       {tab === "entreno" && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {[
-            {
-              title: "Progresión de cargas",
-              icon: "📊",
-              color: "border-blue-500/30 bg-blue-500/5",
-              tips: [
-                "Aumenta el peso cuando puedas hacer el rango de reps con buena técnica",
-                "Pequeños incrementos (2.5kg) son más sostenibles que saltos grandes",
-                "Si no puedes progresar en peso, intenta más series o menos descanso",
-                "Lleva registro escrito — la memoria falla, los números no",
-              ],
-            },
-            {
-              title: "Descanso entre series",
-              icon: "⏱️",
-              color: "border-purple-500/30 bg-purple-500/5",
-              tips: [
-                "Fuerza/potencia (1-5 reps): 3-5 minutos de descanso",
-                "Hipertrofia (6-12 reps): 1-3 minutos de descanso",
-                "Resistencia muscular (15+ reps): 30-90 segundos",
-                "No apresurar el descanso compromete el rendimiento en la siguiente serie",
-              ],
-            },
-            {
-              title: "Técnica antes que peso",
-              icon: "🎯",
-              color: "border-kb-gain/30 bg-kb-gain/5",
-              tips: [
-                "La técnica incorrecta reduce resultados y aumenta riesgo de lesión",
-                "Aprende los ejercicios compuestos con peso bajo primero",
-                "Grábate de lado para verificar tu postura en sentadilla/peso muerto",
-                "El ego en el gym solo te lesiona — baja el peso si la técnica falla",
-              ],
-            },
-            {
-              title: "Recuperación",
-              icon: "😴",
-              color: "border-orange-500/30 bg-orange-500/5",
-              tips: [
-                "El músculo crece fuera del gym — el descanso es parte del entrenamiento",
-                "Duerme 7-9 horas para optimizar hormonas anabólicas",
-                "No entrenes el mismo músculo dos días seguidos sin estar recuperado",
-                "Señales de sobreentrenamiento: fatiga crónica, pérdida de fuerza, insomnio",
-              ],
-            },
-          ].map(s => (
-            <div key={s.title} className={`rounded-2xl border p-5 ${s.color}`}>
-              <div className="mb-3 flex items-center gap-2">
-                <span className="text-2xl">{s.icon}</span>
-                <h3 className="font-bold text-kb-text">{s.title}</h3>
+            { titulo: "Frecuencia óptima", emoji: "📅", texto: "Cada músculo debe entrenarse 2-3 veces por semana para maximizar la hipertrofia. Puedes lograr esto con rutinas Full Body (3x/semana) o rutinas Push/Pull/Legs (6x/semana)." },
+            { titulo: "Volumen de entrenamiento", emoji: "📊", texto: "Para hipertrofia: 10-20 series por grupo muscular por semana. Principiantes: 10 series. Intermedios: 15 series. Avanzados: 20 series. Aumenta gradualmente." },
+            { titulo: "Rango de repeticiones", emoji: "🔢", texto: "Fuerza: 1-5 reps con 85-100% de 1RM. Hipertrofia: 6-15 reps con 65-85% de 1RM. Resistencia muscular: 15-30+ reps con <65% de 1RM. Todos los rangos construyen músculo." },
+            { titulo: "Progresión de carga", emoji: "⬆️", texto: "Aplica sobrecarga progresiva: cuando completes todas las series con buena forma, sube el peso 2.5-5 kg en la siguiente sesión. Esta es la clave del progreso." },
+            { titulo: "Descanso entre series", emoji: "⏱", texto: "Para fuerza máxima: 3-5 min. Para hipertrofia: 60-120s. Para resistencia: 30-60s. El descanso insuficiente compromete el rendimiento en la siguiente serie." },
+            { titulo: "Calentamiento", emoji: "🔥", texto: "5 min de cardio ligero + 2-3 series de calentamiento con 50-60% del peso de trabajo. El calentamiento específico reduce lesiones y mejora el rendimiento." },
+          ].map(item => (
+            <div key={item.titulo} className="rounded-xl bg-white/5 border border-white/10 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xl">{item.emoji}</span>
+                <h3 className="font-semibold text-white text-sm">{item.titulo}</h3>
               </div>
-              <ul className="space-y-2">
-                {s.tips.map((tip, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-kb-text">
-                    <span className="shrink-0 text-kb-gain">→</span>{tip}
-                  </li>
-                ))}
-              </ul>
+              <p className="text-xs text-gray-300 leading-relaxed">{item.texto}</p>
             </div>
           ))}
         </div>
       )}
 
       {tab === "nutricion" && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {[
-            {
-              title: "Proteínas — el más importante",
-              icon: "🥩",
-              color: "border-red-500/30 bg-red-500/5",
-              tips: [
-                "1.6–2.4g de proteína por kg de peso corporal al día",
-                "Distribuye en 4-5 comidas para maximizar síntesis proteica",
-                "Fuentes: pollo, carne, pescado, huevos, lácteos, legumbres",
-                "Proteína en whey post-entreno si te cuesta llegar al objetivo",
-                "No hay diferencia significativa en el timing exacto — lo importante es el total diario",
-              ],
-            },
-            {
-              title: "Carbohidratos — tu combustible",
-              icon: "🍚",
-              color: "border-yellow-500/30 bg-yellow-500/5",
-              tips: [
-                "Fuente principal de energía para el entrenamiento de alta intensidad",
-                "Come más carbos en días de entreno, menos en días de descanso",
-                "Prioriza fuentes complejas: arroz, avena, batata, pan integral",
-                "Pre-entreno: carbos de digestión fácil 1-2h antes",
-                "Post-entreno: carbos + proteína para recargar glucógeno",
-              ],
-            },
-            {
-              title: "Hidratación",
-              icon: "💧",
-              color: "border-blue-500/30 bg-blue-500/5",
-              tips: [
-                "Mínimo 2-3L de agua diarios, más si entrenas intenso o hace calor",
-                "El rendimiento cae con solo 2% de deshidratación",
-                "Orina color amarillo claro = hidratado; amarillo oscuro = toma agua",
-                "Electrolitos (sodio, potasio) importan en sesiones largas o con mucho sudor",
-              ],
-            },
-            {
-              title: "Timing nutricional",
-              icon: "⏰",
-              color: "border-purple-500/30 bg-purple-500/5",
-              tips: [
-                "Pre-entreno (1-2h): carbos + proteína moderada, bajo en grasa",
-                "Post-entreno (dentro de 2h): proteína + carbos para recuperación",
-                "La creatina monohidratada (5g/día) es el suplemento con más evidencia",
-                "Cafeína (3-6mg/kg) mejora rendimiento — úsala 30-45min antes",
-                "No te compliques: llegar al total diario de proteína es lo que más importa",
-              ],
-            },
-          ].map(s => (
-            <div key={s.title} className={`rounded-2xl border p-5 ${s.color}`}>
-              <div className="mb-3 flex items-center gap-2">
-                <span className="text-2xl">{s.icon}</span>
-                <h3 className="font-bold text-kb-text">{s.title}</h3>
+            { titulo: "Proteína (la más importante)", emoji: "🥩", texto: "Para ganar músculo: 1.6-2.2g por kg de peso corporal. Distribuye en 4-5 comidas. Fuentes: pechuga de pollo, huevo, atún, whey protein, legumbres." },
+            { titulo: "Carbohidratos para rendimiento", emoji: "🍚", texto: "Prioriza carbohidratos complejos: arroz, avena, papa, yuca. Come carbohidratos antes y después del entreno para energía y recuperación." },
+            { titulo: "Grasas saludables", emoji: "🥑", texto: "No elimines las grasas. Aguacate, aceite de oliva, nueces y pescado graso son esenciales para producción hormonal (incluyendo testosterona)." },
+            { titulo: "Timing de la comida", emoji: "⏰", texto: "Pre-entreno (60-90 min antes): proteína + carbohidratos. Post-entreno (dentro de 2h): proteína rápida + carbohidratos. El timing importa pero no es crucial." },
+            { titulo: "Hidratación", emoji: "💧", texto: "Bebe 35-45ml de agua por kg de peso al día. Más si entrenas intenso o hace calor. La deshidratación reduce el rendimiento hasta un 20%." },
+            { titulo: "Suplementos básicos", emoji: "💊", texto: "Creatina monohidratada: 3-5g/día, el más respaldado científicamente. Proteína whey: conveniente si no alcanzas la ingesta. Vitamina D3 si no tomas sol." },
+          ].map(item => (
+            <div key={item.titulo} className="rounded-xl bg-white/5 border border-white/10 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xl">{item.emoji}</span>
+                <h3 className="font-semibold text-white text-sm">{item.titulo}</h3>
               </div>
-              <ul className="space-y-2">
-                {s.tips.map((tip, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-kb-text">
-                    <span className="shrink-0 text-kb-gain">→</span>{tip}
-                  </li>
-                ))}
-              </ul>
+              <p className="text-xs text-gray-300 leading-relaxed">{item.texto}</p>
             </div>
           ))}
         </div>
@@ -16879,115 +17207,104 @@ function GimGuiaView({ userId: _ }: { userId: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GimPerfilView — Editar perfil del gym
+// GimPerfilView
 // ─────────────────────────────────────────────────────────────────────────────
-
 function GimPerfilView({ userId }: { userId: string }) {
-  const DIAS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
   const [perfil, setPerfil] = useState<GymPerfil | null>(null);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [guardado, setGuardado] = useState(false);
 
-  // editable
-  const [tipoCuerpo, setTipoCuerpo] = useState<"ectomorfo"|"mesomorfo"|"endomorfo"|null>(null);
-  const [fase, setFase] = useState<"volumen"|"definicion"|"recomposicion"|"mantenimiento">("mantenimiento");
-  const [objetivo, setObjetivo] = useState<"ganar_musculo"|"perder_grasa"|"rendimiento"|"mantenimiento">("mantenimiento");
+  const [tipoCuerpo, setTipoCuerpo] = useState<"ectomorfo"|"mesomorfo"|"endomorfo"|"">("");
+  const [fase, setFase] = useState<"volumen"|"definicion"|"recomposicion"|"mantenimiento">("volumen");
+  const [objetivo, setObjetivo] = useState<"ganar_musculo"|"perder_grasa"|"rendimiento"|"mantenimiento">("ganar_musculo");
   const [experiencia, setExperiencia] = useState<"principiante"|"intermedio"|"avanzado">("principiante");
-  const [horario, setHorario] = useState<"manana"|"tarde"|"noche"|null>(null);
-  const [diasEntreno, setDiasEntreno] = useState<number[]>([]);
+  const [horario, setHorario] = useState<"manana"|"tarde"|"noche"|"">("");
+  const [dias, setDias] = useState<number[]>([]);
   const [pesoActual, setPesoActual] = useState("");
 
+  const diasLabel = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+
   useEffect(() => {
-    if (!userId) return;
-    (async () => {
+    let activo = true;
+    async function cargar() {
+      setCargando(true);
       const { data } = await supabase.from("gym_perfil").select("*").eq("user_id", userId).maybeSingle();
+      if (!activo) return;
       if (data) {
         const p = data as GymPerfil;
         setPerfil(p);
-        setTipoCuerpo(p.tipo_cuerpo);
+        setTipoCuerpo(p.tipo_cuerpo ?? "");
         setFase(p.fase);
         setObjetivo(p.objetivo);
         setExperiencia(p.experiencia);
-        setHorario(p.horario_gym);
-        setDiasEntreno(p.dias_entreno ?? []);
+        setHorario(p.horario_gym ?? "");
+        setDias(p.dias_entreno ?? []);
+        if (p.peso_inicial) setPesoActual(String(p.peso_inicial));
       }
       setCargando(false);
-    })();
+    }
+    cargar();
+    return () => { activo = false; };
   }, [userId]);
 
-  function toggleDia(d: number) {
-    setDiasEntreno(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort());
-  }
+  const toggleDia = (d: number) => setDias(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort());
 
   async function guardar() {
     if (guardando) return;
     setGuardando(true);
-    try {
-      const payload = {
+    const hoy = new Date().toISOString().split("T")[0];
+    await supabase.from("gym_perfil").upsert({
+      user_id: userId,
+      tipo_cuerpo: tipoCuerpo || null,
+      fase, objetivo, experiencia,
+      horario_gym: horario || null,
+      dias_entreno: dias,
+      updated_at: new Date().toISOString(),
+    });
+    if (pesoActual) {
+      await supabase.from("body_measurements").insert({
         user_id: userId,
-        tipo_cuerpo: tipoCuerpo,
-        fase,
-        objetivo,
-        experiencia,
-        horario_gym: horario,
-        dias_entreno: diasEntreno,
-        updated_at: new Date().toISOString(),
-      };
-      if (perfil) {
-        await supabase.from("gym_perfil").update(payload).eq("id", perfil.id);
-      } else {
-        await supabase.from("gym_perfil").insert({ ...payload, fecha_inicio: gymFechaKey() });
-      }
-
-      // Si hay peso, guardar medida
-      if (pesoActual) {
-        await supabase.from("body_measurements").upsert({
-          user_id: userId, fecha: gymFechaKey(),
-          peso_kg: parseFloat(pesoActual),
-        }, { onConflict: "user_id,fecha" });
-      }
-
-      setGuardado(true);
-      setTimeout(() => setGuardado(false), 3000);
-    } catch(e) { console.error(e); } finally { setGuardando(false); }
+        fecha: hoy,
+        peso_kg: parseFloat(pesoActual),
+      });
+    }
+    setGuardado(true);
+    setTimeout(() => setGuardado(false), 2500);
+    setGuardando(false);
   }
 
-  if (cargando) return (
-    <div className="flex h-64 items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-kb-gain border-t-transparent" />
-    </div>
-  );
+  if (cargando) return <div className="flex items-center justify-center h-48"><div className="w-8 h-8 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" /></div>;
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-5 space-y-5">
-      <h2 className="text-xl font-bold text-kb-text">Mi Perfil Gym</h2>
+    <div className="p-4 pb-8 space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold text-white">Perfil Gym</h2>
+        {guardado && <span className="text-xs text-kb-gain font-semibold flex items-center gap-1"><span>✓</span> Guardado</span>}
+      </div>
 
       {/* Tipo de cuerpo */}
       <div>
-        <label className="mb-2 block text-sm font-bold text-kb-text">Tipo de cuerpo</label>
-        <div className="space-y-2">
-          {Object.entries(GYM_TIPOS_CUERPO).map(([k, t]) => (
-            <button key={k} onClick={() => setTipoCuerpo(k as typeof tipoCuerpo)}
-              className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all ${tipoCuerpo === k ? `${t.color} border-current` : "border-kb-border-soft bg-kb-surface/30"}`}>
-              <span className="text-2xl">{t.emoji}</span>
-              <div>
-                <p className="font-semibold text-kb-text">{t.label}</p>
-                <p className="text-xs text-kb-text-secondary">{t.desc}</p>
-              </div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Tipo de cuerpo</p>
+        <div className="grid grid-cols-3 gap-2">
+          {(Object.entries(GYM_TIPOS_CUERPO) as Array<[keyof typeof GYM_TIPOS_CUERPO, typeof GYM_TIPOS_CUERPO[keyof typeof GYM_TIPOS_CUERPO]]>).map(([k, v]) => (
+            <button key={k} onClick={() => setTipoCuerpo(k)}
+              className={`rounded-xl p-3 border text-center transition-all ${tipoCuerpo === k ? "border-kb-gain/60 bg-kb-gain/10" : "border-white/10 bg-white/5 hover:border-white/20"}`}>
+              <span className="text-xl">{v.emoji}</span>
+              <p className="text-xs font-medium text-white mt-1">{v.label}</p>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Fase actual */}
+      {/* Fase */}
       <div>
-        <label className="mb-2 block text-sm font-bold text-kb-text">Fase actual</label>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Fase actual</p>
         <div className="grid grid-cols-2 gap-2">
-          {Object.entries(GYM_FASES).map(([k, f]) => (
-            <button key={k} onClick={() => setFase(k as typeof fase)}
-              className={`rounded-xl border py-3 text-sm font-semibold transition-all ${fase === k ? f.color : "border-kb-border-soft text-kb-text-secondary"}`}>
-              {f.label}
+          {(Object.entries(GYM_FASES) as Array<[keyof typeof GYM_FASES, typeof GYM_FASES[keyof typeof GYM_FASES]]>).map(([k, v]) => (
+            <button key={k} onClick={() => setFase(k)}
+              className={`py-2.5 px-3 rounded-xl text-sm font-medium border transition-all ${fase === k ? v.color : "border-white/10 bg-white/5 text-gray-400"}`}>
+              {v.label}
             </button>
           ))}
         </div>
@@ -16995,12 +17312,17 @@ function GimPerfilView({ userId }: { userId: string }) {
 
       {/* Objetivo */}
       <div>
-        <label className="mb-2 block text-sm font-bold text-kb-text">Objetivo principal</label>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Objetivo</p>
         <div className="grid grid-cols-2 gap-2">
-          {([["ganar_musculo","💪 Ganar músculo"],["perder_grasa","🔥 Perder grasa"],["rendimiento","⚡ Rendimiento"],["mantenimiento","🔒 Mantenimiento"]] as const).map(([v,l]) => (
+          {([
+            ["ganar_musculo","Ganar músculo","💪"],
+            ["perder_grasa","Perder grasa","🔥"],
+            ["rendimiento","Rendimiento","⚡"],
+            ["mantenimiento","Mantenimiento","⚖️"],
+          ] as const).map(([v, l, e]) => (
             <button key={v} onClick={() => setObjetivo(v)}
-              className={`rounded-xl border py-2.5 text-xs font-semibold transition-all ${objetivo === v ? "border-kb-gain bg-kb-gain/10 text-kb-gain" : "border-kb-border-soft text-kb-text-secondary"}`}>
-              {l}
+              className={`py-2.5 px-3 rounded-xl text-sm border transition-all flex items-center gap-2 ${objetivo === v ? "border-kb-gain/60 bg-kb-gain/10 text-kb-gain font-semibold" : "border-white/10 bg-white/5 text-gray-400"}`}>
+              <span>{e}</span><span>{l}</span>
             </button>
           ))}
         </div>
@@ -17008,57 +17330,68 @@ function GimPerfilView({ userId }: { userId: string }) {
 
       {/* Experiencia */}
       <div>
-        <label className="mb-2 block text-sm font-bold text-kb-text">Nivel de experiencia</label>
-        <div className="flex gap-2">
-          {([["principiante","Principiante"],["intermedio","Intermedio"],["avanzado","Avanzado"]] as const).map(([v,l]) => (
-            <button key={v} onClick={() => setExperiencia(v)}
-              className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-all ${experiencia === v ? "border-kb-gain bg-kb-gain/10 text-kb-gain" : "border-kb-border-soft text-kb-text-secondary"}`}>
-              {l}
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Nivel de experiencia</p>
+        <div className="grid grid-cols-3 gap-2">
+          {(["principiante","intermedio","avanzado"] as const).map(e => (
+            <button key={e} onClick={() => setExperiencia(e)}
+              className={`py-2.5 rounded-xl text-xs font-medium border transition-all capitalize ${experiencia === e ? "border-kb-gain/60 bg-kb-gain/10 text-kb-gain" : "border-white/10 bg-white/5 text-gray-400"}`}>
+              {e}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Horario preferido */}
+      {/* Horario */}
       <div>
-        <label className="mb-2 block text-sm font-bold text-kb-text">Horario preferido</label>
-        <div className="flex gap-2">
-          {([["manana","🌅 Mañana"],["tarde","☀️ Tarde"],["noche","🌙 Noche"]] as const).map(([v,l]) => (
-            <button key={v} onClick={() => setHorario(horario === v ? null : v)}
-              className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-all ${horario === v ? "border-kb-gain bg-kb-gain/10 text-kb-gain" : "border-kb-border-soft text-kb-text-secondary"}`}>
-              {l}
-            </button>
-          ))}
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Horario preferido</p>
+        <div className="grid grid-cols-3 gap-2">
+          {(["manana","tarde","noche"] as const).map(h => {
+            const labels = { manana: "🌅 Mañana", tarde: "☀️ Tarde", noche: "🌙 Noche" };
+            return (
+              <button key={h} onClick={() => setHorario(h === horario ? "" : h)}
+                className={`py-2.5 rounded-xl text-xs font-medium border transition-all ${horario === h ? "border-kb-gain/60 bg-kb-gain/10 text-kb-gain" : "border-white/10 bg-white/5 text-gray-400"}`}>
+                {labels[h]}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Días de entrenamiento */}
+      {/* Días de entreno */}
       <div>
-        <label className="mb-2 block text-sm font-bold text-kb-text">Días que entrenas</label>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Días de entrenamiento</p>
         <div className="flex gap-1.5">
-          {DIAS.map((d, i) => (
+          {diasLabel.map((d, i) => (
             <button key={i} onClick={() => toggleDia(i)}
-              className={`flex-1 rounded-xl border py-2.5 text-xs font-bold transition-all ${diasEntreno.includes(i) ? "border-kb-gain bg-kb-gain text-kb-bg" : "border-kb-border-soft text-kb-text-secondary"}`}>
-              {d}
+              className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all ${dias.includes(i) ? "border-kb-gain/60 bg-kb-gain/20 text-kb-gain" : "border-white/10 bg-white/5 text-gray-500"}`}>
+              {d.slice(0,1)}
             </button>
           ))}
         </div>
-        <p className="mt-1 text-xs text-kb-text-muted">{diasEntreno.length} día{diasEntreno.length !== 1 ? "s" : ""} por semana</p>
+        <p className="text-xs text-gray-500 mt-1.5">{dias.length} días seleccionados</p>
       </div>
 
-      {/* Peso actual (opcional) */}
+      {/* Peso actual */}
       <div>
-        <label className="mb-1 block text-sm font-bold text-kb-text">Peso actual (kg) — opcional</label>
-        <input type="number" step="0.1" value={pesoActual} onChange={e => setPesoActual(e.target.value)}
-          placeholder="ej. 75.5"
-          className="w-full rounded-xl border border-kb-border bg-kb-surface/40 px-3 py-2.5 text-sm text-kb-text placeholder:text-kb-text-muted" />
-        <p className="mt-0.5 text-xs text-kb-text-muted">Se guardará también en tu historial de medidas.</p>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Registrar peso actual (kg)</p>
+        <input
+          type="number"
+          step="0.1"
+          value={pesoActual}
+          onChange={e => setPesoActual(e.target.value)}
+          placeholder="Ej: 75.5"
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-kb-gain/50"
+        />
+        <p className="text-xs text-gray-600 mt-1">Se guardará en el historial de medidas</p>
       </div>
 
       {/* Guardar */}
-      <button onClick={guardar} disabled={guardando}
-        className={`w-full rounded-2xl py-4 text-sm font-bold transition-all disabled:opacity-60 ${guardado ? "bg-blue-500 text-white" : "bg-kb-gain text-kb-bg"}`}>
-        {guardando ? "Guardando..." : guardado ? "✅ ¡Guardado!" : "Guardar cambios"}
+      <button
+        onClick={guardar}
+        disabled={guardando}
+        className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-kb-gain to-kb-gain/80 text-kb-bg hover:opacity-90 disabled:opacity-50 active:scale-95 transition-all"
+      >
+        {guardando ? "Guardando..." : "Guardar perfil"}
       </button>
     </div>
   );
