@@ -15293,7 +15293,8 @@ function GimEjercicioPicker({
   if (detalle) {
     const col = GYM_GRUPO_COLORES[detalle.grupo] ?? GYM_GRUPO_COLORES["Otro"];
     return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-kb-bg">
+      <div className="fixed inset-0 z-50 bg-kb-bg flex justify-center">
+        <div className="w-full max-w-lg flex flex-col">
         {/* Header detalle */}
         <div className="flex items-center gap-3 p-4 border-b border-white/10">
           <button onClick={() => setDetalle(null)} className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors">
@@ -15336,12 +15337,14 @@ function GimEjercicioPicker({
             Agregar este ejercicio
           </button>
         </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-kb-bg">
+    <div className="fixed inset-0 z-50 bg-kb-bg flex justify-center">
+      <div className="w-full max-w-lg flex flex-col">
       {/* Header */}
       <div className="flex items-center gap-3 p-4 border-b border-white/10">
         <button onClick={onClose} className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors">
@@ -15411,6 +15414,7 @@ function GimEjercicioPicker({
             </button>
           );
         })}
+      </div>
       </div>
     </div>
   );
@@ -15996,7 +16000,8 @@ function GimHoyView({ userId }: { userId: string }) {
   // Modal form ejercicio
   if (mostrarFormEx) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-kb-bg">
+      <div className="fixed inset-0 z-50 bg-kb-bg flex justify-center">
+        <div className="w-full max-w-lg flex flex-col">
         <div className="flex items-center gap-3 p-4 border-b border-white/10">
           <button onClick={() => setMostrarFormEx(false)} className="text-gray-400 hover:text-white p-1">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
@@ -16180,6 +16185,7 @@ function GimHoyView({ userId }: { userId: string }) {
           >
             {guardando ? "Guardando..." : editandoIdx !== null ? "Actualizar ejercicio" : "Agregar ejercicio"}
           </button>
+        </div>
         </div>
       </div>
     );
