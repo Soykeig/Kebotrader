@@ -2179,6 +2179,7 @@ function Dashboard({
                 nombreUsuario={nombreParaMostrar}
                 totalRetirado={totalRetirado}
                 retiros={retirosDeLaCuenta}
+                invertidoPorCuenta={invertidoPorCuenta}
                 diaParaRegistrar={diaParaRegistrar}
                 onSeleccionarDiaParaRegistrar={setDiaParaRegistrar}
                 onIrARegistrar={() => irA("historial")}
@@ -2350,6 +2351,7 @@ function InicioView({
   nombreUsuario,
   totalRetirado,
   retiros,
+  invertidoPorCuenta,
   diaParaRegistrar,
   onSeleccionarDiaParaRegistrar,
   onIrARegistrar,
@@ -2370,6 +2372,7 @@ function InicioView({
   nombreUsuario: string;
   totalRetirado: number;
   retiros: Withdrawal[];
+  invertidoPorCuenta: Map<string, number>;
   diaParaRegistrar: string;
   onSeleccionarDiaParaRegistrar: (clave: string) => void;
   onIrARegistrar: () => void;
@@ -2489,11 +2492,11 @@ function InicioView({
         }`;
 
   // Invertido/retirado/ROI del alcance actual (cuenta específica o todas).
-  // "Invertido" = lo que realmente pagaste (purchase_cost); si no lo
-  // cargaste, se aproxima con el balance inicial.
+  // "Invertido" = suma de aportes reales (tabla investments) si los hay;
+  // si no, cae en purchase_cost (costo del challenge) o balance inicial.
   const invertido = cuenta
-    ? cuenta.purchase_cost ?? cuenta.starting_balance
-    : cuentas.reduce((acc, c) => acc + (c.purchase_cost ?? c.starting_balance), 0);
+    ? (invertidoPorCuenta.get(cuenta.id) ?? cuenta.purchase_cost ?? cuenta.starting_balance)
+    : cuentas.reduce((acc, c) => acc + (invertidoPorCuenta.get(c.id) ?? c.purchase_cost ?? c.starting_balance), 0);
   const roiPorcentaje = invertido > 0 ? ((totalRetirado - invertido) / invertido) * 100 : 0;
 
   return (
@@ -5160,7 +5163,7 @@ function RoiCuentasView({
         diferencia,
       };
     });
-  }, [cuentas, pnlPorCuenta, retiradoPorCuenta]);
+  }, [cuentas, pnlPorCuenta, retiradoPorCuenta, invertidoPorCuenta]);
 
   const totales = useMemo(() => {
     const invertido = filas.reduce((acc, f) => acc + f.invertido, 0);
