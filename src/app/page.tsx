@@ -15459,13 +15459,15 @@ function GimView({
       </div>
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {vistaGim === "dashboard"     && <GimDashboard     userId={userId} setVistaGim={setVistaGim} />}
-        {vistaGim === "hoy"           && <GimHoyView       userId={userId} />}
-        {vistaGim === "plan"          && <GimPlanView      userId={userId} />}
-        {vistaGim === "progreso"      && <GimProgresoView  userId={userId} />}
-        {vistaGim === "historial_gym" && <GimHistorialView userId={userId} />}
-        {vistaGim === "guia"          && <GimGuiaView />}
-        {vistaGim === "perfil_gym"    && <GimPerfilView    userId={userId} />}
+        <div className="max-w-lg mx-auto">
+          {vistaGim === "dashboard"     && <GimDashboard     userId={userId} setVistaGim={setVistaGim} />}
+          {vistaGim === "hoy"           && <GimHoyView       userId={userId} />}
+          {vistaGim === "plan"          && <GimPlanView      userId={userId} />}
+          {vistaGim === "progreso"      && <GimProgresoView  userId={userId} />}
+          {vistaGim === "historial_gym" && <GimHistorialView userId={userId} />}
+          {vistaGim === "guia"          && <GimGuiaView />}
+          {vistaGim === "perfil_gym"    && <GimPerfilView    userId={userId} />}
+        </div>
       </div>
     </div>
   );
@@ -16657,7 +16659,7 @@ function GimPlanView({ userId }: { userId: string }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function GimProgresoView({ userId }: { userId: string }) {
-  const [tab, setTab] = useState<"medidas" | "records" | "progresion">("records");
+  const [tab, setTab] = useState<"resumen" | "medidas" | "records" | "progresion">("resumen");
 
   // ── MEDIDAS tab ────────────────────────────────────────────────────────────
   const [medidas, setMedidas] = useState<BodyMeasurement[]>([]);
@@ -16677,8 +16679,23 @@ function GimProgresoView({ userId }: { userId: string }) {
   const [cargandoProg, setCargandoProg] = useState(false);
   const [nombresEjercicios, setNombresEjercicios] = useState<string[]>([]);
 
+  // ── RESUMEN tab ─────────────────────────────────────────────────────────────
+  interface ResumenPeriodo { sesiones: number; volumen: number; }
+  interface ResumenData {
+    semanaActual: ResumenPeriodo;
+    semanaAnterior: ResumenPeriodo;
+    mesActual: ResumenPeriodo;
+    mesAnterior: ResumenPeriodo;
+    ejerciciosProgreso: { nombre: string; mesAnterior: number; mesActual: number }[];
+    pesoTendencia: { fecha: string; peso_kg: number }[];
+    nuevosRecordsMes: number;
+  }
+  const [resumenData, setResumenData] = useState<ResumenData | null>(null);
+  const [cargandoResumen, setCargandoResumen] = useState(false);
+
   useEffect(() => {
-    if (tab === "medidas" && medidas.length === 0) cargarMedidas();
+    if (tab === "resumen" && !resumenData) cargarResumen();
+    else if (tab === "medidas" && medidas.length === 0) cargarMedidas();
     else if (tab === "records" && Object.keys(records).length === 0) cargarRecords();
     else if (tab === "progresion" && nombresEjercicios.length === 0) cargarNombres();
   }, [tab]);
@@ -16737,6 +16754,102 @@ function GimProgresoView({ userId }: { userId: string }) {
     const rows = (data as unknown as Row[]) || [];
     const unicos = [...new Set(rows.map(r => r.nombre))].sort();
     setNombresEjercicios(unicos);
+  }
+
+  async function cargarResumen() {
+    setCargandoResumen(true);
+    const hoy = new Date();
+    const fmt = (d: Date) => d.toISOString().split("T")[0];
+
+    // Semana actual: lunes a hoy
+    const dow = hoy.getDay(); // 0=Dom
+    const lunes = new Date(hoy);
+    lunes.setDate(hoy.getDate() - ((dow === 0 ? 7 : dow) - 1));
+    lunes.setHours(0, 0, 0, 0);
+    const lunesAnt = new Date(lunes);
+    lunesAnt.setDate(lunes.getDate() - 7);
+    const domAnt = new Date(lunes);
+    domAnt.setDate(lunes.getDate() - 1);
+
+    // Mes actual: 1ro a hoy
+    const inicioMesAct = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const inicioMesAnt = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+    const finMesAnt = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+
+    const hace60 = new Date(hoy);
+    hace60.setDate(hoy.getDate() - 62);
+
+    // Cargar sesiones últimos 62 días
+    const { data: rawSes } = await supabase
+      .from("gym_sessions")
+      .select("id, fecha")
+      .eq("user_id", userId)
+      .gte("fecha", fmt(hace60))
+      .order("fecha");
+    type SesRow = { id: string; fecha: string };
+    const sessions: SesRow[] = (rawSes as SesRow[]) || [];
+    const sesIds = sessions.map(s => s.id);
+
+    type ExRow = { sesion_id: string; nombre: string; series: { reps: number; peso_kg: number | null }[] };
+    let exercises: ExRow[] = [];
+    if (sesIds.length > 0) {
+      const { data: rawEx } = await supabase
+        .from("gym_session_exercises")
+        .select("sesion_id, nombre, series")
+        .in("sesion_id", sesIds);
+      exercises = (rawEx as ExRow[]) || [];
+    }
+
+    const volumenEx = (series: { reps: number; peso_kg: number | null }[]) =>
+      series.reduce((sum, s) => sum + (s.peso_kg ?? 0) * s.reps, 0);
+
+    function statsRango(start: string, end: string) {
+      const ss = sessions.filter(s => s.fecha >= start && s.fecha <= end);
+      const ids = new Set(ss.map(s => s.id));
+      const exs = exercises.filter(e => ids.has(e.sesion_id));
+      return { sesiones: ss.length, volumen: Math.round(exs.reduce((sum, e) => sum + volumenEx(e.series), 0)) };
+    }
+
+    function maxPorRango(start: string, end: string): Record<string, number> {
+      const ss = sessions.filter(s => s.fecha >= start && s.fecha <= end);
+      const ids = new Set(ss.map(s => s.id));
+      const map: Record<string, number> = {};
+      for (const e of exercises.filter(ex => ids.has(ex.sesion_id))) {
+        const mx = Math.max(...e.series.map(s => s.peso_kg ?? 0), 0);
+        if (mx > 0) map[e.nombre] = Math.max(map[e.nombre] ?? 0, mx);
+      }
+      return map;
+    }
+
+    const semanaActual = statsRango(fmt(lunes), fmt(hoy));
+    const semanaAnterior = statsRango(fmt(lunesAnt), fmt(domAnt));
+    const mesActual = statsRango(fmt(inicioMesAct), fmt(hoy));
+    const mesAnterior = statsRango(fmt(inicioMesAnt), fmt(finMesAnt));
+
+    const maxAct = maxPorRango(fmt(inicioMesAct), fmt(hoy));
+    const maxAnt = maxPorRango(fmt(inicioMesAnt), fmt(finMesAnt));
+    let nuevosRecordsMes = 0;
+    const ejerciciosProgreso: { nombre: string; mesAnterior: number; mesActual: number }[] = [];
+    for (const [nombre, mxAct] of Object.entries(maxAct)) {
+      const mxAnt = maxAnt[nombre] ?? 0;
+      if (mxAct > mxAnt && mxAnt > 0) nuevosRecordsMes++;
+      ejerciciosProgreso.push({ nombre, mesAnterior: mxAnt, mesActual: mxAct });
+    }
+    ejerciciosProgreso.sort((a, b) => (b.mesActual - b.mesAnterior) - (a.mesActual - a.mesAnterior));
+
+    // Peso corporal
+    const { data: rawPeso } = await supabase
+      .from("body_measurements")
+      .select("fecha, peso_kg")
+      .eq("user_id", userId)
+      .not("peso_kg", "is", null)
+      .order("fecha", { ascending: false })
+      .limit(10);
+    const pesoTendencia = ((rawPeso as { fecha: string; peso_kg: number }[]) || [])
+      .filter(m => m.peso_kg != null).reverse();
+
+    setResumenData({ semanaActual, semanaAnterior, mesActual, mesAnterior, ejerciciosProgreso, pesoTendencia, nuevosRecordsMes });
+    setCargandoResumen(false);
   }
 
   async function cargarProgresion(nombre: string) {
@@ -16850,19 +16963,218 @@ function GimProgresoView({ userId }: { userId: string }) {
       {/* Tabs */}
       <div className="flex gap-1 mb-4 p-1 bg-white/5 rounded-xl border border-white/10">
         {([
+          { id: "resumen", label: "Resumen", emoji: "📊" },
           { id: "records", label: "Récords", emoji: "🏆" },
           { id: "progresion", label: "Progresión", emoji: "📈" },
           { id: "medidas", label: "Medidas", emoji: "⚖️" },
         ] as const).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex-1 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all ${
+            className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex flex-col items-center justify-center gap-0.5 transition-all ${
               tab === t.id ? "bg-kb-gain/20 text-kb-gain border border-kb-gain/40" : "text-gray-500 hover:text-gray-300"
             }`}>
             <span>{t.emoji}</span>
-            <span>{t.label}</span>
+            <span className="text-[10px] leading-none">{t.label}</span>
           </button>
         ))}
       </div>
+
+      {/* ── Tab RESUMEN ── */}
+      {tab === "resumen" && (
+        <div className="space-y-4">
+          {cargandoResumen ? (
+            <div className="flex justify-center h-32 items-center"><div className="w-7 h-7 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" /></div>
+          ) : !resumenData ? (
+            <div className="rounded-xl bg-white/5 border border-white/10 p-8 text-center">
+              <p className="text-3xl mb-2">📊</p>
+              <p className="text-sm text-gray-400">Aún no hay datos suficientes para el resumen</p>
+            </div>
+          ) : (() => {
+            const { semanaActual, semanaAnterior, mesActual, mesAnterior, ejerciciosProgreso, pesoTendencia, nuevosRecordsMes } = resumenData;
+
+            // Helper: delta display
+            function StatDelta({ curr, prev, unit = "", invertido = false }: { curr: number; prev: number; unit?: string; invertido?: boolean }) {
+              const diff = curr - prev;
+              if (prev === 0 && curr === 0) return <span className="text-[10px] text-gray-600">Sin datos</span>;
+              if (prev === 0) return <span className="text-[10px] text-green-400">↑ nuevo</span>;
+              if (diff === 0) return <span className="text-[10px] text-gray-500">= igual</span>;
+              const pct = Math.round(Math.abs(diff) / prev * 100);
+              const positivo = invertido ? diff < 0 : diff > 0;
+              return (
+                <span className={`text-[10px] font-bold ${positivo ? "text-green-400" : "text-red-400"}`}>
+                  {diff > 0 ? "↑" : "↓"} {Math.abs(diff)}{unit} ({pct}%)
+                </span>
+              );
+            }
+
+            // Format volume nicely
+            const fmtVol = (v: number) => v >= 1000 ? `${(v/1000).toFixed(1)}t` : `${v}kg`;
+
+            return (
+              <>
+                {/* Nuevos records badge */}
+                {nuevosRecordsMes > 0 && (
+                  <div className="rounded-xl bg-yellow-500/10 border border-yellow-500/30 p-3 flex items-center gap-3">
+                    <span className="text-2xl">🔥</span>
+                    <div>
+                      <p className="text-sm font-bold text-yellow-400">¡{nuevosRecordsMes} nuevo{nuevosRecordsMes > 1 ? "s" : ""} récord{nuevosRecordsMes > 1 ? "s" : ""} este mes!</p>
+                      <p className="text-xs text-yellow-400/70">Superaste tu marca personal en {nuevosRecordsMes} ejercicio{nuevosRecordsMes > 1 ? "s" : ""}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Esta semana */}
+                <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+                  <div className="px-3 py-2 border-b border-white/5">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Esta semana vs semana pasada</p>
+                  </div>
+                  <div className="grid grid-cols-2 divide-x divide-white/5">
+                    <div className="p-3 text-center">
+                      <p className="text-xs text-gray-500 mb-1">Sesiones</p>
+                      <p className="text-2xl font-bold text-white">{semanaActual.sesiones}</p>
+                      <StatDelta curr={semanaActual.sesiones} prev={semanaAnterior.sesiones} />
+                    </div>
+                    <div className="p-3 text-center">
+                      <p className="text-xs text-gray-500 mb-1">Volumen total</p>
+                      <p className="text-2xl font-bold text-white">{fmtVol(semanaActual.volumen)}</p>
+                      <StatDelta curr={semanaActual.volumen} prev={semanaAnterior.volumen} unit="kg" />
+                    </div>
+                  </div>
+                  <div className="px-3 py-1.5 bg-white/3 border-t border-white/5">
+                    <p className="text-[10px] text-gray-600 text-center">Semana anterior: {semanaAnterior.sesiones} sesiones · {fmtVol(semanaAnterior.volumen)}</p>
+                  </div>
+                </div>
+
+                {/* Este mes */}
+                <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+                  <div className="px-3 py-2 border-b border-white/5">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Este mes vs mes pasado</p>
+                  </div>
+                  <div className="grid grid-cols-2 divide-x divide-white/5">
+                    <div className="p-3 text-center">
+                      <p className="text-xs text-gray-500 mb-1">Sesiones</p>
+                      <p className="text-2xl font-bold text-white">{mesActual.sesiones}</p>
+                      <StatDelta curr={mesActual.sesiones} prev={mesAnterior.sesiones} />
+                    </div>
+                    <div className="p-3 text-center">
+                      <p className="text-xs text-gray-500 mb-1">Volumen total</p>
+                      <p className="text-2xl font-bold text-white">{fmtVol(mesActual.volumen)}</p>
+                      <StatDelta curr={mesActual.volumen} prev={mesAnterior.volumen} unit="kg" />
+                    </div>
+                  </div>
+                  <div className="px-3 py-1.5 bg-white/3 border-t border-white/5">
+                    <p className="text-[10px] text-gray-600 text-center">Mes anterior: {mesAnterior.sesiones} sesiones · {fmtVol(mesAnterior.volumen)}</p>
+                  </div>
+                </div>
+
+                {/* Progreso por ejercicio */}
+                {ejerciciosProgreso.length > 0 && (
+                  <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+                    <div className="px-3 py-2 border-b border-white/5">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Progreso este mes por ejercicio</p>
+                    </div>
+                    <div className="divide-y divide-white/5">
+                      {ejerciciosProgreso.slice(0, 6).map(e => {
+                        const diff = e.mesActual - e.mesAnterior;
+                        const subio = diff > 0;
+                        const igual = diff === 0;
+                        const esNuevo = e.mesAnterior === 0;
+                        return (
+                          <div key={e.nombre} className="flex items-center justify-between px-3 py-2.5 gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm text-white truncate">{e.nombre}</p>
+                              {!esNuevo && <p className="text-[10px] text-gray-600">Mes ant: {e.mesAnterior}kg</p>}
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {esNuevo ? (
+                                <span className="text-xs text-blue-400 font-semibold">✨ nuevo</span>
+                              ) : subio ? (
+                                <span className="text-xs text-green-400 font-bold">+{diff}kg ↑</span>
+                              ) : igual ? (
+                                <span className="text-xs text-gray-500">= sin cambio</span>
+                              ) : (
+                                <span className="text-xs text-red-400 font-bold">{diff}kg ↓</span>
+                              )}
+                              <span className={`text-sm font-bold ${subio ? "text-green-400" : igual ? "text-white" : "text-red-400"}`}>{e.mesActual}kg</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Tendencia de peso */}
+                {pesoTendencia.length >= 2 && (
+                  <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+                    <div className="px-3 py-2 border-b border-white/5">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Tendencia de peso</p>
+                    </div>
+                    <div className="p-3">
+                      {/* Mini chart */}
+                      {(() => {
+                        const pesos = pesoTendencia.map(p => p.peso_kg);
+                        const minW = Math.min(...pesos) * 0.98;
+                        const maxW = Math.max(...pesos) * 1.02;
+                        const rango = maxW - minW || 1;
+                        const W = 280, H = 70, padX = 8, padY = 8;
+                        const dW = W - padX * 2, dH = H - padY * 2;
+                        const toX = (i: number) => padX + (i / (pesos.length - 1)) * dW;
+                        const toY = (p: number) => padY + (1 - (p - minW) / rango) * dH;
+                        const path = pesos.map((p, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toY(p)}`).join(" ");
+                        const area = `${path} L ${toX(pesos.length-1)} ${H-padY} L ${padX} ${H-padY} Z`;
+                        const diffPeso = pesos[pesos.length-1] - pesos[0];
+                        const colorPeso = diffPeso < 0 ? "#34d399" : diffPeso > 0 ? "#f87171" : "#9ca3af";
+                        return (
+                          <>
+                            <svg viewBox={`0 0 ${W} ${H}`} className="w-full mb-2" style={{ height: 70 }}>
+                              <defs>
+                                <linearGradient id="pesoGrad" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor={colorPeso} stopOpacity="0.3" />
+                                  <stop offset="100%" stopColor={colorPeso} stopOpacity="0" />
+                                </linearGradient>
+                              </defs>
+                              <path d={area} fill="url(#pesoGrad)" />
+                              <path d={path} fill="none" stroke={colorPeso} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                              {pesos.map((p, i) => (
+                                <circle key={i} cx={toX(i)} cy={toY(p)} r="2.5" fill={colorPeso} />
+                              ))}
+                            </svg>
+                            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/5">
+                              <div className="text-center">
+                                <p className="text-[10px] text-gray-500">Inicio</p>
+                                <p className="text-sm font-bold text-white">{pesos[0]}kg</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="text-[10px] text-gray-500">Actual</p>
+                                <p className="text-sm font-bold text-white">{pesos[pesos.length-1]}kg</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="text-[10px] text-gray-500">Cambio</p>
+                                <p className={`text-sm font-bold ${diffPeso < 0 ? "text-green-400" : diffPeso > 0 ? "text-red-400" : "text-gray-400"}`}>
+                                  {diffPeso > 0 ? "+" : ""}{diffPeso.toFixed(1)}kg
+                                </p>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {/* Motivación si no hay datos */}
+                {mesActual.sesiones === 0 && semanaActual.sesiones === 0 && (
+                  <div className="rounded-xl bg-white/5 border border-white/10 p-6 text-center">
+                    <p className="text-3xl mb-2">💪</p>
+                    <p className="text-sm text-white font-semibold">¡Empieza a entrenar!</p>
+                    <p className="text-xs text-gray-500 mt-1">Registra tus primeras sesiones para ver tu progreso aquí</p>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
 
       {/* ── Tab RECORDS ── */}
       {tab === "records" && (
@@ -17104,6 +17416,13 @@ function GimHistorialView({ userId }: { userId: string }) {
     cargarEjercicios(id);
   }
 
+  async function eliminarSesion(id: string) {
+    await supabase.from("gym_session_exercises").delete().eq("sesion_id", id);
+    await supabase.from("gym_sessions").delete().eq("id", id);
+    setSesiones(prev => prev.filter(s => s.id !== id));
+    if (abierto === id) setAbierto(null);
+  }
+
   if (cargando) return <div className="flex items-center justify-center h-48"><div className="w-8 h-8 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" /></div>;
 
   return (
@@ -17125,22 +17444,27 @@ function GimHistorialView({ userId }: { userId: string }) {
 
         return (
           <div key={s.id} className="rounded-xl border border-white/10 bg-white/3 overflow-hidden transition-all">
-            <button onClick={() => toggleSesion(s.id)} className="w-full p-3 flex items-center gap-3 text-left">
-              <div className="w-10 h-10 rounded-xl bg-kb-gain/10 border border-kb-gain/20 flex flex-col items-center justify-center flex-shrink-0">
-                <span className="text-xs font-bold text-kb-gain leading-none">{new Date(s.fecha + "T12:00:00").getDate()}</span>
-                <span className="text-xs text-gray-500 leading-none">{new Date(s.fecha + "T12:00:00").toLocaleDateString("es-MX", { month: "short" })}</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-white">{new Date(s.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "long" })}</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  {s.duracion_min && <span className="text-xs text-gray-500">⏱ {s.duracion_min}min</span>}
-                  {fase && <span className={`text-xs px-1.5 py-0.5 rounded-md border ${fase.color}`}>{fase.label}</span>}
+            <div className="flex items-center gap-2 pr-2">
+              <button onClick={() => toggleSesion(s.id)} className="flex-1 p-3 flex items-center gap-3 text-left min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-kb-gain/10 border border-kb-gain/20 flex flex-col items-center justify-center flex-shrink-0">
+                  <span className="text-xs font-bold text-kb-gain leading-none">{new Date(s.fecha + "T12:00:00").getDate()}</span>
+                  <span className="text-xs text-gray-500 leading-none">{new Date(s.fecha + "T12:00:00").toLocaleDateString("es-MX", { month: "short" })}</span>
                 </div>
-              </div>
-              <svg className={`w-4 h-4 text-gray-600 transition-transform flex-shrink-0 ${estaAbierto ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
-              </svg>
-            </button>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white">{new Date(s.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "long" })}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {s.duracion_min && <span className="text-xs text-gray-500">⏱ {s.duracion_min}min</span>}
+                    {fase && <span className={`text-xs px-1.5 py-0.5 rounded-md border ${fase.color}`}>{fase.label}</span>}
+                  </div>
+                </div>
+                <svg className={`w-4 h-4 text-gray-600 transition-transform flex-shrink-0 ${estaAbierto ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
+                </svg>
+              </button>
+              <button onClick={() => eliminarSesion(s.id)} className="p-2 rounded-lg text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0" title="Eliminar sesión">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              </button>
+            </div>
 
             {estaAbierto && (
               <div className="border-t border-white/5 p-3 space-y-2">
