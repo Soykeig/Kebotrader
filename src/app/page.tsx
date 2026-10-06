@@ -15463,7 +15463,7 @@ function GimView({
       </div>
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-lg mx-auto">
+        <div>
           {vistaGim === "dashboard"     && <GimDashboard     userId={userId} setVistaGim={setVistaGim} />}
           {vistaGim === "hoy"           && <GimHoyView       userId={userId} />}
           {vistaGim === "plan"          && <GimPlanView      userId={userId} />}
