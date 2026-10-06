@@ -1344,11 +1344,20 @@ function Dashboard({
   // registrarte) — se usa en el saludo del Dashboard y en el sidebar,
   // en vez de siempre derivarlo del email.
   const [nombrePerfil, setNombrePerfil] = useState<string | null>(null);
+  const [modulos, setModulos] = useState<{trading: boolean; gym: boolean}>({ trading: true, gym: true });
 
   useEffect(() => {
     async function cargarNombrePerfil() {
-      const { data } = await supabase.from("profiles").select("display_name").eq("id", session.user.id).maybeSingle();
-      const nombreGuardado = (data as { display_name: string | null } | null)?.display_name;
+      const { data } = await supabase.from("profiles").select("display_name, modulos").eq("id", session.user.id).maybeSingle();
+      const row = data as { display_name: string | null; modulos: {trading: boolean; gym: boolean} | null } | null;
+      const nombreGuardado = row?.display_name;
+      const modulosGuardados = row?.modulos ?? { trading: true, gym: true };
+
+      // Aplicar módulos
+      setModulos(modulosGuardados);
+      if (!modulosGuardados.trading && modulosGuardados.gym) {
+        setVista("gym");
+      }
 
       if (nombreGuardado && nombreGuardado.trim() !== "") {
         setNombrePerfil(nombreGuardado.trim());
@@ -1368,6 +1377,16 @@ function Dashboard({
     }
     cargarNombrePerfil();
   }, [session.user.id]);
+
+  async function actualizarModulos(nuevos: {trading: boolean; gym: boolean}) {
+    // Al menos un módulo debe quedar activo
+    if (!nuevos.trading && !nuevos.gym) return;
+    setModulos(nuevos);
+    await supabase.from("profiles").upsert({ id: session.user.id, modulos: nuevos });
+    // Redirigir si el módulo actual queda desactivado
+    if (!nuevos.gym && vista === "gym") setVista("inicio");
+    if (!nuevos.trading && vista !== "gym") setVista("gym");
+  }
 
   const nombreParaMostrar = nombrePerfil ?? nombreDesdeEmail(session.user.email);
 
@@ -1783,7 +1802,8 @@ function Dashboard({
             />
           )}
 
-          {/* ── Switcher de módulo ─────────────────────────────── */}
+          {/* ── Switcher de módulo (solo si ambos activos) ────── */}
+          {modulos.trading && modulos.gym && (
           <div className="px-3 pt-3 pb-1">
             <div className="flex gap-1 rounded-xl border border-kb-border-soft bg-kb-bg/60 p-1">
               <button
@@ -1817,6 +1837,7 @@ function Dashboard({
               </button>
             </div>
           </div>
+          )}
 
           {/* ── Navegación principal (Trading) ────────────────── */}
           {!esModoGym && (
@@ -1957,7 +1978,8 @@ function Dashboard({
           </header>
           {menuMovilAbierto && (
             <div className="border-b border-kb-border-soft bg-kb-surface/40 p-3 lg:hidden">
-              {/* Switcher móvil */}
+              {/* Switcher móvil (solo si ambos módulos activos) */}
+              {modulos.trading && modulos.gym && (
               <div className="mb-3 flex gap-1 rounded-xl border border-kb-border-soft bg-kb-bg/60 p-1">
                 <button
                   onClick={() => { irA("inicio"); }}
@@ -1972,6 +1994,7 @@ function Dashboard({
                   🏋️ Gym
                 </button>
               </div>
+              )}
 
               {/* Items de navegación */}
               <div className="grid grid-cols-3 gap-2">
@@ -2234,6 +2257,8 @@ function Dashboard({
                 vistaGim={vistaGim}
                 setVistaGim={setVistaGim}
                 userId={session.user.id}
+                modulos={modulos}
+                onModulosChange={actualizarModulos}
               />
             )}
               </>
@@ -15427,10 +15452,14 @@ function GimView({
   vistaGim,
   setVistaGim,
   userId,
+  modulos,
+  onModulosChange,
 }: {
   vistaGim: GimVista;
   setVistaGim: (v: GimVista) => void;
   userId: string;
+  modulos: {trading: boolean; gym: boolean};
+  onModulosChange: (m: {trading: boolean; gym: boolean}) => void;
 }) {
   const navItems: { id: GimVista; label: string; emoji: string }[] = [
     { id: "dashboard",    label: "Inicio",   emoji: "🏠" },
@@ -15470,7 +15499,7 @@ function GimView({
           {vistaGim === "progreso"      && <GimProgresoView  userId={userId} />}
           {vistaGim === "historial_gym" && <GimHistorialView userId={userId} />}
           {vistaGim === "guia"          && <GimGuiaView />}
-          {vistaGim === "perfil_gym"    && <GimPerfilView    userId={userId} />}
+          {vistaGim === "perfil_gym"    && <GimPerfilView    userId={userId} modulos={modulos} onModulosChange={onModulosChange} />}
         </div>
       </div>
     </div>
@@ -17620,7 +17649,7 @@ function GimGuiaView() {
 // ─────────────────────────────────────────────────────────────────────────────
 // GimPerfilView
 // ─────────────────────────────────────────────────────────────────────────────
-function GimPerfilView({ userId }: { userId: string }) {
+function GimPerfilView({ userId, modulos, onModulosChange }: { userId: string; modulos: {trading: boolean; gym: boolean}; onModulosChange: (m: {trading: boolean; gym: boolean}) => void }) {
   const [perfil, setPerfil] = useState<GymPerfil | null>(null);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
@@ -17804,6 +17833,48 @@ function GimPerfilView({ userId }: { userId: string }) {
       >
         {guardando ? "Guardando..." : "Guardar perfil"}
       </button>
+
+      {/* Módulos activos */}
+      <div className="rounded-2xl bg-white/3 border border-white/10 p-4 space-y-3">
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Módulos activos</p>
+          <p className="text-xs text-gray-600">Activa solo las secciones que uses. Al menos una debe quedar activa.</p>
+        </div>
+        {/* Trading */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-xl">📊</span>
+            <div>
+              <p className="text-sm font-semibold text-white">Trading</p>
+              <p className="text-xs text-gray-500">Diario, estadísticas, cuentas</p>
+            </div>
+          </div>
+          <button
+            onClick={() => onModulosChange({ ...modulos, trading: !modulos.trading })}
+            disabled={modulos.trading && !modulos.gym}
+            className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${modulos.trading ? "bg-kb-gain" : "bg-white/10"} disabled:opacity-40`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${modulos.trading ? "translate-x-5" : "translate-x-0"}`} />
+          </button>
+        </div>
+        {/* Gym */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-xl">🏋️</span>
+            <div>
+              <p className="text-sm font-semibold text-white">Gym</p>
+              <p className="text-xs text-gray-500">Rutinas, progreso, historial</p>
+            </div>
+          </div>
+          <button
+            onClick={() => onModulosChange({ ...modulos, gym: !modulos.gym })}
+            disabled={modulos.gym && !modulos.trading}
+            className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${modulos.gym ? "bg-kb-gain" : "bg-white/10"} disabled:opacity-40`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${modulos.gym ? "translate-x-5" : "translate-x-0"}`} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
