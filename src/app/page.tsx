@@ -5458,8 +5458,6 @@ function ReportesFiscalesSection({
   }
 
   function exportarPDF() {
-    const w = window.open("", "_blank");
-    if (!w) return;
 
     const fmtUSD = (n: number) =>
       "$" + n.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -5580,8 +5578,20 @@ ${
 </body>
 </html>`;
 
-    w.document.write(html);
-    w.document.close();
+    // Usar blob URL para evitar que el popup sea bloqueado
+    const _blob = new Blob([html], { type: "text/html;charset=utf-8;" });
+    const _url = URL.createObjectURL(_blob);
+    const _win = window.open(_url, "_blank");
+    if (!_win) {
+      // Popup bloqueado → descargar HTML para imprimir manualmente
+      const _a = document.createElement("a");
+      _a.href = _url;
+      _a.download = `reporte-fiscal-${añoElegido}.html`;
+      document.body.appendChild(_a);
+      _a.click();
+      document.body.removeChild(_a);
+    }
+    setTimeout(() => URL.revokeObjectURL(_url), 60_000);
   }
 
   const hayDatos = filasRetirosMes.length > 0 || filasPnl.length > 0;
