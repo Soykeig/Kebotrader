@@ -5903,6 +5903,43 @@ function RetirosView({
     }
   }
 
+  // ── Auto-fetch PTAX cuando cambia la fecha ─────────────────────────
+  useEffect(() => {
+    if (!fecha) return;
+    const [y, m, d] = fecha.split("-");
+    const dataFormatada = `${m}-${d}-${y}`;
+    const url =
+      `https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/` +
+      `CotacaoDolarDia(dataCotacao=@dataCotacao)?@dataCotacao='${dataFormatada}'` +
+      `&$top=1&$format=json&$select=cotacaoVenda`;
+
+    let cancelado = false;
+    setBuscandoPtax(true);
+    setPtaxMensaje(null);
+    setPtaxStr("");
+
+    fetch(url)
+      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+      .then((json) => {
+        if (cancelado) return;
+        const cotacao: number | undefined = json?.value?.[0]?.cotacaoVenda;
+        if (cotacao) {
+          setPtaxStr(String(cotacao));
+          setPtaxMensaje(`✓ PTAX de venda: R$ ${cotacao.toFixed(4)}`);
+        } else {
+          setPtaxMensaje("Sin PTAX (feriado/fin de semana) — usá la del día hábil anterior o ingresala manual.");
+        }
+      })
+      .catch(() => {
+        if (!cancelado) setPtaxMensaje("No se pudo conectar al BCB. Ingresá la tasa manualmente.");
+      })
+      .finally(() => {
+        if (!cancelado) setBuscandoPtax(false);
+      });
+
+    return () => { cancelado = true; };
+  }, [fecha]);
+
   function seleccionarPrueba(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
     setProofFile(f);
@@ -6428,7 +6465,7 @@ function RetirosView({
                   </div>
                 ) : (
                   <p className="text-[11px] text-kb-text-muted">
-                    Clique em <span className="font-semibold text-kb-accent">BCB</span> para buscar a PTAX automaticamente e calcular a base tributável.
+                    La PTAX se busca automáticamente al seleccionar la fecha. Si no aparece, hacé clic en <span className="font-semibold text-kb-accent">BCB</span>.
                   </p>
                 )}
               </div>
