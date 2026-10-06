@@ -15802,6 +15802,8 @@ function GimHoyView({ userId }: { userId: string }) {
   const [historial, setHistorial] = useState<Record<string, { fecha: string; pesoMax: number; series: { reps: number; peso_kg: number | null }[] }[]>>({});
   const [prs, setPrs] = useState<Record<string, boolean>>({});
   const [refAbierta, setRefAbierta] = useState<string | null>(null);
+  const [exEquipoOpen, setExEquipoOpen] = useState(false);
+  const [exGrupoOpen, setExGrupoOpen] = useState(false);
 
   const hoyStr = new Date().toISOString().split("T")[0];
 
@@ -16045,23 +16047,61 @@ function GimHoyView({ userId }: { userId: string }) {
             })()}
           </div>
 
-          {/* Equipo y grupo */}
+          {/* Equipo y grupo — custom dropdowns */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Equipo</label>
-              <select value={exEquipo} onChange={e => setExEquipo(e.target.value)}
-                style={{ colorScheme: 'dark' }}
-                className="w-full bg-[#0c1120] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-kb-gain/50">
-                {GYM_EQUIPOS.map(eq => <option key={eq} value={eq} style={{ background: '#0c1120' }}>{eq}</option>)}
-              </select>
+              <div className="relative">
+                <button type="button"
+                  onClick={() => { setExEquipoOpen(o => !o); setExGrupoOpen(false); }}
+                  className="w-full bg-[#0c1120] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white text-left flex items-center justify-between focus:outline-none focus:border-kb-gain/50">
+                  <span className="truncate">{exEquipo}</span>
+                  <svg className={`w-3.5 h-3.5 text-gray-500 flex-shrink-0 ml-1 transition-transform ${exEquipoOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
+                </button>
+                {exEquipoOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setExEquipoOpen(false)} />
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-[#0c1120] border border-white/20 rounded-xl overflow-hidden z-50 shadow-xl shadow-black/60">
+                      <div className="max-h-44 overflow-y-auto">
+                        {GYM_EQUIPOS.map(eq => (
+                          <button key={eq} type="button"
+                            onClick={() => { setExEquipo(eq); setExEquipoOpen(false); }}
+                            className={`w-full text-left px-3 py-2 text-sm transition-colors ${eq === exEquipo ? "text-kb-gain bg-kb-gain/10" : "text-white hover:bg-white/10"}`}>
+                            {eq}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Músculo</label>
-              <select value={exGrupo} onChange={e => setExGrupo(e.target.value)}
-                style={{ colorScheme: 'dark' }}
-                className="w-full bg-[#0c1120] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-kb-gain/50">
-                {GYM_GRUPOS.map(g => <option key={g} value={g} style={{ background: '#0c1120' }}>{g}</option>)}
-              </select>
+              <div className="relative">
+                <button type="button"
+                  onClick={() => { setExGrupoOpen(o => !o); setExEquipoOpen(false); }}
+                  className="w-full bg-[#0c1120] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white text-left flex items-center justify-between focus:outline-none focus:border-kb-gain/50">
+                  <span className="truncate">{exGrupo}</span>
+                  <svg className={`w-3.5 h-3.5 text-gray-500 flex-shrink-0 ml-1 transition-transform ${exGrupoOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
+                </button>
+                {exGrupoOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setExGrupoOpen(false)} />
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-[#0c1120] border border-white/20 rounded-xl overflow-hidden z-50 shadow-xl shadow-black/60">
+                      <div className="max-h-44 overflow-y-auto">
+                        {GYM_GRUPOS.map(g => (
+                          <button key={g} type="button"
+                            onClick={() => { setExGrupo(g); setExGrupoOpen(false); }}
+                            className={`w-full text-left px-3 py-2 text-sm transition-colors ${g === exGrupo ? "text-kb-gain bg-kb-gain/10" : "text-white hover:bg-white/10"}`}>
+                            {g}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
@@ -16103,7 +16143,7 @@ function GimHoyView({ userId }: { userId: string }) {
                     </div>
                   </div>
                   {exSeries.length > 1 && (
-                    <button onClick={() => setExSeries(prev => prev.filter((_,j) => j!==i))} className="text-gray-600 hover:text-red-400 p-1 transition-colors">
+                    <button onClick={() => setExSeries(prev => prev.filter((_,j) => j!==i))} className="text-red-400/70 hover:text-red-400 p-1 transition-colors">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
                     </button>
                   )}
@@ -16259,7 +16299,7 @@ function GimHoyView({ userId }: { userId: string }) {
                       <button onClick={() => abrirFormEditar(idx)} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                       </button>
-                      <button onClick={() => eliminarEjercicio(idx)} className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                      <button onClick={() => eliminarEjercicio(idx)} className="p-1.5 rounded-lg text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-colors">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                       </button>
                     </div>
@@ -16464,10 +16504,10 @@ function GimPlanView({ userId }: { userId: string }) {
         </div>
         <div>
           <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-2">Día de la semana</label>
-          <div className="flex gap-1.5">
+          <div className="flex gap-1">
             {diasLabel.map((d, i) => (
               <button key={i} onClick={() => setDiaSemana(i)}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${diaSemana === i ? "border-kb-gain/60 bg-kb-gain/20 text-kb-gain" : "border-white/10 bg-white/5 text-gray-500"}`}>
+                className={`flex-1 py-1 rounded-lg text-xs font-bold border transition-all ${diaSemana === i ? "border-kb-gain/60 bg-kb-gain/20 text-kb-gain" : "border-white/10 bg-white/5 text-gray-500"}`}>
                 {d.slice(0,1)}
               </button>
             ))}
@@ -16495,7 +16535,7 @@ function GimPlanView({ userId }: { userId: string }) {
                       {ej.nombre || "Seleccionar ejercicio..."}
                     </button>
                     <button onClick={() => setEjerciciosPlan(prev => prev.filter((_,j) => j !== i))}
-                      className="text-gray-600 hover:text-red-400 p-1 transition-colors">
+                      className="text-red-400/70 hover:text-red-400 p-1 transition-colors">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
                     </button>
                   </div>
@@ -16584,7 +16624,7 @@ function GimPlanView({ userId }: { userId: string }) {
                         <button onClick={() => abrirModal(r)} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors">
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                         </button>
-                        <button onClick={() => eliminarRutina(r.id)} className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                        <button onClick={() => eliminarRutina(r.id)} className="p-1.5 rounded-lg text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-colors">
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                         </button>
                       </div>
