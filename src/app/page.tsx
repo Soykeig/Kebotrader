@@ -5457,6 +5457,133 @@ function ReportesFiscalesSection({
     URL.revokeObjectURL(url);
   }
 
+  function exportarPDF() {
+    const w = window.open("", "_blank");
+    if (!w) return;
+
+    const fmtUSD = (n: number) =>
+      "$" + n.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmtBRL = (n: number) =>
+      "R$ " + n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const filasRetiros = filasRetirosMes
+      .map(
+        (f) => `<tr>
+        <td>${MESES_CORTOS[f.mes]}</td>
+        <td style="text-align:center">${f.qty}</td>
+        <td style="text-align:right">${fmtUSD(f.bruto)}</td>
+        <td style="text-align:right;color:#c0392b">${f.fee > 0 ? `−${fmtUSD(f.fee)}` : "—"}</td>
+        <td style="text-align:right;font-weight:600;color:#27ae60">${fmtUSD(f.neto)}</td>
+        <td style="text-align:right">${f.ptaxAvg ? f.ptaxAvg.toFixed(4) : "—"}</td>
+        <td style="text-align:right;color:#6c5ce7">${f.brl > 0 ? fmtBRL(f.brl) : "—"}</td>
+      </tr>`
+      )
+      .join("");
+
+    const filasPnlHtml = filasPnl
+      .map(
+        (f) => `<tr>
+        <td>${f.cuenta.name}</td>
+        <td style="text-align:center">${f.ops}</td>
+        <td style="text-align:right;color:#27ae60">${fmtUSD(f.gananciaBruta)}</td>
+        <td style="text-align:right;color:#c0392b">${fmtUSD(f.perdidaBruta)}</td>
+        <td style="text-align:right">${fmtUSD(f.comisiones)}</td>
+        <td style="text-align:right;font-weight:600;color:${f.neto >= 0 ? "#27ae60" : "#c0392b"}">${fmtUSD(f.neto)}</td>
+      </tr>`
+      )
+      .join("");
+
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Reporte Fiscal KeboTrader ${añoElegido}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:40px 48px}
+  h1{font-size:20px;font-weight:700;margin-bottom:4px}
+  .sub{color:#666;font-size:11px;margin-bottom:28px}
+  h2{font-size:13px;font-weight:700;margin:22px 0 8px;padding-bottom:5px;border-bottom:2px solid #eee}
+  table{width:100%;border-collapse:collapse;margin-bottom:14px;font-size:11.5px}
+  th{background:#f6f6f6;text-align:left;padding:6px 10px;color:#555;border-bottom:1px solid #ddd;font-weight:600}
+  td{padding:5px 10px;border-bottom:1px solid #f0f0f0}
+  tfoot td{font-weight:700;border-top:2px solid #ccc;border-bottom:none;background:#fafafa;padding:7px 10px}
+  .cards{display:flex;gap:12px;margin:10px 0}
+  .card{flex:1;border:1px solid #ddd;border-radius:6px;padding:10px 14px}
+  .cl{font-size:10px;color:#888;margin-bottom:2px}
+  .cv{font-size:15px;font-weight:700}
+  .note{background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:10px 14px;font-size:10.5px;color:#555;margin-top:24px;line-height:1.5}
+  .footer{margin-top:28px;font-size:10px;color:#aaa;text-align:center}
+  @media print{body{padding:20px 24px}@page{margin:1.5cm}}
+</style>
+</head>
+<body>
+<h1>📄 Reporte Fiscal KeboTrader — ${añoElegido}</h1>
+<p class="sub">Generado el ${new Date().toLocaleDateString("es-ES", { day: "2-digit", month: "long", year: "numeric" })} &nbsp;·&nbsp; Para uso con tu contador &nbsp;·&nbsp; Lei 14.754/2023</p>
+
+<h2>💸 Retiros / Payouts — ${añoElegido}</h2>
+${
+  filasRetirosMes.length === 0
+    ? `<p style="color:#999;padding:8px 0">No hay retiros registrados en ${añoElegido}.</p>`
+    : `<table>
+  <thead><tr>
+    <th>Mes</th><th style="text-align:center">Retiros</th>
+    <th style="text-align:right">Bruto (USD)</th><th style="text-align:right">Fee plataforma</th>
+    <th style="text-align:right">Neto (USD)</th><th style="text-align:right">PTAX prom.</th>
+    <th style="text-align:right">Neto (BRL)</th>
+  </tr></thead>
+  <tbody>${filasRetiros}</tbody>
+  <tfoot><tr>
+    <td>Total ${añoElegido}</td><td style="text-align:center">${totalesRetiros.qty}</td>
+    <td style="text-align:right">${fmtUSD(totalesRetiros.bruto)}</td>
+    <td style="text-align:right;color:#c0392b">${totalesRetiros.fee > 0 ? `−${fmtUSD(totalesRetiros.fee)}` : "—"}</td>
+    <td style="text-align:right;color:#27ae60">${fmtUSD(totalesRetiros.neto)}</td>
+    <td></td>
+    <td style="text-align:right;color:#6c5ce7">${totalesRetiros.brl > 0 ? fmtBRL(totalesRetiros.brl) : "—"}</td>
+  </tr></tfoot>
+</table>
+<div class="cards">
+  <div class="card"><div class="cl">Neto recibido (USD)</div><div class="cv" style="color:#27ae60">${fmtUSD(totalesRetiros.neto)}</div></div>
+  <div class="card"><div class="cl">Equivalente BRL total</div><div class="cv" style="color:#6c5ce7">${totalesRetiros.brl > 0 ? fmtBRL(totalesRetiros.brl) : "—  (cargar PTAX)"}</div></div>
+  <div class="card"><div class="cl">Estimativa IR 15% (referencial)</div><div class="cv">${totalesRetiros.brl > 0 ? fmtBRL(totalesRetiros.brl * 0.15) : "—"}</div></div>
+</div>
+${totalAportadoAño > 0 ? `<p style="font-size:11px;color:#555;margin-top:6px">Total invertido en challenges ${añoElegido}: <strong>${fmtUSD(totalAportadoAño)}</strong> — consultá con tu contador cómo declararlo.</p>` : ""}`
+}
+
+<h2>📊 P&L por cuenta — ${añoElegido}</h2>
+${
+  filasPnl.length === 0
+    ? `<p style="color:#999;padding:8px 0">No hay operaciones cerradas registradas en ${añoElegido}.</p>`
+    : `<table>
+  <thead><tr>
+    <th>Cuenta</th><th style="text-align:center">Ops</th>
+    <th style="text-align:right">Ganancia bruta</th><th style="text-align:right">Pérdida bruta</th>
+    <th style="text-align:right">Comisiones</th><th style="text-align:right">Neto</th>
+  </tr></thead>
+  <tbody>${filasPnlHtml}</tbody>
+  <tfoot><tr>
+    <td>Total ${añoElegido}</td><td style="text-align:center">${totalPnl.ops}</td>
+    <td style="text-align:right;color:#27ae60">${fmtUSD(totalPnl.gananciaBruta)}</td>
+    <td style="text-align:right;color:#c0392b">${fmtUSD(totalPnl.perdidaBruta)}</td>
+    <td style="text-align:right">${fmtUSD(totalPnl.comisiones)}</td>
+    <td style="text-align:right;font-weight:700;color:${totalPnl.neto >= 0 ? "#27ae60" : "#c0392b"}">${fmtUSD(totalPnl.neto)}</td>
+  </tr></tfoot>
+</table>`
+}
+
+<div class="note">
+  <strong>Referencia legal (Brasil):</strong> Rendimentos Financeiros no Exterior — Lei 14.754/2023 — alíquota de 15% sobre o rendimento líquido convertido em BRL pela taxa PTAX do dia do recebimento. A declaração é anual no IRPF, na ficha "Rendimentos Financeiros no Exterior" (vence 30 de abril do ano seguinte). <strong>Este documento é um resumo informativo gerado pelo KeboTrader e não substitui a assessoria de um contador habilitado.</strong>
+</div>
+<div class="footer">KeboTrader &nbsp;·&nbsp; ${new Date().toLocaleDateString("es-ES")} &nbsp;·&nbsp; Generado automáticamente</div>
+
+<script>window.onload = function(){ window.print(); }</script>
+</body>
+</html>`;
+
+    w.document.write(html);
+    w.document.close();
+  }
+
   const hayDatos = filasRetirosMes.length > 0 || filasPnl.length > 0;
 
   return (
@@ -5517,10 +5644,10 @@ function ReportesFiscalesSection({
                     📥 Exportar CSV
                   </button>
                   <button
-                    onClick={() => window.print()}
+                    onClick={exportarPDF}
                     className="rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary hover:border-kb-accent hover:text-kb-accent transition-colors"
                   >
-                    🖨️ Imprimir
+                    📄 Exportar PDF
                   </button>
                 </div>
               </div>
