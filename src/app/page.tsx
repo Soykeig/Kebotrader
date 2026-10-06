@@ -15801,6 +15801,7 @@ function GimHoyView({ userId }: { userId: string }) {
   // Historial / comparativa
   const [historial, setHistorial] = useState<Record<string, { fecha: string; pesoMax: number; series: { reps: number; peso_kg: number | null }[] }[]>>({});
   const [prs, setPrs] = useState<Record<string, boolean>>({});
+  const [refAbierta, setRefAbierta] = useState<string | null>(null);
 
   const hoyStr = new Date().toISOString().split("T")[0];
 
@@ -16027,6 +16028,21 @@ function GimHoyView({ userId }: { userId: string }) {
                 <span className="text-xs text-gray-500">{exEquipo}</span>
               </div>
             )}
+            {/* Referencia del catálogo */}
+            {(() => {
+              const catRef = GYM_CATALOGO.find(c => c.nombre.toLowerCase() === exNombre.toLowerCase().trim());
+              if (!catRef) return null;
+              const colRef = GYM_GRUPO_COLORES[catRef.grupo] ?? { text: "text-gray-400", bg: "bg-white/5", border: "border-white/10", emoji: "💪" };
+              return (
+                <div className={`mt-2 rounded-xl p-3 border ${colRef.border} ${colRef.bg} space-y-1.5`}>
+                  <p className="text-xs font-semibold text-gray-300 mb-0.5">📖 Referencia</p>
+                  <p className="text-xs text-gray-300 leading-relaxed">{catRef.desc}</p>
+                  <div className="pt-1.5 border-t border-white/10">
+                    <p className="text-xs text-gray-400"><span className="font-semibold text-gray-200">¿Cómo?</span> {catRef.como_usar}</p>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Equipo y grupo */}
@@ -16034,15 +16050,17 @@ function GimHoyView({ userId }: { userId: string }) {
             <div>
               <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Equipo</label>
               <select value={exEquipo} onChange={e => setExEquipo(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-kb-gain/50">
-                {GYM_EQUIPOS.map(eq => <option key={eq} value={eq}>{eq}</option>)}
+                style={{ colorScheme: 'dark' }}
+                className="w-full bg-[#0c1120] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-kb-gain/50">
+                {GYM_EQUIPOS.map(eq => <option key={eq} value={eq} style={{ background: '#0c1120' }}>{eq}</option>)}
               </select>
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Músculo</label>
               <select value={exGrupo} onChange={e => setExGrupo(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-kb-gain/50">
-                {GYM_GRUPOS.map(g => <option key={g} value={g}>{g}</option>)}
+                style={{ colorScheme: 'dark' }}
+                className="w-full bg-[#0c1120] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-kb-gain/50">
+                {GYM_GRUPOS.map(g => <option key={g} value={g} style={{ background: '#0c1120' }}>{g}</option>)}
               </select>
             </div>
           </div>
@@ -16229,6 +16247,15 @@ function GimHoyView({ userId }: { userId: string }) {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
+                      {GYM_CATALOGO.some(c => c.nombre.toLowerCase() === ex.nombre.toLowerCase()) && (
+                        <button
+                          onClick={() => setRefAbierta(refAbierta === ex.nombre ? null : ex.nombre)}
+                          className={`p-1.5 rounded-lg transition-colors ${refAbierta === ex.nombre ? "text-kb-gain bg-kb-gain/10" : "text-gray-500 hover:text-gray-300 hover:bg-white/10"}`}
+                          title="Ver referencia"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        </button>
+                      )}
                       <button onClick={() => abrirFormEditar(idx)} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                       </button>
@@ -16269,6 +16296,18 @@ function GimHoyView({ userId }: { userId: string }) {
                       </div>
                     </div>
                   )}
+
+                  {/* Referencia del catálogo (colapsable) */}
+                  {refAbierta === ex.nombre && (() => {
+                    const catRef = GYM_CATALOGO.find(c => c.nombre.toLowerCase() === ex.nombre.toLowerCase());
+                    if (!catRef) return null;
+                    return (
+                      <div className={`mt-2 pt-2 border-t border-white/5 rounded-b-xl p-2.5 ${col.bg} space-y-1.5`}>
+                        <p className="text-xs text-gray-200 leading-relaxed">{catRef.desc}</p>
+                        <p className="text-xs text-gray-400 leading-relaxed"><span className="font-semibold text-gray-300">¿Cómo?</span> {catRef.como_usar}</p>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             );
