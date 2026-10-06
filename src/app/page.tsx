@@ -974,8 +974,8 @@ interface GymSesion {
   hora_inicio: string | null;  // "HH:MM"
   hora_fin: string | null;     // "HH:MM"
   duracion_min: number | null;
-  fase: string;
-  notas: string;
+  fase: string | null;   // BUG 15 fix: can be null
+  notas: string | null;  // BUG 15 fix: can be null
   created_at: string;
 }
 
@@ -1949,6 +1949,34 @@ function Dashboard({
                 />
               </span>
             </button>
+            {/* Módulos — siempre visible en el sidebar de trading para evitar lockout */}
+            <div className="mb-2 rounded-lg border border-kb-border px-3 py-2 space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-kb-text-muted">Módulos</p>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-xs text-kb-text-secondary">
+                  <span>📊</span> Trading
+                </span>
+                <button
+                  onClick={() => actualizarModulos({ ...modulos, trading: !modulos.trading })}
+                  disabled={modulos.trading && !modulos.gym}
+                  className={`relative h-4 w-8 rounded-full transition-colors ${modulos.trading ? "bg-kb-gain" : "bg-kb-border"} disabled:opacity-40`}
+                >
+                  <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${modulos.trading ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-xs text-kb-text-secondary">
+                  <span>🏋️</span> Gym
+                </span>
+                <button
+                  onClick={() => actualizarModulos({ ...modulos, gym: !modulos.gym })}
+                  disabled={modulos.gym && !modulos.trading}
+                  className={`relative h-4 w-8 rounded-full transition-colors ${modulos.gym ? "bg-kb-gain" : "bg-kb-border"} disabled:opacity-40`}
+                >
+                  <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${modulos.gym ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+            </div>
             <button
               onClick={handleLogout}
               className="w-full rounded-lg border border-kb-border px-3 py-2 text-xs font-medium text-kb-text-secondary hover:border-kb-loss hover:text-kb-loss transition-colors"
@@ -15521,20 +15549,27 @@ function GimDashboard({ userId, setVistaGim }: { userId: string; setVistaGim: (v
     let activo = true;
     async function cargar() {
       setCargando(true);
-      const [{ data: p }, { data: sesiones }] = await Promise.all([
+      // BUG 2 fix: use count query for totalSesiones instead of capping at 50
+      // BUG 3 fix: use Monday as week start (consistent with cargarResumen)
+      const hoy = new Date();
+      const dow = hoy.getDay(); // 0=Dom
+      const inicioSemana = new Date(hoy);
+      inicioSemana.setDate(hoy.getDate() - ((dow + 6) % 7));
+      inicioSemana.setHours(0, 0, 0, 0);
+      const inicioSemanaStr = inicioSemana.toISOString().split("T")[0];
+
+      const [{ data: p }, { data: sesiones }, { count: totalCount }] = await Promise.all([
         supabase.from("gym_perfil").select("*").eq("user_id", userId).maybeSingle(),
-        supabase.from("gym_sessions").select("*").eq("user_id", userId).order("fecha", { ascending: false }).limit(50),
+        supabase.from("gym_sessions").select("id, fecha, fase, duracion_min, hora_inicio, hora_fin").eq("user_id", userId).order("fecha", { ascending: false }).limit(5),
+        supabase.from("gym_sessions").select("*", { count: "exact", head: true }).eq("user_id", userId),
       ]);
       if (!activo) return;
       if (!p) { setMostrarOnboarding(true); setCargando(false); return; }
       setPerfil(p as GymPerfil);
       const arr = (sesiones as GymSesion[]) || [];
-      setTotalSesiones(arr.length);
+      setTotalSesiones(totalCount ?? 0); // BUG 2 fix: real count
       setUltimaSesion(arr[0] ?? null);
-      const hoy = new Date();
-      const inicioSemana = new Date(hoy);
-      inicioSemana.setDate(hoy.getDate() - hoy.getDay());
-      const esSemana = arr.filter(s => new Date(s.fecha) >= inicioSemana).length;
+      const esSemana = arr.filter(s => s.fecha >= inicioSemanaStr).length;
       setSesionesEstaSemana(esSemana);
       setCargando(false);
     }
@@ -15676,7 +15711,7 @@ function GimOnboarding({ userId, onDone }: { userId: string; onDone: () => void 
     if (guardando) return;
     setGuardando(true);
     const hoy = new Date().toISOString().split("T")[0];
-    await supabase.from("gym_perfil").upsert({
+    const { error } = await supabase.from("gym_perfil").upsert({
       user_id: userId,
       tipo_cuerpo: tipo || null,
       fase, objetivo, experiencia,
@@ -15685,7 +15720,7 @@ function GimOnboarding({ userId, onDone }: { userId: string; onDone: () => void 
       updated_at: new Date().toISOString(),
     });
     setGuardando(false);
-    onDone();
+    if (!error) onDone(); // BUG 8 fix: only proceed if upsert succeeded
   }
 
   const pasos = [
@@ -15821,7 +15856,7 @@ function GimHoyView({ userId }: { userId: string }) {
   const [horaInicio, setHoraInicio] = useState("");
   const [horaFin, setHoraFin] = useState("");
   const [notas, setNotas] = useState("");
-  const [rutinaId, setRuntinaId] = useState<string | null>(null);
+  const [rutinaId, setRutinaId] = useState<string | null>(null);
   const [sesionGuardada, setSesionGuardada] = useState(false);
 
   // Ejercicio form
@@ -15856,6 +15891,10 @@ function GimHoyView({ userId }: { userId: string }) {
       setRutinas((ruts as GymRutina[]) || []);
       setPerfil(prof as GymPerfil | null);
       if (sesHoy) {
+        const sesionCargada = sesHoy as GymSesion;
+        // BUG 4 fix: populate horaInicio/horaFin from DB so the completed screen shows times
+        if (sesionCargada.hora_inicio) setHoraInicio(sesionCargada.hora_inicio);
+        if (sesionCargada.hora_fin) setHoraFin(sesionCargada.hora_fin);
         const { data: exs } = await supabase
           .from("gym_session_exercises")
           .select("*")
@@ -15864,7 +15903,8 @@ function GimHoyView({ userId }: { userId: string }) {
         if (!activo) return;
         const arr = (exs as GymSesionEjercicio[]) || [];
         setEjercicios(arr);
-        for (const ex of arr) await buscarHistorial(ex.nombre);
+        // BUG 1 fix: pass sesionId explicitly to avoid stale closure (sesion state is null here)
+        for (const ex of arr) await buscarHistorial(ex.nombre, sesHoy.id);
       }
       setCargando(false);
     }
@@ -15872,7 +15912,8 @@ function GimHoyView({ userId }: { userId: string }) {
     return () => { activo = false; };
   }, [userId, hoyStr]);
 
-  async function buscarHistorial(nombre: string) {
+  // BUG 1 fix: accept sesionId as param to avoid stale sesion closure on initial load
+  async function buscarHistorial(nombre: string, sesionIdActual?: string) {
     if (historial[nombre]) return;
     const { data } = await supabase
       .from("gym_session_exercises")
@@ -15903,11 +15944,12 @@ function GimHoyView({ userId }: { userId: string }) {
     setHistorial(prev => ({ ...prev, [nombre]: hist }));
 
     // Verificar PR: si el peso actual es mayor al máximo histórico
-    if (hist.length > 0) {
+    const sid = sesionIdActual ?? sesion?.id ?? ""; // BUG 1 fix: use explicit id first
+    if (hist.length > 0 && sid) {
       const { data: sesActual } = await supabase
         .from("gym_session_exercises")
         .select("series")
-        .eq("sesion_id", sesion?.id ?? "")
+        .eq("sesion_id", sid)
         .eq("nombre", nombre)
         .maybeSingle();
       if (sesActual) {
@@ -15925,13 +15967,19 @@ function GimHoyView({ userId }: { userId: string }) {
     if (guardando) return;
     setGuardando(true);
     const hora = new Date().toTimeString().slice(0, 5);
-    const { data: nueva } = await supabase.from("gym_sessions").insert({
+    const { data: nueva, error } = await supabase.from("gym_sessions").insert({
       user_id: userId,
       fecha: hoyStr,
       hora_inicio: hora,
       fase: perfil?.fase ?? "mantenimiento",
       rutina_id: rutinaId,
     }).select().single();
+    // BUG 11 fix: handle insert error instead of silently ignoring it
+    if (error) {
+      console.error("Error al iniciar sesión de gym:", error);
+      setGuardando(false);
+      return;
+    }
     if (nueva) {
       setSesion(nueva as GymSesion);
       setHoraInicio(hora);
@@ -16000,7 +16048,8 @@ function GimHoyView({ userId }: { userId: string }) {
     const inicio = horaInicio || sesion.hora_inicio || "00:00";
     const [hI, mI] = inicio.split(":").map(Number);
     const [hF, mF] = hora.split(":").map(Number);
-    const durMin = (hF * 60 + mF) - (hI * 60 + mI);
+    let durMin = (hF * 60 + mF) - (hI * 60 + mI);
+    if (durMin < 0) durMin += 24 * 60; // BUG 13 fix: correct for overnight sessions
     await supabase.from("gym_sessions").update({
       hora_fin: hora, duracion_min: durMin > 0 ? durMin : null, notas: notas || null,
     }).eq("id", sesion.id);
@@ -16251,7 +16300,7 @@ function GimHoyView({ userId }: { userId: string }) {
               {rutinas.map(r => (
                 <button
                   key={r.id}
-                  onClick={() => setRuntinaId(r.id)}
+                  onClick={() => setRutinaId(r.id)}
                   className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all ${rutinaId === r.id ? "border-kb-gain/60 bg-kb-gain/10" : "border-white/10 bg-white/5 hover:border-white/20"}`}
                 >
                   <span className="text-lg">📋</span>
@@ -16498,6 +16547,8 @@ function GimPlanView({ userId }: { userId: string }) {
   }
 
   async function eliminarRutina(id: string) {
+    // BUG 7 fix: confirm before irreversible delete
+    if (!window.confirm("¿Eliminar esta rutina? Esta acción no se puede deshacer.")) return;
     await supabase.from("gym_routines").delete().eq("id", id);
     setRutinas(prev => prev.filter(r => r.id !== id));
   }
@@ -16735,12 +16786,12 @@ function GimProgresoView({ userId }: { userId: string }) {
     else if (tab === "medidas" && medidas.length === 0) cargarMedidas();
     else if (tab === "records" && Object.keys(records).length === 0) cargarRecords();
     else if (tab === "progresion" && nombresEjercicios.length === 0) cargarNombres();
-  }, [tab]);
+  }, [tab, userId]); // BUG 10 fix: add userId so data refreshes if user changes
 
   async function cargarMedidas() {
     setCargandoMedidas(true);
-    const { data } = await supabase.from("body_measurements").select("*").eq("user_id", userId).order("fecha", { ascending: false }).limit(30);
-    setMedidas((data as BodyMeasurement[]) || []);
+    const { data, error } = await supabase.from("body_measurements").select("*").eq("user_id", userId).order("fecha", { ascending: false }).limit(30);
+    if (!error) setMedidas((data as BodyMeasurement[]) || []); // BUG 16 fix
     setCargandoMedidas(false);
   }
 
@@ -16762,35 +16813,39 @@ function GimProgresoView({ userId }: { userId: string }) {
 
   async function cargarRecords() {
     setCargandoRec(true);
-    const { data } = await supabase
+    const { data, error } = await supabase // BUG 16 fix: handle error
       .from("gym_session_exercises")
       .select("nombre, series, gym_sessions!inner(user_id, fecha)")
       .eq("gym_sessions.user_id", userId)
       .order("nombre");
-    type Row = { nombre: string; series: { reps: number; peso_kg: number | null }[]; gym_sessions: { fecha: string } };
-    const rows = (data as unknown as Row[]) || [];
-    const map: Record<string, { pesoMax: number; fecha: string }> = {};
-    for (const r of rows) {
-      const pesoMax = Math.max(...r.series.map(s => s.peso_kg ?? 0), 0);
-      if (pesoMax > 0) {
-        if (!map[r.nombre] || pesoMax > map[r.nombre].pesoMax) {
-          map[r.nombre] = { pesoMax, fecha: r.gym_sessions.fecha };
+    if (!error) {
+      type Row = { nombre: string; series: { reps: number; peso_kg: number | null }[]; gym_sessions: { fecha: string } };
+      const rows = (data as unknown as Row[]) || [];
+      const map: Record<string, { pesoMax: number; fecha: string }> = {};
+      for (const r of rows) {
+        const pesoMax = Math.max(...r.series.map(s => s.peso_kg ?? 0), 0);
+        if (pesoMax > 0) {
+          if (!map[r.nombre] || pesoMax > map[r.nombre].pesoMax) {
+            map[r.nombre] = { pesoMax, fecha: r.gym_sessions.fecha };
+          }
         }
       }
+      setRecords(map);
     }
-    setRecords(map);
     setCargandoRec(false);
   }
 
   async function cargarNombres() {
-    const { data } = await supabase
+    const { data, error } = await supabase // BUG 16 fix: handle error
       .from("gym_session_exercises")
       .select("nombre, gym_sessions!inner(user_id)")
       .eq("gym_sessions.user_id", userId);
-    type Row = { nombre: string };
-    const rows = (data as unknown as Row[]) || [];
-    const unicos = [...new Set(rows.map(r => r.nombre))].sort();
-    setNombresEjercicios(unicos);
+    if (!error) {
+      type Row = { nombre: string };
+      const rows = (data as unknown as Row[]) || [];
+      const unicos = [...new Set(rows.map(r => r.nombre))].sort();
+      setNombresEjercicios(unicos);
+    }
   }
 
   async function cargarResumen() {
@@ -16897,6 +16952,7 @@ function GimProgresoView({ userId }: { userId: string }) {
       .select("series, gym_sessions!inner(user_id, fecha)")
       .eq("gym_sessions.user_id", userId)
       .eq("nombre", nombre)
+      .order("gym_sessions(fecha)", { ascending: true }) // BUG 5 fix: order before limit so we get the 50 most recent in order
       .limit(50);
     type Row = { series: { reps: number; peso_kg: number | null }[]; gym_sessions: { fecha: string } };
     const rows = (data as unknown as Row[]) || [];
@@ -17160,7 +17216,8 @@ function GimProgresoView({ userId }: { userId: string }) {
                         const path = pesos.map((p, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toY(p)}`).join(" ");
                         const area = `${path} L ${toX(pesos.length-1)} ${H-padY} L ${padX} ${H-padY} Z`;
                         const diffPeso = pesos[pesos.length-1] - pesos[0];
-                        const colorPeso = diffPeso < 0 ? "#34d399" : diffPeso > 0 ? "#f87171" : "#9ca3af";
+                        // BUG 14 fix: don't assume weight gain is bad (could be a bulk phase)
+                        const colorPeso = diffPeso < 0 ? "#34d399" : diffPeso > 0 ? "#60a5fa" : "#9ca3af";
                         return (
                           <>
                             <svg viewBox={`0 0 ${W} ${H}`} className="w-full mb-2" style={{ height: 70 }}>
@@ -17454,6 +17511,8 @@ function GimHistorialView({ userId }: { userId: string }) {
   }
 
   async function eliminarSesion(id: string) {
+    // BUG 6 fix: confirm before irreversible delete
+    if (!window.confirm("¿Eliminar esta sesión y todos sus ejercicios? Esta acción no se puede deshacer.")) return;
     await supabase.from("gym_session_exercises").delete().eq("sesion_id", id);
     await supabase.from("gym_sessions").delete().eq("id", id);
     setSesiones(prev => prev.filter(s => s.id !== id));
@@ -17694,7 +17753,7 @@ function GimPerfilView({ userId, modulos, onModulosChange }: { userId: string; m
     if (guardando) return;
     setGuardando(true);
     const hoy = new Date().toISOString().split("T")[0];
-    await supabase.from("gym_perfil").upsert({
+    const { error } = await supabase.from("gym_perfil").upsert({
       user_id: userId,
       tipo_cuerpo: tipoCuerpo || null,
       fase, objetivo, experiencia,
@@ -17702,15 +17761,18 @@ function GimPerfilView({ userId, modulos, onModulosChange }: { userId: string; m
       dias_entreno: dias,
       updated_at: new Date().toISOString(),
     });
-    if (pesoActual) {
-      await supabase.from("body_measurements").insert({
-        user_id: userId,
-        fecha: hoy,
-        peso_kg: parseFloat(pesoActual),
-      });
+    // BUG 9 fix: only show success and save weight if upsert succeeded
+    if (!error) {
+      if (pesoActual) {
+        await supabase.from("body_measurements").insert({
+          user_id: userId,
+          fecha: hoy,
+          peso_kg: parseFloat(pesoActual),
+        });
+      }
+      setGuardado(true);
+      setTimeout(() => setGuardado(false), 2500);
     }
-    setGuardado(true);
-    setTimeout(() => setGuardado(false), 2500);
     setGuardando(false);
   }
 
