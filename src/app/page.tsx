@@ -960,6 +960,8 @@ interface GymRutinaEjercicio {
   reps_objetivo: string;
   grupo_muscular: string;
   orden: number;
+  tipo?: "fuerza" | "cardio";
+  duracion_objetivo?: number; // minutos objetivo para cardio
 }
 
 interface GymRutina {
@@ -990,7 +992,16 @@ interface GymSesionEjercicio {
   nombre: string;
   equipo: string;
   grupo_muscular: string;
-  series: { reps: number; peso_kg: number | null }[];
+  tipo?: "fuerza" | "cardio";
+  series: {
+    // fuerza
+    reps?: number;
+    peso_kg?: number | null;
+    // cardio
+    duracion_min?: number;
+    distancia_km?: number | null;
+    calorias?: number | null;
+  }[];
   orden: number;
 }
 
@@ -15601,6 +15612,10 @@ function TablaTrades({
 
 const GYM_GRUPOS = ["Pecho","Espalda","Hombros","Bíceps","Tríceps","Piernas","Glúteos","Core","Cardio","Full Body","Otro"];
 const GYM_EQUIPOS = ["Barra","Mancuernas","Máquina","Cable","Polea","Smith Machine","Kettlebell","TRX","Peso corporal","Otro"];
+const GYM_CARDIO_NOMBRES = [
+  "Caminadora","Bicicleta estática","Bicicleta spinning","Escalera eléctrica",
+  "Elíptica","Remo","Cuerda de saltar","Natación","Trote al aire libre","Cardio libre",
+];
 const GYM_FASES = {
   volumen:       { label: "Volumen",       color: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
   definicion:    { label: "Definición",    color: "bg-orange-500/15 text-orange-400 border-orange-500/30" },
@@ -16275,10 +16290,15 @@ function GimHoyView({ userId }: { userId: string }) {
   const [mostrarFormEx, setMostrarFormEx] = useState(false);
   const [mostrarCatalogo, setMostrarCatalogo] = useState(false);
   const [editandoIdx, setEditandoIdx] = useState<number | null>(null);
+  const [exTipo, setExTipo] = useState<"fuerza" | "cardio">("fuerza");
   const [exNombre, setExNombre] = useState("");
   const [exEquipo, setExEquipo] = useState(GYM_EQUIPOS[0]);
   const [exGrupo, setExGrupo] = useState(GYM_GRUPOS[0]);
   const [exSeries, setExSeries] = useState<{ reps: string; peso_kg: string }[]>([{ reps: "10", peso_kg: "" }]);
+  // cardio fields
+  const [exDuracion, setExDuracion] = useState("30");
+  const [exDistancia, setExDistancia] = useState("");
+  const [exCalorias, setExCalorias] = useState("");
 
   // Historial / comparativa
   const [historial, setHistorial] = useState<Record<string, { fecha: string; pesoMax: number; series: { reps: number; peso_kg: number | null }[] }[]>>({});
@@ -16403,11 +16423,14 @@ function GimHoyView({ userId }: { userId: string }) {
             sesion_id: nueva.id,
             nombre: ej.nombre,
             equipo: ej.equipo,
-            grupo_muscular: ej.grupo_muscular,
-            series: Array.from({ length: Math.max(ej.series, 1) }, () => ({
-              reps: parseInt(ej.reps_objetivo) || 10,
-              peso_kg: null,
-            })),
+            grupo_muscular: ej.tipo === "cardio" ? "Cardio" : ej.grupo_muscular,
+            tipo: ej.tipo ?? "fuerza",
+            series: ej.tipo === "cardio"
+              ? [{ duracion_min: ej.duracion_objetivo ?? 30, distancia_km: null, calorias: null }]
+              : Array.from({ length: Math.max(ej.series, 1) }, () => ({
+                  reps: parseInt(ej.reps_objetivo) || 10,
+                  peso_kg: null,
+                })),
             orden: ej.orden ?? i,
           }));
           const { data: cargados } = await supabase
@@ -16423,10 +16446,14 @@ function GimHoyView({ userId }: { userId: string }) {
 
   function abrirFormNuevo() {
     setEditandoIdx(null);
+    setExTipo("fuerza");
     setExNombre("");
     setExEquipo(GYM_EQUIPOS[0]);
     setExGrupo(GYM_GRUPOS[0]);
     setExSeries([{ reps: "10", peso_kg: "" }]);
+    setExDuracion("30");
+    setExDistancia("");
+    setExCalorias("");
     setMostrarFormEx(true);
   }
 
@@ -16436,31 +16463,43 @@ function GimHoyView({ userId }: { userId: string }) {
     setExNombre(ex.nombre);
     setExEquipo(ex.equipo);
     setExGrupo(ex.grupo_muscular);
-    setExSeries(ex.series.map(s => ({ reps: String(s.reps), peso_kg: s.peso_kg != null ? String(s.peso_kg) : "" })));
+    const tipo = ex.tipo === "cardio" ? "cardio" : "fuerza";
+    setExTipo(tipo);
+    if (tipo === "cardio") {
+      const s = ex.series[0] ?? {};
+      setExDuracion(s.duracion_min != null ? String(s.duracion_min) : "30");
+      setExDistancia(s.distancia_km != null ? String(s.distancia_km) : "");
+      setExCalorias(s.calorias != null ? String(s.calorias) : "");
+      setExSeries([{ reps: "10", peso_kg: "" }]);
+    } else {
+      setExSeries(ex.series.map(s => ({ reps: String(s.reps ?? 10), peso_kg: s.peso_kg != null ? String(s.peso_kg) : "" })));
+      setExDuracion("30"); setExDistancia(""); setExCalorias("");
+    }
     setMostrarFormEx(true);
   }
 
   async function guardarEjercicio() {
     if (!sesion || !exNombre.trim() || guardando) return;
     setGuardando(true);
-    const seriesData = exSeries.map(s => ({ reps: parseInt(s.reps) || 0, peso_kg: s.peso_kg ? parseFloat(s.peso_kg) : null }));
+
+    const seriesData = exTipo === "cardio"
+      ? [{ duracion_min: parseInt(exDuracion) || 30, distancia_km: exDistancia ? parseFloat(exDistancia) : null, calorias: exCalorias ? parseInt(exCalorias) : null }]
+      : exSeries.map(s => ({ reps: parseInt(s.reps) || 0, peso_kg: s.peso_kg ? parseFloat(s.peso_kg) : null }));
+
+    const grupoFinal = exTipo === "cardio" ? "Cardio" : exGrupo;
+    const payload = { nombre: exNombre.trim(), equipo: exEquipo, grupo_muscular: grupoFinal, tipo: exTipo, series: seriesData };
 
     if (editandoIdx !== null) {
       const ex = ejercicios[editandoIdx];
-      await supabase.from("gym_session_exercises").update({
-        nombre: exNombre.trim(), equipo: exEquipo, grupo_muscular: exGrupo, series: seriesData,
-      }).eq("id", ex.id);
-      const updArr = ejercicios.map((e, i) => i === editandoIdx ? { ...e, nombre: exNombre.trim(), equipo: exEquipo, grupo_muscular: exGrupo, series: seriesData } : e);
-      setEjercicios(updArr);
+      await supabase.from("gym_session_exercises").update(payload).eq("id", ex.id);
+      setEjercicios(prev => prev.map((e, i) => i === editandoIdx ? { ...e, ...payload } : e));
     } else {
       const { data: nuevo } = await supabase.from("gym_session_exercises").insert({
-        sesion_id: sesion.id, nombre: exNombre.trim(), equipo: exEquipo, grupo_muscular: exGrupo,
-        series: seriesData, orden: ejercicios.length,
+        sesion_id: sesion.id, ...payload, orden: ejercicios.length,
       }).select().single();
       if (nuevo) {
-        const newArr = [...ejercicios, nuevo as GymSesionEjercicio];
-        setEjercicios(newArr);
-        await buscarHistorial(exNombre.trim());
+        setEjercicios(prev => [...prev, nuevo as GymSesionEjercicio]);
+        if (exTipo === "fuerza") await buscarHistorial(exNombre.trim());
       }
     }
     setMostrarFormEx(false);
@@ -16521,7 +16560,22 @@ function GimHoyView({ userId }: { userId: string }) {
           <span className="font-bold text-white flex-1">{editandoIdx !== null ? "Editar ejercicio" : "Agregar ejercicio"}</span>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Botón catálogo */}
+          {/* Toggle Fuerza / Cardio */}
+          <div className="flex p-1 bg-white/5 border border-white/10 rounded-xl gap-1">
+            <button
+              onClick={() => { setExTipo("fuerza"); setExNombre(""); setExGrupo(GYM_GRUPOS[0]); }}
+              className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${exTipo === "fuerza" ? "bg-white/15 text-white" : "text-gray-500 hover:text-gray-300"}`}>
+              🏋️ Fuerza
+            </button>
+            <button
+              onClick={() => { setExTipo("cardio"); setExNombre(GYM_CARDIO_NOMBRES[0]); setExGrupo("Cardio"); setExEquipo("Peso corporal"); }}
+              className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${exTipo === "cardio" ? "bg-kb-gain/20 text-kb-gain border border-kb-gain/40" : "text-gray-500 hover:text-gray-300"}`}>
+              🏃 Cardio
+            </button>
+          </div>
+
+          {exTipo === "fuerza" ? (<>
+          {/* Botón catálogo — solo fuerza */}
           <button
             onClick={() => setMostrarCatalogo(true)}
             className="w-full py-3 rounded-xl border border-kb-gain/40 bg-kb-gain/10 text-kb-gain text-sm font-semibold flex items-center justify-center gap-2 hover:bg-kb-gain/20 transition-colors"
@@ -16688,6 +16742,67 @@ function GimHoyView({ userId }: { userId: string }) {
               </div>
             </div>
           )}
+          </>) : (<>
+
+          {/* Nombre — dropdown de cardio */}
+          <div>
+            <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Ejercicio</label>
+            <select
+              value={exNombre}
+              onChange={e => setExNombre(e.target.value)}
+              className="w-full border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-kb-gain/50"
+              style={{ backgroundColor: "#1a1a2e", colorScheme: "dark" }}
+            >
+              {GYM_CARDIO_NOMBRES.map(n => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Duración */}
+          <div>
+            <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">
+              ⏱ Duración <span className="normal-case font-normal text-gray-500">(minutos)</span>
+            </label>
+            <input
+              type="number"
+              value={exDuracion}
+              onChange={e => setExDuracion(e.target.value)}
+              placeholder="30"
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white text-center focus:outline-none focus:border-kb-gain/50"
+            />
+          </div>
+
+          {/* Distancia y Calorías */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">
+                📍 Distancia km <span className="normal-case font-normal text-gray-500">(opcional)</span>
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                value={exDistancia}
+                onChange={e => setExDistancia(e.target.value)}
+                placeholder="—"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white text-center focus:outline-none focus:border-kb-gain/50"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">
+                🔥 Calorías <span className="normal-case font-normal text-gray-500">(opcional)</span>
+              </label>
+              <input
+                type="number"
+                value={exCalorias}
+                onChange={e => setExCalorias(e.target.value)}
+                placeholder="—"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white text-center focus:outline-none focus:border-kb-gain/50"
+              />
+            </div>
+          </div>
+
+          </>)}
         </div>
         <div className="p-4 border-t border-white/10">
           <button
@@ -16838,11 +16953,12 @@ function GimHoyView({ userId }: { userId: string }) {
           {ejercicios.map((ex, idx) => {
             const col = GYM_GRUPO_COLORES[ex.grupo_muscular] ?? GYM_GRUPO_COLORES["Otro"];
             const esPR = prs[ex.nombre];
+            const esCardio = ex.tipo === "cardio";
             const hist = historial[ex.nombre] ?? [];
-            const ultimoPeso = hist[0]?.pesoMax ?? null;
-            const pesoActual = Math.max(...ex.series.map(s => s.peso_kg ?? 0), 0);
-            const mejoro = ultimoPeso !== null && pesoActual > ultimoPeso && pesoActual > 0;
-            const igual = ultimoPeso !== null && pesoActual === ultimoPeso && pesoActual > 0;
+            const ultimoPeso = !esCardio ? (hist[0]?.pesoMax ?? null) : null;
+            const pesoActual = !esCardio ? Math.max(...ex.series.map(s => s.peso_kg ?? 0), 0) : 0;
+            const mejoro = !esCardio && ultimoPeso !== null && pesoActual > ultimoPeso && pesoActual > 0;
+            const igual = !esCardio && ultimoPeso !== null && pesoActual === ultimoPeso && pesoActual > 0;
 
             return (
               <div key={ex.id} className={`rounded-xl border bg-white/3 border-l-4 overflow-hidden ${col.border}`}>
@@ -16881,14 +16997,33 @@ function GimHoyView({ userId }: { userId: string }) {
                   </div>
 
                   {/* Series del ejercicio */}
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {ex.series.map((s, si) => (
-                      <div key={si} className={`rounded-lg px-2.5 py-1 border text-xs font-medium ${col.bg} ${col.border}`}>
-                        <span className={col.text}>{s.reps} reps</span>
-                        {s.peso_kg != null && <span className="text-gray-400"> · {s.peso_kg}kg</span>}
-                      </div>
-                    ))}
-                  </div>
+                  {esCardio ? (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {ex.series.map((s, si) => {
+                        const duracion = s.duracion_min;
+                        const distancia = (s as { duracion_min?: number; distancia_km?: number | null; calorias?: number | null }).distancia_km;
+                        const calorias = (s as { duracion_min?: number; distancia_km?: number | null; calorias?: number | null }).calorias;
+                        return (
+                          <div key={si} className={`rounded-lg px-2.5 py-1 border text-xs font-medium ${col.bg} ${col.border}`}>
+                            {duracion != null
+                              ? <span className={col.text}>⏱ {duracion} min</span>
+                              : <span className="text-gray-500">⏱ —</span>}
+                            {distancia != null && distancia > 0 && <span className="text-gray-400"> · {distancia} km</span>}
+                            {calorias != null && calorias > 0 && <span className="text-gray-400"> · {calorias} kcal</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {ex.series.map((s, si) => (
+                        <div key={si} className={`rounded-lg px-2.5 py-1 border text-xs font-medium ${col.bg} ${col.border}`}>
+                          <span className={col.text}>{s.reps ?? "—"} reps</span>
+                          {s.peso_kg != null && <span className="text-gray-400"> · {s.peso_kg}kg</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Historial de sesiones previas */}
                   {hist.length > 0 && (
@@ -17227,55 +17362,90 @@ function GimPlanView({ userId }: { userId: string }) {
           </div>
           <div className="space-y-3">
             {ejerciciosPlan.map((ej, i) => {
-              const col = GYM_GRUPO_COLORES[ej.grupo_muscular] ?? GYM_GRUPO_COLORES["Otro"];
+              const esCardioEj = ej.tipo === "cardio";
+              const col = esCardioEj ? { border: "border-kb-gain/40", bg: "bg-kb-gain/5", text: "text-kb-gain", border2: "border-white/10", emoji: "🏃" } : (GYM_GRUPO_COLORES[ej.grupo_muscular] ?? GYM_GRUPO_COLORES["Otro"]);
               return (
-                <div key={ej.id} className={`rounded-xl border p-3 space-y-2.5 bg-white/3 border-l-4 ${col.border}`}>
-                  {/* Nombre */}
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={ej.nombre}
-                      onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, nombre: e.target.value} : x))}
-                      placeholder="Nombre del ejercicio..."
-                      className="flex-1 bg-transparent text-sm font-medium text-white placeholder-gray-600 focus:outline-none border-b border-white/10 focus:border-kb-gain/40 py-0.5 transition-colors"
-                    />
+                <div key={ej.id} className={`rounded-xl border p-3 space-y-2.5 bg-white/3 border-l-4 ${esCardioEj ? "border-kb-gain/50" : col.border}`}>
+                  {/* Toggle Fuerza / Cardio */}
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, tipo: "fuerza" as const, nombre: "", grupo_muscular: GYM_GRUPOS[0], equipo: GYM_EQUIPOS[0]} : x))}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${!esCardioEj ? "bg-white/15 text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                      🏋️ Fuerza
+                    </button>
+                    <button
+                      onClick={() => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, tipo: "cardio" as const, nombre: GYM_CARDIO_NOMBRES[0], grupo_muscular: "Cardio", equipo: "Peso corporal", duracion_objetivo: 30} : x))}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${esCardioEj ? "bg-kb-gain/20 text-kb-gain border border-kb-gain/40" : "text-gray-500 hover:text-gray-300"}`}>
+                      🏃 Cardio
+                    </button>
+                    <div className="flex-1" />
                     <button onClick={() => setEjerciciosPlan(prev => prev.filter((_,j) => j !== i))}
                       className="text-red-400/60 hover:text-red-400 p-1 transition-colors flex-shrink-0">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
                     </button>
                   </div>
-                  {/* Grupo + Equipo */}
-                  <div className="grid grid-cols-2 gap-2">
+
+                  {esCardioEj ? (<>
+                    {/* Cardio: nombre dropdown */}
                     <select
-                      value={ej.grupo_muscular}
-                      onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, grupo_muscular: e.target.value} : x))}
+                      value={ej.nombre}
+                      onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, nombre: e.target.value} : x))}
                       style={{ backgroundColor: "#1a1a2e", colorScheme: "dark" }}
-                      className="border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-kb-gain/50">
-                      {GYM_GRUPOS.map(g => <option key={g} value={g}>{g}</option>)}
+                      className="w-full border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-kb-gain/50">
+                      {GYM_CARDIO_NOMBRES.map(n => <option key={n} value={n}>{n}</option>)}
                     </select>
-                    <select
-                      value={ej.equipo}
-                      onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, equipo: e.target.value} : x))}
-                      style={{ backgroundColor: "#1a1a2e", colorScheme: "dark" }}
-                      className="border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-kb-gain/50">
-                      {GYM_EQUIPOS.map(eq => <option key={eq} value={eq}>{eq}</option>)}
-                    </select>
-                  </div>
-                  {/* Series + Reps */}
-                  <div className="flex gap-2">
-                    <div className="flex-1">
-                      <input type="number" value={ej.series}
-                        onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, series: parseInt(e.target.value)||3} : x))}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 text-xs text-white text-center focus:outline-none focus:border-kb-gain/50" />
-                      <p className="text-xs text-gray-600 text-center mt-0.5">series</p>
+                    {/* Cardio: duración objetivo */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={ej.duracion_objetivo ?? 30}
+                        onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, duracion_objetivo: parseInt(e.target.value)||30} : x))}
+                        className="w-20 bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 text-sm text-white text-center focus:outline-none focus:border-kb-gain/50"
+                      />
+                      <span className="text-xs text-gray-500">minutos objetivo</span>
                     </div>
-                    <div className="flex-1">
-                      <input value={ej.reps_objetivo}
-                        onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, reps_objetivo: e.target.value} : x))}
-                        placeholder="8-12"
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 text-xs text-white text-center focus:outline-none focus:border-kb-gain/50" />
-                      <p className="text-xs text-gray-600 text-center mt-0.5">reps</p>
+                  </>) : (<>
+                    {/* Fuerza: nombre */}
+                    <input
+                      value={ej.nombre}
+                      onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, nombre: e.target.value} : x))}
+                      placeholder="Nombre del ejercicio..."
+                      className="w-full bg-transparent text-sm font-medium text-white placeholder-gray-600 focus:outline-none border-b border-white/10 focus:border-kb-gain/40 py-0.5 transition-colors"
+                    />
+                    {/* Fuerza: Grupo + Equipo */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={ej.grupo_muscular}
+                        onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, grupo_muscular: e.target.value} : x))}
+                        style={{ backgroundColor: "#1a1a2e", colorScheme: "dark" }}
+                        className="border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-kb-gain/50">
+                        {GYM_GRUPOS.map(g => <option key={g} value={g}>{g}</option>)}
+                      </select>
+                      <select
+                        value={ej.equipo}
+                        onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, equipo: e.target.value} : x))}
+                        style={{ backgroundColor: "#1a1a2e", colorScheme: "dark" }}
+                        className="border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-kb-gain/50">
+                        {GYM_EQUIPOS.map(eq => <option key={eq} value={eq}>{eq}</option>)}
+                      </select>
                     </div>
-                  </div>
+                    {/* Fuerza: Series + Reps */}
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <input type="number" value={ej.series}
+                          onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, series: parseInt(e.target.value)||3} : x))}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 text-xs text-white text-center focus:outline-none focus:border-kb-gain/50" />
+                        <p className="text-xs text-gray-600 text-center mt-0.5">series</p>
+                      </div>
+                      <div className="flex-1">
+                        <input value={ej.reps_objetivo}
+                          onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, reps_objetivo: e.target.value} : x))}
+                          placeholder="8-12"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 text-xs text-white text-center focus:outline-none focus:border-kb-gain/50" />
+                        <p className="text-xs text-gray-600 text-center mt-0.5">reps</p>
+                      </div>
+                    </div>
+                  </>)}
                 </div>
               );
             })}
