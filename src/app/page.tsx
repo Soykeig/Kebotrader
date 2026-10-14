@@ -16671,8 +16671,117 @@ function GimHoyView({ userId }: { userId: string }) {
   );
 }
 // ─────────────────────────────────────────────────────────────────────────────
-// GYM MODULE V3 — Part 4: GimPlanView (con catálogo)
+// GYM MODULE V3 — Part 4: GimPlanView (con catálogo + Plan Sugerido)
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── Plan Sugerido: tipos y datos ─────────────────────────────────────────────
+type PlanSplitId = "push" | "pull" | "legs" | "upper" | "lower" | "full_a" | "full_b";
+interface EjPlanDef { nombre: string; altCond?: string[]; alt?: string; altNota?: string; }
+interface PlanSplitDef { grupo: string; emoji: string; ejercicios: EjPlanDef[]; }
+const GIM_PLAN_SPLITS: Record<PlanSplitId, PlanSplitDef> = {
+  push: { grupo: "Pecho · Hombros · Tríceps", emoji: "🫸", ejercicios: [
+    { nombre: "Press de pecho con barra", altCond: ["lesion_hombro"], alt: "Press de pecho con mancuernas (45°)", altNota: "Codos a 45° del cuerpo" },
+    { nombre: "Press inclinado con mancuernas" },
+    { nombre: "Aperturas con mancuernas", altCond: ["lesion_hombro"], alt: "Cable fly inferior" },
+    { nombre: "Press militar con mancuernas", altCond: ["lesion_hombro"], alt: "Elevaciones frontales con mancuernas" },
+    { nombre: "Elevaciones laterales con mancuernas" },
+    { nombre: "Extensión de tríceps en polea (push-down)" },
+  ]},
+  pull: { grupo: "Espalda · Bíceps", emoji: "🫷", ejercicios: [
+    { nombre: "Jalón al pecho con polea", altCond: ["lesion_hombro"], alt: "Remo con polea baja sentado" },
+    { nombre: "Remo con mancuerna (unilateral)" },
+    { nombre: "Face pull con polea" },
+    { nombre: "Curl de bíceps con barra" },
+    { nombre: "Curl martillo con mancuernas" },
+  ]},
+  legs: { grupo: "Cuádriceps · Isquios · Glúteos · Gemelos", emoji: "🦵", ejercicios: [
+    { nombre: "Sentadilla libre", altCond: ["lesion_rodilla", "hernia_disco"], alt: "Prensa de pierna (rango limitado)", altNota: "No bajes más de 90°" },
+    { nombre: "Peso muerto rumano", altCond: ["hernia_disco"], alt: "Hip thrust con barra", altNota: "Espalda neutra en todo momento" },
+    { nombre: "Prensa de pierna" },
+    { nombre: "Extensión de cuádriceps en máquina", altCond: ["lesion_rodilla"], alt: "Extensión cuádriceps (0°–60°)", altNota: "Evitá la flexión completa de rodilla" },
+    { nombre: "Curl femoral en máquina" },
+    { nombre: "Elevación de pantorrillas de pie" },
+  ]},
+  upper: { grupo: "Pecho · Espalda · Hombros", emoji: "💪", ejercicios: [
+    { nombre: "Press de pecho con barra", altCond: ["lesion_hombro"], alt: "Press de pecho con mancuernas" },
+    { nombre: "Jalón al pecho con polea" },
+    { nombre: "Press de hombros con mancuernas", altCond: ["lesion_hombro"], alt: "Elevaciones laterales con mancuernas" },
+    { nombre: "Remo con mancuerna (unilateral)" },
+    { nombre: "Elevaciones laterales con mancuernas" },
+    { nombre: "Curl de bíceps + Extensión de tríceps (superset)" },
+  ]},
+  lower: { grupo: "Cuádriceps · Isquios · Glúteos", emoji: "🦵", ejercicios: [
+    { nombre: "Sentadilla libre", altCond: ["lesion_rodilla", "hernia_disco"], alt: "Prensa de pierna" },
+    { nombre: "Peso muerto rumano", altCond: ["hernia_disco"], alt: "Hip thrust con barra" },
+    { nombre: "Zancadas caminando", altCond: ["lesion_rodilla"], alt: "Step-up en cajón", altNota: "Controlá el descenso" },
+    { nombre: "Prensa de pierna" },
+    { nombre: "Curl femoral en máquina" },
+    { nombre: "Elevación de pantorrillas sentado" },
+  ]},
+  full_a: { grupo: "Full Body A", emoji: "🏋️", ejercicios: [
+    { nombre: "Sentadilla libre", altCond: ["lesion_rodilla", "hernia_disco"], alt: "Prensa de pierna" },
+    { nombre: "Press de pecho con barra", altCond: ["lesion_hombro"], alt: "Flexiones de pecho" },
+    { nombre: "Remo con polea baja" },
+    { nombre: "Press de hombros con mancuernas", altCond: ["lesion_hombro"], alt: "Elevaciones laterales" },
+    { nombre: "Peso muerto rumano", altCond: ["hernia_disco"], alt: "Hip thrust con barra" },
+    { nombre: "Curl de bíceps + Extensión de tríceps" },
+  ]},
+  full_b: { grupo: "Full Body B", emoji: "🏋️", ejercicios: [
+    { nombre: "Prensa de pierna" },
+    { nombre: "Jalón al pecho con polea", altCond: ["lesion_hombro"], alt: "Remo con mancuerna" },
+    { nombre: "Press inclinado con mancuernas" },
+    { nombre: "Hip thrust con barra" },
+    { nombre: "Zancadas caminando", altCond: ["lesion_rodilla"], alt: "Extensión de cuádriceps en máquina" },
+    { nombre: "Elevaciones laterales + Curl martillo (superset)" },
+  ]},
+};
+function gimPlanSplitForDay(idx: number, total: number): PlanSplitId {
+  if (total <= 2) return idx === 0 ? "full_a" : "full_b";
+  if (total === 3) return (["push","pull","legs"] as PlanSplitId[])[idx % 3];
+  if (total === 4) return (["upper","lower","upper","lower"] as PlanSplitId[])[idx % 4];
+  if (total === 5) return (["push","pull","legs","upper","lower"] as PlanSplitId[])[idx % 5];
+  return (["push","pull","legs","push","pull","legs"] as PlanSplitId[])[idx % 6];
+}
+function gimPlanSetsReps(objetivo: string, experiencia: string): { series: number; reps: string; descanso: string } {
+  if (objetivo === "ganar_musculo") {
+    if (experiencia === "principiante") return { series: 3, reps: "8-10", descanso: "90s" };
+    if (experiencia === "avanzado")     return { series: 4, reps: "5-8",  descanso: "2-3min" };
+    return                                     { series: 4, reps: "6-10", descanso: "2min" };
+  }
+  if (objetivo === "perder_grasa") return { series: 3, reps: "12-15", descanso: "60s" };
+  if (objetivo === "rendimiento") {
+    if (experiencia === "principiante") return { series: 3, reps: "5-8", descanso: "2min" };
+    return                                     { series: 5, reps: "3-6", descanso: "3min" };
+  }
+  return { series: 3, reps: "8-12", descanso: "90s" };
+}
+interface DiaPlanSugerido {
+  diaSemana: number;
+  grupo: string;
+  emoji: string;
+  descanso: string;
+  ejercicios: { nombre: string; series: number; reps: string; nota?: string; adaptado: boolean }[];
+}
+function generarPlanSugerido(perfil: GymPerfil): DiaPlanSugerido[] {
+  const dias = perfil.dias_entreno ?? [];
+  const conds = perfil.condiciones_salud ?? [];
+  const { series, reps, descanso } = gimPlanSetsReps(perfil.objetivo ?? "", perfil.experiencia ?? "");
+  return dias.map((dia, idx) => {
+    const splitId = gimPlanSplitForDay(idx, dias.length);
+    const split = GIM_PLAN_SPLITS[splitId];
+    const ejercicios = split.ejercicios.map(ej => {
+      const triggered = !!(ej.altCond?.some(c => conds.includes(c)) && ej.alt);
+      return {
+        nombre: triggered ? ej.alt! : ej.nombre,
+        series,
+        reps,
+        nota: triggered ? ej.altNota : undefined,
+        adaptado: triggered,
+      };
+    });
+    return { diaSemana: dia, grupo: split.grupo, emoji: split.emoji, descanso, ejercicios };
+  });
+}
 
 function GimPlanView({ userId }: { userId: string }) {
   const [rutinas, setRutinas] = useState<GymRutina[]>([]);
@@ -16689,13 +16798,22 @@ function GimPlanView({ userId }: { userId: string }) {
 
   const diasLabel = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 
+  // Plan Sugerido state
+  const [perfilPlan, setPerfilPlan] = useState<GymPerfil | null>(null);
+  const [modoPlan, setModoPlan] = useState<"generado" | "manual">("generado");
+  const [diaSugIdx, setDiaSugIdx] = useState(0);
+
   useEffect(() => {
     let activo = true;
     async function cargar() {
       setCargando(true);
-      const { data } = await supabase.from("gym_routines").select("*").eq("user_id", userId).order("dia_semana");
+      const [rutinaRes, perfilRes] = await Promise.all([
+        supabase.from("gym_routines").select("*").eq("user_id", userId).order("dia_semana"),
+        supabase.from("gym_perfil").select("*").eq("user_id", userId).maybeSingle(),
+      ]);
       if (!activo) return;
-      setRutinas((data as GymRutina[]) || []);
+      setRutinas((rutinaRes.data as GymRutina[]) || []);
+      setPerfilPlan((perfilRes.data as GymPerfil | null) ?? null);
       setCargando(false);
     }
     cargar();
@@ -16752,6 +16870,13 @@ function GimPlanView({ userId }: { userId: string }) {
   }
 
   if (cargando) return <div className="flex items-center justify-center h-48"><div className="w-8 h-8 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" /></div>;
+
+  // Plan Sugerido — generado según perfil
+  const planSugerido: DiaPlanSugerido[] = perfilPlan && (perfilPlan.dias_entreno ?? []).length > 0
+    ? generarPlanSugerido(perfilPlan)
+    : [];
+  const tieneCondicionesActivas = (perfilPlan?.condiciones_salud ?? []).length > 0
+    && !(perfilPlan?.condiciones_salud ?? []).includes("ninguna");
 
   // Modal catálogo dentro del plan
   if (mostrarCatalogo) return (
@@ -16870,72 +16995,198 @@ function GimPlanView({ userId }: { userId: string }) {
 
   return (
     <div className="p-4 space-y-4 pb-8">
+
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <h2 className="text-base font-bold text-white">Plan semanal</h2>
-        <button onClick={() => abrirModal()}
-          className="flex items-center gap-1.5 text-xs font-semibold text-kb-gain bg-kb-gain/10 border border-kb-gain/30 px-3 py-1.5 rounded-xl hover:bg-kb-gain/20 transition-colors">
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
-          Nueva rutina
+        {modoPlan === "manual" && (
+          <button onClick={() => abrirModal()}
+            className="flex items-center gap-1.5 text-xs font-semibold text-kb-gain bg-kb-gain/10 border border-kb-gain/30 px-3 py-1.5 rounded-xl hover:bg-kb-gain/20 transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
+            Nueva rutina
+          </button>
+        )}
+      </div>
+
+      {/* ── Selector de modo ─────────────────────────────────────────────── */}
+      <div className="flex p-1 bg-white/5 border border-white/10 rounded-xl gap-1">
+        <button
+          onClick={() => setModoPlan("generado")}
+          className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${
+            modoPlan === "generado"
+              ? "bg-kb-gain text-kb-bg shadow-sm"
+              : "text-gray-500 hover:text-gray-300"
+          }`}>
+          ✨ Plan Sugerido
+        </button>
+        <button
+          onClick={() => setModoPlan("manual")}
+          className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${
+            modoPlan === "manual"
+              ? "bg-white/15 text-white"
+              : "text-gray-500 hover:text-gray-300"
+          }`}>
+          📋 Mis Rutinas
         </button>
       </div>
 
-      {rutinas.length === 0 ? (
-        <div className="rounded-2xl bg-white/5 border border-white/10 p-8 text-center">
-          <p className="text-4xl mb-3">📋</p>
-          <p className="text-sm font-semibold text-white mb-1">Sin rutinas</p>
-          <p className="text-xs text-gray-400 mb-4">Crea tu primera rutina semanal</p>
-          <button onClick={() => abrirModal()}
-            className="px-4 py-2 rounded-xl text-sm font-semibold bg-kb-gain/20 text-kb-gain border border-kb-gain/40 hover:bg-kb-gain/30 transition-colors">
-            Crear rutina
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {diasLabel.map((dia, dIdx) => {
-            const rutsDelDia = rutinas.filter(r => r.dia_semana === dIdx);
-            const esHoy = new Date().getDay() === dIdx;
-            return (
-              <div key={dIdx} className={`rounded-xl border p-3 transition-all ${esHoy ? "border-kb-gain/30 bg-kb-gain/5" : "border-white/10 bg-white/3"}`}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className={`text-xs font-bold uppercase tracking-wider ${esHoy ? "text-kb-gain" : "text-gray-500"}`}>
-                    {esHoy ? "🔥 " : ""}{dia}
-                  </span>
-                  {rutsDelDia.length === 0 && (
-                    <span className="text-xs text-gray-700">Descanso</span>
-                  )}
-                </div>
-                {rutsDelDia.map(r => (
-                  <div key={r.id} className="mb-2 last:mb-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-semibold text-white">{r.nombre}</span>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => abrirModal(r)} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors">
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                        </button>
-                        <button onClick={() => eliminarRutina(r.id)} className="p-1.5 rounded-lg text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-colors">
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                        </button>
-                      </div>
-                    </div>
-                    {r.ejercicios && r.ejercicios.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1.5">
-                        {r.ejercicios.slice(0,5).map(e => {
-                          const col = GYM_GRUPO_COLORES[e.grupo_muscular] ?? GYM_GRUPO_COLORES["Otro"];
-                          return (
-                            <span key={e.id} className={`text-xs px-2 py-0.5 rounded-lg border ${col.text} ${col.bg} ${col.border}`}>
-                              {col.emoji} {e.nombre || e.grupo_muscular}
-                            </span>
-                          );
-                        })}
-                        {r.ejercicios.length > 5 && <span className="text-xs text-gray-600">+{r.ejercicios.length-5}</span>}
-                      </div>
-                    )}
-                  </div>
+      {/* ── Tab: Plan Sugerido ────────────────────────────────────────────── */}
+      {modoPlan === "generado" && (
+        <>
+          {planSugerido.length > 0 ? (
+            <div className="space-y-3">
+              {/* Resumen del plan */}
+              <p className="text-xs text-gray-500 capitalize">
+                {planSugerido.length} días de entrenamiento ·{" "}
+                <span className="text-gray-300">{(perfilPlan?.experiencia ?? "").replace(/_/g," ")}</span>
+                {" · "}
+                <span className="text-gray-300">{(perfilPlan?.objetivo ?? "").replace(/_/g," ")}</span>
+              </p>
+
+              {/* Selector de días */}
+              <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+                {planSugerido.map((d, i) => (
+                  <button key={i} onClick={() => setDiaSugIdx(i)}
+                    className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                      diaSugIdx === i
+                        ? "bg-kb-gain text-kb-bg"
+                        : "bg-white/10 text-gray-400 hover:bg-white/15"
+                    }`}>
+                    {diasLabel[d.diaSemana]}
+                  </button>
                 ))}
               </div>
-            );
-          })}
-        </div>
+
+              {/* Contenido del día seleccionado */}
+              {(() => {
+                const d = planSugerido[Math.min(diaSugIdx, planSugerido.length - 1)];
+                if (!d) return null;
+                return (
+                  <div className="rounded-2xl bg-white/5 border border-white/10 p-3.5 space-y-2.5">
+                    {/* Header del día */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">{d.emoji}</span>
+                        <div>
+                          <p className="text-sm font-bold text-white">{d.grupo}</p>
+                          <p className="text-xs text-gray-500">{diasLabel[d.diaSemana]}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs font-bold text-kb-gain">{d.ejercicios[0]?.series} series</p>
+                        <p className="text-xs text-gray-600">⏱ {d.descanso} desc.</p>
+                      </div>
+                    </div>
+                    <div className="h-px bg-white/10"/>
+                    {/* Lista de ejercicios */}
+                    {d.ejercicios.map((ej, i) => (
+                      <div key={i} className={`flex items-start justify-between gap-3 rounded-xl p-2.5 ${
+                        ej.adaptado
+                          ? "bg-orange-500/10 border border-orange-500/20"
+                          : "bg-white/5"
+                      }`}>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {ej.adaptado && (
+                              <span className="text-[9px] font-bold text-orange-400 bg-orange-500/20 px-1.5 py-0.5 rounded-md uppercase tracking-wider">
+                                Adaptado
+                              </span>
+                            )}
+                            <p className="text-xs font-medium text-white">{ej.nombre}</p>
+                          </div>
+                          {ej.nota && <p className="text-[10px] text-orange-300 mt-0.5">⚠ {ej.nota}</p>}
+                        </div>
+                        <span className="text-xs font-bold text-kb-gain flex-shrink-0 mt-0.5">
+                          {ej.series}×{ej.reps}
+                        </span>
+                      </div>
+                    ))}
+                    {tieneCondicionesActivas && (
+                      <p className="text-[10px] text-orange-400/60 text-center pt-0.5">
+                        🔶 Ejercicios adaptados a tus condiciones de salud
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          ) : (
+            /* Sin datos suficientes para generar el plan */
+            <div className="rounded-2xl bg-white/5 border border-white/10 p-8 text-center">
+              <p className="text-4xl mb-3">🤖</p>
+              <p className="text-sm font-semibold text-white mb-1">Sin datos suficientes</p>
+              <p className="text-xs text-gray-400">
+                {!perfilPlan
+                  ? "Completá tu perfil en la sección Entrenador para que podamos generar tu plan."
+                  : "Seleccioná tus días de entrenamiento en el Perfil para generar el plan."}
+              </p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Tab: Mis Rutinas ─────────────────────────────────────────────── */}
+      {modoPlan === "manual" && (
+        <>
+          {rutinas.length === 0 ? (
+            <div className="rounded-2xl bg-white/5 border border-white/10 p-8 text-center">
+              <p className="text-4xl mb-3">📋</p>
+              <p className="text-sm font-semibold text-white mb-1">Sin rutinas</p>
+              <p className="text-xs text-gray-400 mb-4">Crea tu primera rutina semanal</p>
+              <button onClick={() => abrirModal()}
+                className="px-4 py-2 rounded-xl text-sm font-semibold bg-kb-gain/20 text-kb-gain border border-kb-gain/40 hover:bg-kb-gain/30 transition-colors">
+                Crear rutina
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {diasLabel.map((dia, dIdx) => {
+                const rutsDelDia = rutinas.filter(r => r.dia_semana === dIdx);
+                const esHoy = new Date().getDay() === dIdx;
+                return (
+                  <div key={dIdx} className={`rounded-xl border p-3 transition-all ${esHoy ? "border-kb-gain/30 bg-kb-gain/5" : "border-white/10 bg-white/3"}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-xs font-bold uppercase tracking-wider ${esHoy ? "text-kb-gain" : "text-gray-500"}`}>
+                        {esHoy ? "🔥 " : ""}{dia}
+                      </span>
+                      {rutsDelDia.length === 0 && (
+                        <span className="text-xs text-gray-700">Descanso</span>
+                      )}
+                    </div>
+                    {rutsDelDia.map(r => (
+                      <div key={r.id} className="mb-2 last:mb-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-semibold text-white">{r.nombre}</span>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => abrirModal(r)} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                            </button>
+                            <button onClick={() => eliminarRutina(r.id)} className="p-1.5 rounded-lg text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            </button>
+                          </div>
+                        </div>
+                        {r.ejercicios && r.ejercicios.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {r.ejercicios.slice(0,5).map(e => {
+                              const col = GYM_GRUPO_COLORES[e.grupo_muscular] ?? GYM_GRUPO_COLORES["Otro"];
+                              return (
+                                <span key={e.id} className={`text-xs px-2 py-0.5 rounded-lg border ${col.text} ${col.bg} ${col.border}`}>
+                                  {col.emoji} {e.nombre || e.grupo_muscular}
+                                </span>
+                              );
+                            })}
+                            {r.ejercicios.length > 5 && <span className="text-xs text-gray-600">+{r.ejercicios.length-5}</span>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -18246,13 +18497,24 @@ function GimEntrenadorView({ userId }: { userId: string }) {
   const [perfil, setPerfil] = useState<GymPerfil | null>(null);
   const [cargando, setCargando] = useState(true);
   const [tab, setTab] = useState<"entrenamiento" | "suplementos" | "nutricion">("entrenamiento");
+  const [tomaCreatina, setTomaCreatina] = useState(false);
+  const [tomaProteina, setTomaProteina] = useState(false);
+  const [condicionesSalud, setCondicionesSalud] = useState<string[]>([]);
+  const [guardandoPrefs, setGuardandoPrefs] = useState(false);
+  const [guardadoPrefs, setGuardadoPrefs] = useState(false);
 
   useEffect(() => {
     let activo = true;
     async function cargar() {
       const { data } = await supabase.from("gym_perfil").select("*").eq("user_id", userId).maybeSingle();
       if (!activo) return;
-      setPerfil(data as GymPerfil | null);
+      const p = data as GymPerfil | null;
+      setPerfil(p);
+      if (p) {
+        setTomaCreatina(p.toma_creatina ?? false);
+        setTomaProteina(p.toma_proteina ?? false);
+        setCondicionesSalud(p.condiciones_salud ?? []);
+      }
       setCargando(false);
     }
     cargar();
@@ -18269,10 +18531,47 @@ function GimEntrenadorView({ userId }: { userId: string }) {
     </div>
   );
 
+  async function guardarPrefs(cre: boolean, prot: boolean, conds: string[]) {
+    setGuardandoPrefs(true);
+    await supabase.from("gym_perfil").upsert({
+      user_id: userId,
+      toma_creatina: cre,
+      toma_proteina: prot,
+      condiciones_salud: conds,
+      updated_at: new Date().toISOString(),
+    });
+    setGuardadoPrefs(true);
+    setTimeout(() => setGuardadoPrefs(false), 2000);
+    setGuardandoPrefs(false);
+  }
+
+  const toggleCreatina = () => {
+    const next = !tomaCreatina;
+    setTomaCreatina(next);
+    guardarPrefs(next, tomaProteina, condicionesSalud);
+  };
+  const toggleProteina = () => {
+    const next = !tomaProteina;
+    setTomaProteina(next);
+    guardarPrefs(tomaCreatina, next, condicionesSalud);
+  };
+  const toggleCondicion = (id: string) => {
+    setCondicionesSalud(prev => {
+      let next: string[];
+      if (id === "ninguna") { next = ["ninguna"]; }
+      else {
+        const sinNinguna = prev.filter(x => x !== "ninguna");
+        next = prev.includes(id) ? sinNinguna.filter(x => x !== id) : [...sinNinguna, id];
+      }
+      guardarPrefs(tomaCreatina, tomaProteina, next);
+      return next;
+    });
+  };
+
   const pesoKg = perfil.peso_inicial ?? 70;
   const alturaReal = perfil.altura_cm ?? 170;
   const genero = perfil.genero ?? "hombre";
-  const condiciones = perfil.condiciones_salud ?? [];
+  const condiciones = condicionesSalud;
 
   // Proteína diaria necesaria
   let proteinFactor = genero === "mujer" ? 1.5 : 1.6;
@@ -18342,6 +18641,10 @@ function GimEntrenadorView({ userId }: { userId: string }) {
       recomendaciones.push({ tipo: "ok", texto: "Priorizá calidad de movimiento sobre cantidad de peso. Técnica perfecta es velocidad a largo plazo." });
       recomendaciones.push({ tipo: "ok", texto: "Periodización: alterna semanas de alta y baja intensidad para evitar el sobreentrenamiento." });
     }
+    if (perfil.objetivo === "mantenimiento") {
+      recomendaciones.push({ tipo: "ok", texto: "Mantener es más difícil de lo que parece. 3-4 sesiones semanales con constancia son todo lo que necesitás." });
+      recomendaciones.push({ tipo: "ok", texto: "Variá ejercicios o esquemas de series cada 6-8 semanas para evitar el estancamiento y mantener la motivación." });
+    }
   }
   if (perfil.tipo_cuerpo === "ectomorfo") {
     recomendaciones.push({ tipo: "ok", texto: `Como ectomorfo${genero === "mujer" ? "a" : ""}: priorizá series de 6-10 reps con peso progresivo. Descansá 2-3 min entre series y comé en superávit.` });
@@ -18368,7 +18671,7 @@ function GimEntrenadorView({ userId }: { userId: string }) {
   else if (perfil.objetivo === "perder_grasa") { caloriaObjetivo = tdee - 400; caloriaEtiqueta = "Déficit recomendado (-400 kcal)"; }
   else { caloriaObjetivo = tdee; caloriaEtiqueta = "Mantenimiento"; }
   const grasasG = Math.round(caloriaObjetivo * 0.25 / 9);
-  const carbsG = Math.round((caloriaObjetivo - proteinaNecesaria * 4 - grasasG * 9) / 4);
+  const carbsG = Math.max(0, Math.round((caloriaObjetivo - proteinaNecesaria * 4 - grasasG * 9) / 4));
 
   return (
     <div className="p-4 pb-8 space-y-4">
@@ -18400,6 +18703,27 @@ function GimEntrenadorView({ userId }: { userId: string }) {
 
       {tab === "entrenamiento" && (
         <div className="space-y-3">
+          {/* Condiciones de salud — editable inline */}
+          <div className="rounded-xl bg-white/5 border border-white/10 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Condiciones de salud</p>
+              {guardandoPrefs && <div className="w-3.5 h-3.5 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" />}
+              {guardadoPrefs && <span className="text-[10px] text-kb-gain font-medium">✓ guardado</span>}
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {GYM_CONDICIONES_SALUD.map(c => {
+                const selec = condicionesSalud.includes(c.id);
+                return (
+                  <button key={c.id} onClick={() => toggleCondicion(c.id)}
+                    className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border text-left transition-all active:scale-95 ${selec ? "border-orange-500/50 bg-orange-500/10" : "border-white/10 bg-white/5"}`}>
+                    <span className="text-sm">{c.emoji}</span>
+                    <span className={`text-[11px] font-medium leading-tight ${selec ? "text-orange-300" : "text-gray-400"}`}>{c.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {!sinCondicionesEspeciales && (
             <div className="rounded-xl bg-orange-500/10 border border-orange-500/30 p-3">
               <p className="text-xs font-semibold text-orange-400 mb-1">
@@ -18425,14 +18749,36 @@ function GimEntrenadorView({ userId }: { userId: string }) {
 
       {tab === "suplementos" && (
         <div className="space-y-3">
-          {!perfil.toma_creatina && !perfil.toma_proteina && (
-            <div className="rounded-xl bg-white/5 border border-white/10 p-4 text-center">
-              <p className="text-2xl mb-2">🧪</p>
-              <p className="text-sm text-white font-semibold">No registraste suplementos</p>
-              <p className="text-xs text-gray-400 mt-1">Editá tu perfil e indicá si tomás creatina o proteína para ver tu calculadora personalizada.</p>
+          {/* Toggles de suplementos — siempre visibles y editables */}
+          <div className="rounded-2xl bg-white/5 border border-white/10 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Mis suplementos</p>
+              {guardandoPrefs && <div className="w-3.5 h-3.5 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" />}
+              {guardadoPrefs && <span className="text-[10px] text-kb-gain font-medium">✓ guardado</span>}
             </div>
-          )}
-          {perfil.toma_creatina && (
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={toggleCreatina}
+                className={`flex flex-col items-center gap-2 p-3 rounded-xl border text-center transition-all active:scale-95 ${tomaCreatina ? "border-blue-500/50 bg-blue-500/10" : "border-white/10 bg-white/5"}`}>
+                <span className="text-2xl">💊</span>
+                <p className={`text-xs font-semibold ${tomaCreatina ? "text-blue-300" : "text-gray-400"}`}>Creatina</p>
+                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${tomaCreatina ? "border-blue-400 bg-blue-400" : "border-gray-600"}`}>
+                  {tomaCreatina && <span className="text-[8px] text-kb-bg font-bold">✓</span>}
+                </div>
+              </button>
+              <button onClick={toggleProteina}
+                className={`flex flex-col items-center gap-2 p-3 rounded-xl border text-center transition-all active:scale-95 ${tomaProteina ? "border-kb-gain/50 bg-kb-gain/10" : "border-white/10 bg-white/5"}`}>
+                <span className="text-2xl">🥤</span>
+                <p className={`text-xs font-semibold ${tomaProteina ? "text-kb-gain" : "text-gray-400"}`}>Proteína Whey</p>
+                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${tomaProteina ? "border-kb-gain bg-kb-gain" : "border-gray-600"}`}>
+                  {tomaProteina && <span className="text-[8px] text-kb-bg font-bold">✓</span>}
+                </div>
+              </button>
+            </div>
+            {!tomaCreatina && !tomaProteina && (
+              <p className="text-xs text-gray-500 text-center">Tocá los que tomás para ver tu calculadora personalizada</p>
+            )}
+          </div>
+          {tomaCreatina && (
             <div className="rounded-2xl bg-blue-500/10 border border-blue-500/30 p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <span className="text-xl">💊</span>
@@ -18459,7 +18805,7 @@ function GimEntrenadorView({ userId }: { userId: string }) {
               </div>
             </div>
           )}
-          {perfil.toma_proteina && (
+          {tomaProteina && (
             <div className="rounded-2xl bg-kb-gain/10 border border-kb-gain/30 p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <span className="text-xl">🥤</span>
@@ -18495,7 +18841,7 @@ function GimEntrenadorView({ userId }: { userId: string }) {
             <p className="text-xs font-semibold text-gray-300 mb-2">💡 Guía rápida de suplementos</p>
             <div className="space-y-1.5 text-xs text-gray-400">
               <p>• <span className="text-white">Creatina:</span> el más estudiado y seguro. Mejora fuerza, potencia y recuperación.</p>
-              <p>• <span className="text-white">Proteína whey:</span> solo cuando la dieta no alcanza {Math.round(pesoKg * 1.6)}-{Math.round(pesoKg * 2.0)}g/día desde comida real.</p>
+              <p>• <span className="text-white">Proteína whey:</span> solo cuando la dieta no alcanza {Math.round(pesoKg * (genero === "mujer" ? 1.5 : 1.6))}-{Math.round(pesoKg * (genero === "mujer" ? 2.0 : 2.2))}g/día desde comida real.</p>
               <p>• <span className="text-white">Primero la comida:</span> ningún suplemento reemplaza una dieta ordenada y consistente.</p>
             </div>
           </div>
