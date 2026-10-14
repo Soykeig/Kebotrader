@@ -926,7 +926,7 @@ type Vista =
   | "perfil"
   | "gym";
 
-type GimVista = "dashboard" | "hoy" | "plan" | "progreso" | "historial_gym" | "guia" | "perfil_gym";
+type GimVista = "dashboard" | "hoy" | "plan" | "progreso" | "historial_gym" | "guia" | "perfil_gym" | "entrenador";
 
 // =====================================================================
 // GYM V2: tipos de datos para el módulo de Gimnasio
@@ -943,6 +943,11 @@ interface GymPerfil {
   peso_inicial: number | null;
   horario_gym: "manana" | "tarde" | "noche" | null;
   dias_entreno: number[];   // [1,2,3,4,5] = L-V
+  genero: "hombre" | "mujer" | null;
+  altura_cm: number | null;
+  toma_creatina: boolean;
+  toma_proteina: boolean;
+  condiciones_salud: string[];
   created_at: string;
   updated_at: string;
 }
@@ -1896,6 +1901,7 @@ function Dashboard({
                       { id: "historial_gym" as GimVista, label: "Historial", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
                       { id: "guia" as GimVista, label: "Guía & Tips", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> },
                       { id: "perfil_gym" as GimVista, label: "Mi Perfil Gym", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg> },
+                      { id: "entrenador" as GimVista, label: "Entrenador", icono: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="7" r="4"/><line x1="9" y1="11" x2="9" y2="21"/><line x1="15" y1="11" x2="15" y2="21"/></svg> },
                     ] as const
                   ).map(({ id, label, icono }) => {
                     const activo = vistaGim === id;
@@ -2048,6 +2054,7 @@ function Dashboard({
                       { id: "historial_gym" as GimVista, label: "Historial" },
                       { id: "guia" as GimVista, label: "Guía" },
                       { id: "perfil_gym" as GimVista, label: "Perfil" },
+                      { id: "entrenador" as GimVista, label: "Entrena" },
                     ].map(({ id, label }) => (
                       <button
                         key={id}
@@ -15392,6 +15399,18 @@ const GYM_TIPOS_CUERPO = {
   endomorfo: { label: "Endomorfo", emoji: "💪", desc: "Tendencia a acumular grasa, metabolismo lento", estrategia: "Déficit calórico, cardio frecuente, pesos moderados", color: "border-orange-500/40 bg-orange-500/5" },
 } as const;
 
+const GYM_CONDICIONES_SALUD: { id: string; label: string; emoji: string }[] = [
+  { id: "ninguna",        label: "Sin condiciones especiales", emoji: "✅" },
+  { id: "artritis",       label: "Artritis",                  emoji: "🦴" },
+  { id: "hipertension",   label: "Hipertensión",              emoji: "❤️" },
+  { id: "diabetes",       label: "Diabetes",                  emoji: "🩸" },
+  { id: "lesion_rodilla", label: "Lesión de rodilla",         emoji: "🦵" },
+  { id: "lesion_hombro",  label: "Lesión de hombro",          emoji: "💪" },
+  { id: "hernia_disco",   label: "Hernia de disco",           emoji: "🔵" },
+  { id: "osteoporosis",   label: "Osteoporosis",              emoji: "⚪" },
+  { id: "asma",           label: "Asma",                      emoji: "🫁" },
+];
+
 const GYM_GRUPO_COLORES: Record<string, { text: string; bg: string; border: string; emoji: string }> = {
   "Pecho":     { text: "text-red-400",    bg: "bg-red-500/10",    border: "border-red-500/30",    emoji: "🫁" },
   "Espalda":   { text: "text-blue-400",   bg: "bg-blue-500/10",   border: "border-blue-500/30",   emoji: "🔷" },
@@ -15673,7 +15692,8 @@ function GimView({
     { id: "progreso",     label: "Progreso", emoji: "📈" },
     { id: "historial_gym",label: "Historial",emoji: "📅" },
     { id: "guia",         label: "Guía",     emoji: "📚" },
-    { id: "perfil_gym",   label: "Perfil",   emoji: "⚙️" },
+    { id: "perfil_gym",   label: "Perfil",     emoji: "⚙️" },
+    { id: "entrenador",   label: "Entrenador", emoji: "🤖" },
   ];
 
   return (
@@ -15705,6 +15725,7 @@ function GimView({
           {vistaGim === "historial_gym" && <GimHistorialView userId={userId} />}
           {vistaGim === "guia"          && <GimGuiaView />}
           {vistaGim === "perfil_gym"    && <GimPerfilView    userId={userId} modulos={modulos} onModulosChange={onModulosChange} />}
+          {vistaGim === "entrenador"    && <GimEntrenadorView userId={userId} />}
         </div>
       </div>
     </div>
@@ -17898,6 +17919,11 @@ function GimPerfilView({ userId, modulos, onModulosChange }: { userId: string; m
   const [horario, setHorario] = useState<"manana"|"tarde"|"noche"|"">("");
   const [dias, setDias] = useState<number[]>([]);
   const [pesoActual, setPesoActual] = useState("");
+  const [genero, setGenero] = useState<"hombre"|"mujer"|"">("");
+  const [alturaStr, setAlturaStr] = useState("");
+  const [tomaCreatina, setTomaCreatina] = useState(false);
+  const [tomaProteina, setTomaProteina] = useState(false);
+  const [condicionesSalud, setCondicionesSalud] = useState<string[]>([]);
 
   const diasLabel = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 
@@ -17917,6 +17943,11 @@ function GimPerfilView({ userId, modulos, onModulosChange }: { userId: string; m
         setHorario(p.horario_gym ?? "");
         setDias(p.dias_entreno ?? []);
         if (p.peso_inicial) setPesoActual(String(p.peso_inicial));
+        setGenero(p.genero ?? "");
+        if (p.altura_cm) setAlturaStr(String(p.altura_cm));
+        setTomaCreatina(p.toma_creatina ?? false);
+        setTomaProteina(p.toma_proteina ?? false);
+        setCondicionesSalud(p.condiciones_salud ?? []);
       }
       setCargando(false);
     }
@@ -17936,6 +17967,11 @@ function GimPerfilView({ userId, modulos, onModulosChange }: { userId: string; m
       fase, objetivo, experiencia,
       horario_gym: horario || null,
       dias_entreno: dias,
+      genero: genero || null,
+      altura_cm: alturaStr ? parseFloat(alturaStr) : null,
+      toma_creatina: tomaCreatina,
+      toma_proteina: tomaProteina,
+      condiciones_salud: condicionesSalud,
       updated_at: new Date().toISOString(),
     });
     // BUG 9 fix: only show success and save weight if upsert succeeded
@@ -18050,6 +18086,33 @@ function GimPerfilView({ userId, modulos, onModulosChange }: { userId: string; m
         <p className="text-xs text-gray-500 mt-1.5">{dias.length} días seleccionados</p>
       </div>
 
+      {/* Género */}
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Género</p>
+        <div className="grid grid-cols-2 gap-2">
+          {([["hombre","♂️ Hombre"],["mujer","♀️ Mujer"]] as const).map(([v, l]) => (
+            <button key={v} onClick={() => setGenero(v === genero ? "" : v)}
+              className={`py-2.5 rounded-xl text-sm font-medium border transition-all ${genero === v ? "border-kb-gain/60 bg-kb-gain/10 text-kb-gain" : "border-white/10 bg-white/5 text-gray-400"}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-gray-600 mt-1">Las recomendaciones se adaptan según el género</p>
+      </div>
+
+      {/* Altura */}
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Altura (cm)</p>
+        <input
+          type="number"
+          step="1"
+          value={alturaStr}
+          onChange={e => setAlturaStr(e.target.value)}
+          placeholder="Ej: 175"
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-kb-gain/50"
+        />
+      </div>
+
       {/* Peso actual */}
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Registrar peso actual (kg)</p>
@@ -18062,6 +18125,64 @@ function GimPerfilView({ userId, modulos, onModulosChange }: { userId: string; m
           className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-kb-gain/50"
         />
         <p className="text-xs text-gray-600 mt-1">Se guardará en el historial de medidas</p>
+      </div>
+
+      {/* Suplementos */}
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Suplementos que tomás</p>
+        <div className="space-y-2">
+          <button onClick={() => setTomaCreatina(p => !p)}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all ${tomaCreatina ? "border-blue-500/50 bg-blue-500/10" : "border-white/10 bg-white/5"}`}>
+            <div className="flex items-center gap-2.5">
+              <span className="text-lg">💊</span>
+              <div className="text-left">
+                <p className={`text-sm font-semibold ${tomaCreatina ? "text-blue-300" : "text-gray-300"}`}>Creatina</p>
+                <p className="text-xs text-gray-500">El entrenador calculará tu dosis diaria</p>
+              </div>
+            </div>
+            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${tomaCreatina ? "border-blue-400 bg-blue-400" : "border-gray-600"}`}>
+              {tomaCreatina && <span className="text-xs text-kb-bg font-bold">✓</span>}
+            </div>
+          </button>
+          <button onClick={() => setTomaProteina(p => !p)}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all ${tomaProteina ? "border-kb-gain/50 bg-kb-gain/10" : "border-white/10 bg-white/5"}`}>
+            <div className="flex items-center gap-2.5">
+              <span className="text-lg">🥤</span>
+              <div className="text-left">
+                <p className={`text-sm font-semibold ${tomaProteina ? "text-kb-gain" : "text-gray-300"}`}>Proteína Whey</p>
+                <p className="text-xs text-gray-500">El entrenador calculará gramos según tu peso</p>
+              </div>
+            </div>
+            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${tomaProteina ? "border-kb-gain bg-kb-gain" : "border-gray-600"}`}>
+              {tomaProteina && <span className="text-xs text-kb-bg font-bold">✓</span>}
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* Condiciones de salud */}
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Condiciones de salud</p>
+        <p className="text-xs text-gray-600 mb-2">El entrenador adaptará las rutinas según tus condiciones</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {GYM_CONDICIONES_SALUD.map(c => {
+            const selec = condicionesSalud.includes(c.id);
+            const toggleCond = () => {
+              if (c.id === "ninguna") { setCondicionesSalud(["ninguna"]); return; }
+              setCondicionesSalud(prev => {
+                const sinNinguna = prev.filter(x => x !== "ninguna");
+                return selec ? sinNinguna.filter(x => x !== c.id) : [...sinNinguna, c.id];
+              });
+            };
+            return (
+              <button key={c.id} onClick={toggleCond}
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition-all ${selec ? "border-orange-500/50 bg-orange-500/10" : "border-white/10 bg-white/5"}`}>
+                <span className="text-base">{c.emoji}</span>
+                <span className={`text-xs font-medium ${selec ? "text-orange-300" : "text-gray-400"}`}>{c.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Guardar */}
@@ -18114,6 +18235,331 @@ function GimPerfilView({ userId, modulos, onModulosChange }: { userId: string; m
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GimEntrenadorView — Entrenador personal con IA
+// ─────────────────────────────────────────────────────────────────────────────
+function GimEntrenadorView({ userId }: { userId: string }) {
+  const [perfil, setPerfil] = useState<GymPerfil | null>(null);
+  const [cargando, setCargando] = useState(true);
+  const [tab, setTab] = useState<"entrenamiento" | "suplementos" | "nutricion">("entrenamiento");
+
+  useEffect(() => {
+    let activo = true;
+    async function cargar() {
+      const { data } = await supabase.from("gym_perfil").select("*").eq("user_id", userId).maybeSingle();
+      if (!activo) return;
+      setPerfil(data as GymPerfil | null);
+      setCargando(false);
+    }
+    cargar();
+    return () => { activo = false; };
+  }, [userId]);
+
+  if (cargando) return <div className="flex items-center justify-center h-48"><div className="w-8 h-8 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" /></div>;
+
+  if (!perfil) return (
+    <div className="p-6 text-center space-y-3">
+      <p className="text-4xl">🤖</p>
+      <p className="text-white font-semibold">Completá tu perfil primero</p>
+      <p className="text-gray-400 text-sm">El entrenador personal necesita tu información para darte recomendaciones personalizadas. Andá a la pestaña Perfil.</p>
+    </div>
+  );
+
+  const pesoKg = perfil.peso_inicial ?? 70;
+  const alturaReal = perfil.altura_cm ?? 170;
+  const genero = perfil.genero ?? "hombre";
+  const condiciones = perfil.condiciones_salud ?? [];
+
+  // Proteína diaria necesaria
+  let proteinFactor = genero === "mujer" ? 1.5 : 1.6;
+  if (perfil.experiencia === "intermedio") proteinFactor += genero === "mujer" ? 0.2 : 0.3;
+  if (perfil.experiencia === "avanzado") proteinFactor += genero === "mujer" ? 0.4 : 0.6;
+  if (perfil.objetivo === "ganar_musculo") proteinFactor += 0.1;
+  proteinFactor = Math.min(proteinFactor, genero === "mujer" ? 2.0 : 2.2);
+  const proteinaNecesaria = Math.round(pesoKg * proteinFactor);
+  const proteinaSuplemento = Math.round(proteinaNecesaria * 0.3);
+  const creatinaGramos = 3;
+
+  // Recomendaciones de entrenamiento según condiciones
+  const recomendaciones: { tipo: "ok" | "warning" | "evitar"; texto: string }[] = [];
+
+  if (condiciones.includes("artritis")) {
+    recomendaciones.push({ tipo: "evitar", texto: "Evitá ejercicios de alto impacto (saltos, carrera en asfalto). Preferí bicicleta, natación o máquinas guiadas." });
+    recomendaciones.push({ tipo: "warning", texto: "Reducí el rango de movimiento en ejercicios de fuerza. Movimientos lentos y controlados siempre." });
+    recomendaciones.push({ tipo: "ok", texto: "Calentamiento obligatorio: mínimo 10 min a baja intensidad antes de cualquier ejercicio." });
+  }
+  if (condiciones.includes("hipertension")) {
+    recomendaciones.push({ tipo: "evitar", texto: "Evitá la maniobra de Valsalva (aguantar la respiración al hacer fuerza). Siempre expirá al esforzarte." });
+    recomendaciones.push({ tipo: "warning", texto: "Moderá la intensidad: no excedas el 75% de tu 1RM al inicio. Monitoreá tu presión regularmente." });
+    recomendaciones.push({ tipo: "ok", texto: "El cardio moderado (caminata, bicicleta) es especialmente beneficioso para controlar la presión." });
+  }
+  if (condiciones.includes("diabetes")) {
+    recomendaciones.push({ tipo: "warning", texto: "Monitoreá tu glucosa antes y después del entrenamiento. Siempre tenés glucosa rápida a mano." });
+    recomendaciones.push({ tipo: "ok", texto: "El entrenamiento de fuerza mejora la sensibilidad a la insulina — es uno de tus mejores aliados." });
+    recomendaciones.push({ tipo: "warning", texto: "Entrenás mejor 1-2hs después de comer para evitar hipoglucemia durante el ejercicio." });
+  }
+  if (condiciones.includes("lesion_rodilla")) {
+    recomendaciones.push({ tipo: "evitar", texto: "Evitá sentadillas profundas, lunges con impacto y leg press con peso excesivo." });
+    recomendaciones.push({ tipo: "ok", texto: "Priorizá extensión de cuádriceps en máquina, curl femoral y press de pierna con rango reducido." });
+    recomendaciones.push({ tipo: "warning", texto: "Fortalecé cuádriceps e isquiotibiales para estabilizar la rodilla y prevenir más daño." });
+  }
+  if (condiciones.includes("lesion_hombro")) {
+    recomendaciones.push({ tipo: "evitar", texto: "Evitá press militar pesado, jalones detrás de la nuca y cruces de polea altas." });
+    recomendaciones.push({ tipo: "ok", texto: "Priorizá ejercicios de manguito rotador con banda elástica para fortalecer y rehabilitar." });
+    recomendaciones.push({ tipo: "warning", texto: "Press de banca con agarre más ancho y codos a 45° reduce la presión sobre el hombro." });
+  }
+  if (condiciones.includes("hernia_disco")) {
+    recomendaciones.push({ tipo: "evitar", texto: "Evitá sentadilla libre pesada y peso muerto. Sin rotaciones forzadas de columna." });
+    recomendaciones.push({ tipo: "ok", texto: "Máquinas guiadas, core suave (plancha isométrica) y natación son tus mejores opciones." });
+    recomendaciones.push({ tipo: "warning", texto: "Consultá con un fisioterapeuta antes de retomar la rutina completa." });
+  }
+  if (condiciones.includes("osteoporosis")) {
+    recomendaciones.push({ tipo: "ok", texto: "El entrenamiento de fuerza moderado es MUY beneficioso: estimula y mejora la densidad ósea." });
+    recomendaciones.push({ tipo: "warning", texto: "Evitá ejercicios de flexión espinal (crunch) y movimientos de muy alto impacto." });
+    recomendaciones.push({ tipo: "ok", texto: "Priorizá sentadilla asistida, prensa de pierna y ejercicios con carga axial suave." });
+  }
+  if (condiciones.includes("asma")) {
+    recomendaciones.push({ tipo: "warning", texto: "Broncodilatador siempre disponible. Calentá mínimo 15 min antes del cardio." });
+    recomendaciones.push({ tipo: "ok", texto: "Preferí cardio en ambientes cálidos sin polvo. La natación es ideal para el asma." });
+    recomendaciones.push({ tipo: "evitar", texto: "Evitá entrenar en pico de frío o contaminación: el aire frío puede desencadenar una crisis." });
+  }
+
+  const sinCondicionesEspeciales = condiciones.length === 0 || (condiciones.length === 1 && condiciones[0] === "ninguna");
+  if (sinCondicionesEspeciales) {
+    if (perfil.objetivo === "ganar_musculo") {
+      recomendaciones.push({ tipo: "ok", texto: "Enfocate en progresión de carga: cada semana intentá agregar 2.5kg o 1 repetición más en ejercicios principales." });
+      recomendaciones.push({ tipo: "ok", texto: "Descansá 48-72hs el mismo grupo muscular antes de volver a entrenarlo." });
+    }
+    if (perfil.objetivo === "perder_grasa") {
+      recomendaciones.push({ tipo: "ok", texto: "Combiná fuerza 3-4x/semana con cardio moderado 2-3x/semana. El músculo quema grasa en reposo." });
+      recomendaciones.push({ tipo: "warning", texto: "El déficit calórico viene de la dieta, no de destruirte en el gym. Moderá la intensidad." });
+    }
+    if (perfil.objetivo === "rendimiento") {
+      recomendaciones.push({ tipo: "ok", texto: "Priorizá calidad de movimiento sobre cantidad de peso. Técnica perfecta es velocidad a largo plazo." });
+      recomendaciones.push({ tipo: "ok", texto: "Periodización: alterna semanas de alta y baja intensidad para evitar el sobreentrenamiento." });
+    }
+  }
+  if (perfil.tipo_cuerpo === "ectomorfo") {
+    recomendaciones.push({ tipo: "ok", texto: `Como ectomorfo${genero === "mujer" ? "a" : ""}: priorizá series de 6-10 reps con peso progresivo. Descansá 2-3 min entre series y comé en superávit.` });
+  }
+  if (perfil.tipo_cuerpo === "endomorfo") {
+    recomendaciones.push({ tipo: "ok", texto: "Combiná fuerza con descansos cortos (60-90 seg) para maximizar el gasto calórico en cada sesión." });
+  }
+  if (genero === "mujer") {
+    recomendaciones.push({ tipo: "ok", texto: "Las mujeres pueden entrenar igual de duro que los hombres. El mito de 'no levantes pesado' no tiene base científica." });
+  }
+
+  // Cálculo calórico (Mifflin-St Jeor)
+  const edadEstimada = 28;
+  let bmr: number;
+  if (genero === "hombre") { bmr = 10 * pesoKg + 6.25 * alturaReal - 5 * edadEstimada + 5; }
+  else { bmr = 10 * pesoKg + 6.25 * alturaReal - 5 * edadEstimada - 161; }
+  const diasSemana = (perfil.dias_entreno ?? []).length;
+  let actMult = 1.375;
+  if (diasSemana >= 5) actMult = 1.725;
+  else if (diasSemana >= 3) actMult = 1.55;
+  const tdee = Math.round(bmr * actMult);
+  let caloriaObjetivo: number; let caloriaEtiqueta: string;
+  if (perfil.objetivo === "ganar_musculo") { caloriaObjetivo = tdee + 300; caloriaEtiqueta = "Superávit recomendado (+300 kcal)"; }
+  else if (perfil.objetivo === "perder_grasa") { caloriaObjetivo = tdee - 400; caloriaEtiqueta = "Déficit recomendado (-400 kcal)"; }
+  else { caloriaObjetivo = tdee; caloriaEtiqueta = "Mantenimiento"; }
+  const grasasG = Math.round(caloriaObjetivo * 0.25 / 9);
+  const carbsG = Math.round((caloriaObjetivo - proteinaNecesaria * 4 - grasasG * 9) / 4);
+
+  return (
+    <div className="p-4 pb-8 space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="text-2xl">🤖</span>
+        <div>
+          <h2 className="text-base font-bold text-white">Entrenador Personal</h2>
+          <p className="text-xs text-gray-400">Recomendaciones adaptadas a tu perfil</p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl bg-white/5 border border-white/10 p-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+        <div><span className="text-gray-500">Objetivo:</span> <span className="text-white font-medium capitalize">{perfil.objetivo?.replace("_", " ") ?? "—"}</span></div>
+        <div><span className="text-gray-500">Nivel:</span> <span className="text-white font-medium capitalize">{perfil.experiencia ?? "—"}</span></div>
+        <div><span className="text-gray-500">Peso:</span> <span className="text-white font-medium">{pesoKg} kg</span></div>
+        <div><span className="text-gray-500">Altura:</span> <span className="text-white font-medium">{alturaReal} cm</span></div>
+        <div><span className="text-gray-500">Tipo:</span> <span className="text-white font-medium capitalize">{perfil.tipo_cuerpo ?? "—"}</span></div>
+        <div><span className="text-gray-500">Días/sem:</span> <span className="text-white font-medium">{diasSemana}</span></div>
+      </div>
+
+      <div className="flex gap-1 bg-white/5 rounded-xl p-1">
+        {(["entrenamiento","suplementos","nutricion"] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${tab === t ? "bg-kb-gain text-kb-bg" : "text-gray-400 hover:text-gray-200"}`}>
+            {t === "entrenamiento" ? "💪 Entreno" : t === "suplementos" ? "🧪 Suplementos" : "🥗 Nutrición"}
+          </button>
+        ))}
+      </div>
+
+      {tab === "entrenamiento" && (
+        <div className="space-y-3">
+          {!sinCondicionesEspeciales && (
+            <div className="rounded-xl bg-orange-500/10 border border-orange-500/30 p-3">
+              <p className="text-xs font-semibold text-orange-400 mb-1">
+                ⚠️ Condiciones activas: {condiciones.filter(c => c !== "ninguna").map(c => {
+                  const lbs: Record<string,string> = { artritis: "Artritis", hipertension: "Hipertensión", diabetes: "Diabetes", lesion_rodilla: "Lesión rodilla", lesion_hombro: "Lesión hombro", hernia_disco: "Hernia disco", osteoporosis: "Osteoporosis", asma: "Asma" };
+                  return lbs[c] ?? c;
+                }).join(", ")}
+              </p>
+              <p className="text-xs text-gray-300">Las recomendaciones de abajo están adaptadas a tu situación.</p>
+            </div>
+          )}
+          {recomendaciones.length === 0 && (
+            <p className="text-center text-gray-500 text-sm py-6">Completá más datos en tu perfil para ver recomendaciones específicas.</p>
+          )}
+          {recomendaciones.map((r, i) => (
+            <div key={i} className={`rounded-xl p-3 border flex gap-3 items-start ${r.tipo === "evitar" ? "bg-red-500/10 border-red-500/30" : r.tipo === "warning" ? "bg-orange-500/10 border-orange-500/30" : "bg-kb-gain/10 border-kb-gain/30"}`}>
+              <span className="text-base shrink-0">{r.tipo === "evitar" ? "🚫" : r.tipo === "warning" ? "⚠️" : "✅"}</span>
+              <p className={`text-xs leading-relaxed ${r.tipo === "evitar" ? "text-red-300" : r.tipo === "warning" ? "text-orange-300" : "text-gray-200"}`}>{r.texto}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "suplementos" && (
+        <div className="space-y-3">
+          {!perfil.toma_creatina && !perfil.toma_proteina && (
+            <div className="rounded-xl bg-white/5 border border-white/10 p-4 text-center">
+              <p className="text-2xl mb-2">🧪</p>
+              <p className="text-sm text-white font-semibold">No registraste suplementos</p>
+              <p className="text-xs text-gray-400 mt-1">Editá tu perfil e indicá si tomás creatina o proteína para ver tu calculadora personalizada.</p>
+            </div>
+          )}
+          {perfil.toma_creatina && (
+            <div className="rounded-2xl bg-blue-500/10 border border-blue-500/30 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">💊</span>
+                <div>
+                  <p className="text-sm font-bold text-blue-300">Creatina Monohidrato</p>
+                  <p className="text-xs text-gray-400">Protocolo de mantenimiento diario</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl bg-white/5 p-3 text-center">
+                  <p className="text-2xl font-bold text-blue-300">{creatinaGramos}g</p>
+                  <p className="text-xs text-gray-400">por día, siempre</p>
+                </div>
+                <div className="rounded-xl bg-white/5 p-3 text-center">
+                  <p className="text-xs font-semibold text-white mb-1">¿Cuándo?</p>
+                  <p className="text-xs text-gray-400">Post-entrenamiento o con comida en día de descanso</p>
+                </div>
+              </div>
+              <div className="space-y-1 text-xs text-gray-300">
+                <p>✅ Misma dosis para hombres y mujeres</p>
+                <p>✅ Sin fase de carga necesaria — 3g diarios es suficiente</p>
+                <p>✅ Con agua o batido, el timing no es crítico</p>
+                <p>⚠️ Mantenete bien hidratado/a: mínimo 2-3L de agua por día</p>
+              </div>
+            </div>
+          )}
+          {perfil.toma_proteina && (
+            <div className="rounded-2xl bg-kb-gain/10 border border-kb-gain/30 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🥤</span>
+                <div>
+                  <p className="text-sm font-bold text-kb-gain">Proteína Whey</p>
+                  <p className="text-xs text-gray-400">Para {pesoKg}kg · {perfil.experiencia} · {genero === "mujer" ? "mujer" : "hombre"}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl bg-white/5 p-2.5 text-center">
+                  <p className="text-xl font-bold text-kb-gain">{proteinaNecesaria}g</p>
+                  <p className="text-[10px] text-gray-400">proteína total/día</p>
+                </div>
+                <div className="rounded-xl bg-white/5 p-2.5 text-center">
+                  <p className="text-xl font-bold text-white">{proteinFactor.toFixed(1)}</p>
+                  <p className="text-[10px] text-gray-400">g por kg de peso</p>
+                </div>
+                <div className="rounded-xl bg-white/5 p-2.5 text-center">
+                  <p className="text-xl font-bold text-white">~{proteinaSuplemento}g</p>
+                  <p className="text-[10px] text-gray-400">del suplemento</p>
+                </div>
+              </div>
+              <div className="rounded-xl bg-white/5 p-3 space-y-1 text-xs text-gray-300">
+                <p className="text-white font-semibold mb-1">Cuándo tomarlo</p>
+                <p>✅ Después del entrenamiento: primera prioridad</p>
+                <p>✅ De mañana si entrenás en ayunas</p>
+                <p>✅ Antes de dormir si no llegás al objetivo de proteína con la comida</p>
+                {genero === "mujer" && <p className="text-pink-300">♀️ Factor ligeramente menor para mujeres ({proteinFactor.toFixed(1)}g/kg), igualmente importante</p>}
+              </div>
+            </div>
+          )}
+          <div className="rounded-xl bg-white/5 border border-white/10 p-3">
+            <p className="text-xs font-semibold text-gray-300 mb-2">💡 Guía rápida de suplementos</p>
+            <div className="space-y-1.5 text-xs text-gray-400">
+              <p>• <span className="text-white">Creatina:</span> el más estudiado y seguro. Mejora fuerza, potencia y recuperación.</p>
+              <p>• <span className="text-white">Proteína whey:</span> solo cuando la dieta no alcanza {Math.round(pesoKg * 1.6)}-{Math.round(pesoKg * 2.0)}g/día desde comida real.</p>
+              <p>• <span className="text-white">Primero la comida:</span> ningún suplemento reemplaza una dieta ordenada y consistente.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === "nutricion" && (
+        <div className="space-y-3">
+          {(!perfil.peso_inicial || !perfil.altura_cm) && (
+            <div className="rounded-xl bg-orange-500/10 border border-orange-500/30 p-3">
+              <p className="text-xs text-orange-300">⚠️ Completá peso y altura en tu perfil para que los cálculos sean más precisos.</p>
+            </div>
+          )}
+          <div className="rounded-2xl bg-white/5 border border-white/10 p-4 space-y-3">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Estimación calórica</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl bg-kb-bg/60 p-3 text-center border border-white/5">
+                <p className="text-xs text-gray-500 mb-0.5">Metabolismo basal</p>
+                <p className="text-2xl font-bold text-white">{Math.round(bmr)}</p>
+                <p className="text-[10px] text-gray-500">kcal en reposo total</p>
+              </div>
+              <div className="rounded-xl bg-kb-bg/60 p-3 text-center border border-white/5">
+                <p className="text-xs text-gray-500 mb-0.5">Gasto total diario</p>
+                <p className="text-2xl font-bold text-white">{tdee}</p>
+                <p className="text-[10px] text-gray-500">kcal con tu actividad</p>
+              </div>
+            </div>
+            <div className={`rounded-xl p-3 text-center border ${perfil.objetivo === "ganar_musculo" ? "bg-blue-500/10 border-blue-500/30" : perfil.objetivo === "perder_grasa" ? "bg-orange-500/10 border-orange-500/30" : "bg-kb-gain/10 border-kb-gain/30"}`}>
+              <p className="text-xs text-gray-400 mb-0.5">{caloriaEtiqueta}</p>
+              <p className="text-3xl font-bold text-white">{caloriaObjetivo}</p>
+              <p className="text-xs text-gray-400">kcal por día recomendadas</p>
+            </div>
+          </div>
+          <div className="rounded-2xl bg-white/5 border border-white/10 p-4 space-y-3">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Distribución de macros</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-2.5 text-center">
+                <p className="text-xl font-bold text-blue-300">{proteinaNecesaria}g</p>
+                <p className="text-[10px] text-gray-400">Proteína</p>
+                <p className="text-[10px] text-gray-500">{proteinaNecesaria * 4} kcal</p>
+              </div>
+              <div className="rounded-xl bg-yellow-500/10 border border-yellow-500/20 p-2.5 text-center">
+                <p className="text-xl font-bold text-yellow-300">{carbsG}g</p>
+                <p className="text-[10px] text-gray-400">Carbos</p>
+                <p className="text-[10px] text-gray-500">{carbsG * 4} kcal</p>
+              </div>
+              <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-2.5 text-center">
+                <p className="text-xl font-bold text-red-300">{grasasG}g</p>
+                <p className="text-[10px] text-gray-400">Grasas</p>
+                <p className="text-[10px] text-gray-500">{grasasG * 9} kcal</p>
+              </div>
+            </div>
+          </div>
+          {genero === "mujer" && (
+            <div className="rounded-xl bg-pink-500/10 border border-pink-500/20 p-3 text-xs space-y-1.5">
+              <p className="text-pink-300 font-semibold">♀️ Tips específicos para mujeres</p>
+              <p className="text-gray-300">• En fase lútea (última semana del ciclo) el rendimiento puede bajar — es completamente normal.</p>
+              <p className="text-gray-300">• Hierro y calcio son nutrientes clave. Priorizalos en la dieta o consultá suplementación.</p>
+              <p className="text-gray-300">• No tengas miedo de entrenar pesado: sin un superávit muy elevado, no vas a ponerte "grande".</p>
+            </div>
+          )}
+          <p className="text-[11px] text-gray-600 text-center px-2">Cálculos basados en la fórmula Mifflin-St Jeor. Son referencias orientativas — consultá con un nutricionista para un plan preciso.</p>
+        </div>
+      )}
     </div>
   );
 }
