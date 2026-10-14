@@ -16326,7 +16326,7 @@ function GimHoyView({ userId }: { userId: string }) {
         const sesionCargada = sesHoy as GymSesion;
         // BUG 4 fix: populate horaInicio/horaFin from DB so the completed screen shows times
         if (sesionCargada.hora_inicio) setHoraInicio(sesionCargada.hora_inicio);
-        if (sesionCargada.hora_fin) setHoraFin(sesionCargada.hora_fin);
+        if (sesionCargada.hora_fin) { setHoraFin(sesionCargada.hora_fin); setSesionGuardada(true); }
         const { data: exs } = await supabase
           .from("gym_session_exercises")
           .select("*")
@@ -16336,7 +16336,7 @@ function GimHoyView({ userId }: { userId: string }) {
         const arr = (exs as GymSesionEjercicio[]) || [];
         setEjercicios(arr);
         // BUG 1 fix: pass sesionId explicitly to avoid stale closure (sesion state is null here)
-        for (const ex of arr) await buscarHistorial(ex.nombre, sesHoy.id);
+        for (const ex of arr) if (ex.tipo !== "cardio") await buscarHistorial(ex.nombre, sesHoy.id);
       }
       setCargando(false);
     }
@@ -17220,6 +17220,7 @@ function GimPlanView({ userId }: { userId: string }) {
 
   const [nombre, setNombre] = useState("");
   const [diaSemana, setDiaSemana] = useState(1);
+  const [errorRutina, setErrorRutina] = useState("");
   const [ejerciciosPlan, setEjerciciosPlan] = useState<GymRutinaEjercicio[]>([]);
 
   const diasLabel = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
@@ -17271,6 +17272,13 @@ function GimPlanView({ userId }: { userId: string }) {
 
   async function guardarRutina() {
     if (!nombre.trim() || guardando) return;
+    // Validar que todos los ejercicios tengan nombre
+    const vacios = ejerciciosPlan.filter(e => !e.nombre.trim());
+    if (vacios.length > 0) {
+      setErrorRutina(`${vacios.length} ejercicio${vacios.length > 1 ? "s" : ""} sin nombre. Completa o elimina antes de guardar.`);
+      return;
+    }
+    setErrorRutina("");
     setGuardando(true);
     const ejerciciosConOrden = ejerciciosPlan.map((e, i) => ({ ...e, orden: i }));
     if (editandoRutina) {
@@ -17458,6 +17466,9 @@ function GimPlanView({ userId }: { userId: string }) {
         </div>
       </div>
       <div className="p-4 border-t border-white/10">
+        {errorRutina && (
+          <p className="text-xs text-red-400 mb-2 text-center">{errorRutina}</p>
+        )}
         <button onClick={guardarRutina} disabled={guardando || !nombre.trim()}
           className="w-full py-3.5 rounded-xl font-bold text-sm bg-kb-gain text-kb-bg hover:bg-kb-gain/90 disabled:opacity-50 active:scale-95 transition-all">
           {guardando ? "Guardando..." : "Guardar rutina"}
@@ -17681,17 +17692,23 @@ function GimProgresoView({ userId }: { userId: string }) {
 
   // ── RECORDS tab ────────────────────────────────────────────────────────────
   const [records, setRecords] = useState<Record<string, { pesoMax: number; fecha: string }>>({});
+  const [recordsCardio, setRecordsCardio] = useState<Record<string, { durMax: number; distMax: number; fecha: string }>>({});
   const [cargandoRec, setCargandoRec] = useState(false);
 
   // ── PROGRESIÓN tab ─────────────────────────────────────────────────────────
+  const [modoProgresion, setModoProgresion] = useState<"fuerza" | "cardio">("fuerza");
   const [ejercicioSel, setEjercicioSel] = useState("");
   const [mostrarPickerProg, setMostrarPickerProg] = useState(false);
   const [puntosProg, setPuntosProg] = useState<{ fecha: string; pesoMax: number }[]>([]);
   const [cargandoProg, setCargandoProg] = useState(false);
   const [nombresEjercicios, setNombresEjercicios] = useState<string[]>([]);
+  const [cardioSel, setCardioSel] = useState("");
+  const [puntosCardio, setPuntosCardio] = useState<{ fecha: string; durMax: number; distMax: number }[]>([]);
+  const [cargandoCardio, setCargandoCardio] = useState(false);
+  const [nombresCardioHist, setNombresCardioHist] = useState<string[]>([]);
 
   // ── RESUMEN tab ─────────────────────────────────────────────────────────────
-  interface ResumenPeriodo { sesiones: number; volumen: number; }
+  interface ResumenPeriodo { sesiones: number; volumen: number; minCardio: number; }
   interface ResumenData {
     semanaActual: ResumenPeriodo;
     semanaAnterior: ResumenPeriodo;
@@ -17700,6 +17717,7 @@ function GimProgresoView({ userId }: { userId: string }) {
     ejerciciosProgreso: { nombre: string; mesAnterior: number; mesActual: number }[];
     pesoTendencia: { fecha: string; peso_kg: number }[];
     nuevosRecordsMes: number;
+    objetivoPerfil: string;
   }
   const [resumenData, setResumenData] = useState<ResumenData | null>(null);
   const [cargandoResumen, setCargandoResumen] = useState(false);
@@ -17708,7 +17726,7 @@ function GimProgresoView({ userId }: { userId: string }) {
     if (tab === "resumen" && !resumenData) cargarResumen();
     else if (tab === "medidas" && medidas.length === 0) cargarMedidas();
     else if (tab === "records" && Object.keys(records).length === 0) cargarRecords();
-    else if (tab === "progresion" && nombresEjercicios.length === 0) cargarNombres();
+    else if (tab === "progresion" && nombresEjercicios.length === 0) { cargarNombres(); cargarNombresCardio(); }
   }, [tab, userId]); // BUG 10 fix: add userId so data refreshes if user changes
 
   async function cargarMedidas() {
@@ -17742,18 +17760,32 @@ function GimProgresoView({ userId }: { userId: string }) {
       .eq("gym_sessions.user_id", userId)
       .order("nombre");
     if (!error) {
-      type Row = { nombre: string; series: { reps: number; peso_kg: number | null }[]; gym_sessions: { fecha: string } };
+      type Row = { nombre: string; series: { reps: number; peso_kg: number | null; duracion_min?: number; distancia_km?: number | null }[]; gym_sessions: { fecha: string } };
       const rows = (data as unknown as Row[]) || [];
       const map: Record<string, { pesoMax: number; fecha: string }> = {};
+      const cardioMap: Record<string, { durMax: number; distMax: number; fecha: string }> = {};
       for (const r of rows) {
-        const pesoMax = Math.max(...r.series.map(s => s.peso_kg ?? 0), 0);
-        if (pesoMax > 0) {
-          if (!map[r.nombre] || pesoMax > map[r.nombre].pesoMax) {
-            map[r.nombre] = { pesoMax, fecha: r.gym_sessions.fecha };
+        if (GYM_CARDIO_NOMBRES.includes(r.nombre)) {
+          // Récords de cardio: mejor duración y distancia
+          const durMax = Math.max(...r.series.map(s => s.duracion_min ?? 0), 0);
+          const distMax = Math.max(...r.series.map(s => s.distancia_km ?? 0), 0);
+          if (durMax > 0 || distMax > 0) {
+            const prev = cardioMap[r.nombre];
+            if (!prev || durMax > prev.durMax) {
+              cardioMap[r.nombre] = { durMax, distMax, fecha: r.gym_sessions.fecha };
+            }
+          }
+        } else {
+          const pesoMax = Math.max(...r.series.map(s => s.peso_kg ?? 0), 0);
+          if (pesoMax > 0) {
+            if (!map[r.nombre] || pesoMax > map[r.nombre].pesoMax) {
+              map[r.nombre] = { pesoMax, fecha: r.gym_sessions.fecha };
+            }
           }
         }
       }
       setRecords(map);
+      setRecordsCardio(cardioMap);
     }
     setCargandoRec(false);
   }
@@ -17766,9 +17798,49 @@ function GimProgresoView({ userId }: { userId: string }) {
     if (!error) {
       type Row = { nombre: string };
       const rows = (data as unknown as Row[]) || [];
-      const unicos = [...new Set(rows.map(r => r.nombre))].sort();
+      const unicos = [...new Set(rows.map(r => r.nombre))].filter(n => !GYM_CARDIO_NOMBRES.includes(n)).sort();
       setNombresEjercicios(unicos);
     }
+  }
+
+  async function cargarNombresCardio() {
+    const { data, error } = await supabase
+      .from("gym_session_exercises")
+      .select("nombre, gym_sessions!inner(user_id)")
+      .eq("gym_sessions.user_id", userId);
+    if (!error) {
+      type Row = { nombre: string };
+      const rows = (data as unknown as Row[]) || [];
+      const unicos = [...new Set(rows.map(r => r.nombre))].filter(n => GYM_CARDIO_NOMBRES.includes(n)).sort();
+      setNombresCardioHist(unicos);
+    }
+  }
+
+  async function cargarProgresionCardio(nombre: string) {
+    if (!nombre) return;
+    setCargandoCardio(true);
+    const { data } = await supabase
+      .from("gym_session_exercises")
+      .select("series, gym_sessions!inner(user_id, fecha)")
+      .eq("gym_sessions.user_id", userId)
+      .eq("nombre", nombre)
+      .order("gym_sessions(fecha)", { ascending: true })
+      .limit(50);
+    type Row = { series: { duracion_min?: number; distancia_km?: number | null }[]; gym_sessions: { fecha: string } };
+    const rows = (data as unknown as Row[]) || [];
+    const byDate = new Map<string, { durMax: number; distMax: number }>();
+    for (const r of rows) {
+      const fecha = r.gym_sessions.fecha;
+      const durMax = Math.max(...r.series.map(s => s.duracion_min ?? 0), 0);
+      const distMax = Math.max(...r.series.map(s => s.distancia_km ?? 0), 0);
+      const prev = byDate.get(fecha) ?? { durMax: 0, distMax: 0 };
+      byDate.set(fecha, { durMax: Math.max(prev.durMax, durMax), distMax: Math.max(prev.distMax, distMax) });
+    }
+    const puntos = [...byDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([fecha, v]) => ({ fecha, ...v }));
+    setPuntosCardio(puntos);
+    setCargandoCardio(false);
   }
 
   async function cargarResumen() {
@@ -17805,24 +17877,33 @@ function GimProgresoView({ userId }: { userId: string }) {
     const sessions: SesRow[] = (rawSes as SesRow[]) || [];
     const sesIds = sessions.map(s => s.id);
 
-    type ExRow = { sesion_id: string; nombre: string; series: { reps: number; peso_kg: number | null }[] };
+    type ExRow = { sesion_id: string; nombre: string; tipo?: string; series: { reps: number; peso_kg: number | null; duracion_min?: number }[] };
     let exercises: ExRow[] = [];
     if (sesIds.length > 0) {
       const { data: rawEx } = await supabase
         .from("gym_session_exercises")
-        .select("sesion_id, nombre, series")
+        .select("sesion_id, nombre, tipo, series")
         .in("sesion_id", sesIds);
       exercises = (rawEx as ExRow[]) || [];
     }
 
     const volumenEx = (series: { reps: number; peso_kg: number | null }[]) =>
-      series.reduce((sum, s) => sum + (s.peso_kg ?? 0) * s.reps, 0);
+      series.reduce((sum, s) => sum + (s.peso_kg ?? 0) * (s.reps ?? 0), 0);
+
+    // Perfil para saber el objetivo (afecta color de tendencia de peso)
+    const { data: rawPerfil } = await supabase
+      .from("gym_perfil").select("objetivo").eq("user_id", userId).maybeSingle();
+    const objetivoPerfil = (rawPerfil as { objetivo: string } | null)?.objetivo ?? "";
 
     function statsRango(start: string, end: string) {
       const ss = sessions.filter(s => s.fecha >= start && s.fecha <= end);
       const ids = new Set(ss.map(s => s.id));
       const exs = exercises.filter(e => ids.has(e.sesion_id));
-      return { sesiones: ss.length, volumen: Math.round(exs.reduce((sum, e) => sum + volumenEx(e.series), 0)) };
+      const exsFuerza = exs.filter(e => e.tipo !== "cardio");
+      const exsCardio = exs.filter(e => e.tipo === "cardio");
+      const volumen = Math.round(exsFuerza.reduce((sum, e) => sum + volumenEx(e.series), 0));
+      const minCardio = Math.round(exsCardio.reduce((sum, e) => sum + e.series.reduce((s2, s) => s2 + (s.duracion_min ?? 0), 0), 0));
+      return { sesiones: ss.length, volumen, minCardio };
     }
 
     function maxPorRango(start: string, end: string): Record<string, number> {
@@ -17863,7 +17944,7 @@ function GimProgresoView({ userId }: { userId: string }) {
     const pesoTendencia = ((rawPeso as { fecha: string; peso_kg: number }[]) || [])
       .filter(m => m.peso_kg != null).reverse();
 
-    setResumenData({ semanaActual, semanaAnterior, mesActual, mesAnterior, ejerciciosProgreso, pesoTendencia, nuevosRecordsMes });
+    setResumenData({ semanaActual, semanaAnterior, mesActual, mesAnterior, ejerciciosProgreso, pesoTendencia, nuevosRecordsMes, objetivoPerfil });
     setCargandoResumen(false);
   }
 
@@ -17967,6 +18048,61 @@ function GimProgresoView({ userId }: { userId: string }) {
     );
   }
 
+  // SVG chart para cardio (duración en min)
+  function ChartCardioProgresion({ puntos }: { puntos: { fecha: string; durMax: number; distMax: number }[] }) {
+    if (puntos.length < 2) return (
+      <div className="flex flex-col items-center justify-center h-40 text-gray-600">
+        <p className="text-3xl mb-2">🏃</p>
+        <p className="text-sm">{puntos.length === 1 ? "Solo 1 sesión. Necesitas al menos 2 para ver la gráfica." : "Sin datos suficientes"}</p>
+      </div>
+    );
+    const W = 300, H = 150, padX = 40, padY = 16;
+    const drawW = W - padX * 2, drawH = H - padY * 2;
+    const vals = puntos.map(p => p.durMax).filter(v => v > 0);
+    const minV = Math.max(0, Math.floor(Math.min(...vals) * 0.9));
+    const maxV = Math.ceil(Math.max(...vals) * 1.05);
+    const rango = maxV - minV || 1;
+    const toX = (i: number) => padX + (i / (puntos.length - 1)) * drawW;
+    const toY = (v: number) => padY + (1 - (v - minV) / rango) * drawH;
+    const path = puntos.map((p, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toY(p.durMax)}`).join(" ");
+    const area = `${path} L ${toX(puntos.length-1)} ${H - padY} L ${padX} ${H - padY} Z`;
+    const maxIdx = puntos.reduce((best, p, i) => p.durMax > puntos[best].durMax ? i : best, 0);
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 160 }}>
+        <defs>
+          <linearGradient id="cardioGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#60a5fa" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#60a5fa" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {[minV, minV + rango/2, maxV].map((v, i) => (
+          <g key={i}>
+            <line x1={padX} y1={toY(Math.round(v))} x2={W - padX} y2={toY(Math.round(v))} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+            <text x={padX - 4} y={toY(Math.round(v)) + 4} fill="rgba(255,255,255,0.3)" fontSize="9" textAnchor="end">{Math.round(v)}m</text>
+          </g>
+        ))}
+        <path d={area} fill="url(#cardioGrad)" />
+        <path d={path} fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        {puntos.map((p, i) => (
+          <g key={i}>
+            <circle cx={toX(i)} cy={toY(p.durMax)} r={i === maxIdx ? 5 : 3}
+              fill={i === maxIdx ? "#60a5fa" : "#1a2e3b"} stroke="#60a5fa" strokeWidth="1.5" />
+            {i === maxIdx && (
+              <text x={toX(i)} y={toY(p.durMax) - 9} fill="#60a5fa" fontSize="9" textAnchor="middle" fontWeight="bold">
+                🏆 {p.durMax}min
+              </text>
+            )}
+          </g>
+        ))}
+        {[0, Math.floor((puntos.length-1)/2), puntos.length-1].filter((v,i,a) => a.indexOf(v) === i).map(i => (
+          <text key={i} x={toX(i)} y={H - 2} fill="rgba(255,255,255,0.3)" fontSize="8" textAnchor="middle">
+            {new Date(puntos[i].fecha + "T12:00:00").toLocaleDateString("es-MX", { day:"numeric", month:"short" })}
+          </text>
+        ))}
+      </svg>
+    );
+  }
+
   if (mostrarPickerProg) return (
     <GimEjercicioPicker
       onSelect={({ nombre }) => { handleSelEjercicio(nombre); setMostrarPickerProg(false); }}
@@ -18005,7 +18141,7 @@ function GimProgresoView({ userId }: { userId: string }) {
               <p className="text-sm text-gray-400">Aún no hay datos suficientes para el resumen</p>
             </div>
           ) : (() => {
-            const { semanaActual, semanaAnterior, mesActual, mesAnterior, ejerciciosProgreso, pesoTendencia, nuevosRecordsMes } = resumenData;
+            const { semanaActual, semanaAnterior, mesActual, mesAnterior, ejerciciosProgreso, pesoTendencia, nuevosRecordsMes, objetivoPerfil } = resumenData;
 
             // Helper: delta display
             function StatDelta({ curr, prev, unit = "", invertido = false }: { curr: number; prev: number; unit?: string; invertido?: boolean }) {
@@ -18056,8 +18192,20 @@ function GimProgresoView({ userId }: { userId: string }) {
                     </div>
                   </div>
                   <div className="px-3 py-1.5 bg-white/3 border-t border-white/5">
-                    <p className="text-[10px] text-gray-600 text-center">Semana anterior: {semanaAnterior.sesiones} sesiones · {fmtVol(semanaAnterior.volumen)}</p>
+                    <p className="text-[10px] text-gray-600 text-center">
+                      Semana anterior: {semanaAnterior.sesiones} sesiones · {fmtVol(semanaAnterior.volumen)}
+                      {semanaAnterior.minCardio > 0 && ` · ${semanaAnterior.minCardio}min cardio`}
+                    </p>
                   </div>
+                  {semanaActual.minCardio > 0 && (
+                    <div className="px-3 py-2 border-t border-white/5 flex items-center justify-center gap-2">
+                      <span className="text-sm">🏃</span>
+                      <span className="text-xs text-blue-400 font-medium">{semanaActual.minCardio} min cardio esta semana</span>
+                      {semanaAnterior.minCardio > 0 && (
+                        <StatDelta curr={semanaActual.minCardio} prev={semanaAnterior.minCardio} unit="min" />
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Este mes */}
@@ -18078,8 +18226,20 @@ function GimProgresoView({ userId }: { userId: string }) {
                     </div>
                   </div>
                   <div className="px-3 py-1.5 bg-white/3 border-t border-white/5">
-                    <p className="text-[10px] text-gray-600 text-center">Mes anterior: {mesAnterior.sesiones} sesiones · {fmtVol(mesAnterior.volumen)}</p>
+                    <p className="text-[10px] text-gray-600 text-center">
+                      Mes anterior: {mesAnterior.sesiones} sesiones · {fmtVol(mesAnterior.volumen)}
+                      {mesAnterior.minCardio > 0 && ` · ${mesAnterior.minCardio}min cardio`}
+                    </p>
                   </div>
+                  {mesActual.minCardio > 0 && (
+                    <div className="px-3 py-2 border-t border-white/5 flex items-center justify-center gap-2">
+                      <span className="text-sm">🏃</span>
+                      <span className="text-xs text-blue-400 font-medium">{mesActual.minCardio} min cardio este mes</span>
+                      {mesAnterior.minCardio > 0 && (
+                        <StatDelta curr={mesActual.minCardio} prev={mesAnterior.minCardio} unit="min" />
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Progreso por ejercicio */}
@@ -18139,8 +18299,9 @@ function GimProgresoView({ userId }: { userId: string }) {
                         const path = pesos.map((p, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toY(p)}`).join(" ");
                         const area = `${path} L ${toX(pesos.length-1)} ${H-padY} L ${padX} ${H-padY} Z`;
                         const diffPeso = pesos[pesos.length-1] - pesos[0];
-                        // BUG 14 fix: don't assume weight gain is bad (could be a bulk phase)
-                        const colorPeso = diffPeso < 0 ? "#34d399" : diffPeso > 0 ? "#60a5fa" : "#9ca3af";
+                        // Color según objetivo: ganar músculo → subir es bueno (verde), bajar es neutro (azul)
+                        const pesoPositivo = objetivoPerfil === "ganar_musculo" ? diffPeso > 0 : diffPeso < 0;
+                        const colorPeso = diffPeso === 0 ? "#9ca3af" : pesoPositivo ? "#34d399" : "#60a5fa";
                         return (
                           <>
                             <svg viewBox={`0 0 ${W} ${H}`} className="w-full mb-2" style={{ height: 70 }}>
@@ -18167,7 +18328,7 @@ function GimProgresoView({ userId }: { userId: string }) {
                               </div>
                               <div className="text-center">
                                 <p className="text-[10px] text-gray-500">Cambio</p>
-                                <p className={`text-sm font-bold ${diffPeso < 0 ? "text-green-400" : diffPeso > 0 ? "text-red-400" : "text-gray-400"}`}>
+                                <p className={`text-sm font-bold ${diffPeso === 0 ? "text-gray-400" : pesoPositivo ? "text-green-400" : "text-blue-400"}`}>
                                   {diffPeso > 0 ? "+" : ""}{diffPeso.toFixed(1)}kg
                                 </p>
                               </div>
@@ -18198,30 +18359,66 @@ function GimProgresoView({ userId }: { userId: string }) {
         <div className="space-y-3">
           {cargandoRec ? (
             <div className="flex justify-center h-24 items-center"><div className="w-6 h-6 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" /></div>
-          ) : Object.keys(records).length === 0 ? (
+          ) : Object.keys(records).length === 0 && Object.keys(recordsCardio).length === 0 ? (
             <div className="rounded-xl bg-white/5 border border-white/10 p-8 text-center">
               <p className="text-3xl mb-2">🏆</p>
               <p className="text-sm text-gray-400">Aún no hay récords. ¡Empieza a entrenar!</p>
             </div>
           ) : (
-            Object.entries(records)
-              .sort(([,a],[,b]) => b.pesoMax - a.pesoMax)
-              .map(([nombre, r]) => {
-                const cat = GYM_CATALOGO.find(e => e.nombre === nombre);
-                const col = cat ? (GYM_GRUPO_COLORES[cat.grupo] ?? GYM_GRUPO_COLORES["Otro"]) : GYM_GRUPO_COLORES["Otro"];
-                return (
-                  <div key={nombre} className={`rounded-xl border p-3 bg-white/3 border-l-4 ${col.border} flex items-center justify-between gap-3`}>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-white truncate">{nombre}</p>
-                      <p className={`text-xs mt-0.5 ${col.text}`}>{col.emoji} {cat?.grupo ?? "—"}</p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-lg font-bold text-white">{r.pesoMax}<span className="text-xs text-gray-400 ml-0.5">kg</span></p>
-                      <p className="text-xs text-gray-500">{new Date(r.fecha + "T12:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short" })}</p>
-                    </div>
-                  </div>
-                );
-              })
+            <>
+              {/* Récords de fuerza */}
+              {Object.keys(records).length > 0 && (
+                <>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-1">💪 Fuerza — Peso máximo</p>
+                  {Object.entries(records)
+                    .sort(([,a],[,b]) => b.pesoMax - a.pesoMax)
+                    .map(([nombre, r]) => {
+                      const cat = GYM_CATALOGO.find(e => e.nombre === nombre);
+                      const col = cat ? (GYM_GRUPO_COLORES[cat.grupo] ?? GYM_GRUPO_COLORES["Otro"]) : GYM_GRUPO_COLORES["Otro"];
+                      return (
+                        <div key={nombre} className={`rounded-xl border p-3 bg-white/3 border-l-4 ${col.border} flex items-center justify-between gap-3`}>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-white truncate">{nombre}</p>
+                            <p className={`text-xs mt-0.5 ${col.text}`}>{col.emoji} {cat?.grupo ?? "—"}</p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-lg font-bold text-white">{r.pesoMax}<span className="text-xs text-gray-400 ml-0.5">kg</span></p>
+                            <p className="text-xs text-gray-500">{new Date(r.fecha + "T12:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short" })}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </>
+              )}
+
+              {/* Récords de cardio */}
+              {Object.keys(recordsCardio).length > 0 && (
+                <>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-1 mt-2">🏃 Cardio — Mejor sesión</p>
+                  {Object.entries(recordsCardio)
+                    .sort(([,a],[,b]) => b.durMax - a.durMax)
+                    .map(([nombre, r]) => (
+                      <div key={nombre} className="rounded-xl border border-l-4 border-blue-500/40 p-3 bg-white/3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-white truncate">{nombre}</p>
+                          <p className="text-xs mt-0.5 text-blue-400">🏃 Cardio</p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="flex items-center gap-2 justify-end">
+                            {r.durMax > 0 && (
+                              <p className="text-lg font-bold text-white">{r.durMax}<span className="text-xs text-gray-400 ml-0.5">min</span></p>
+                            )}
+                            {r.distMax > 0 && (
+                              <p className="text-sm font-semibold text-blue-300">{r.distMax}<span className="text-xs text-gray-400 ml-0.5">km</span></p>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500">{new Date(r.fecha + "T12:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short" })}</p>
+                        </div>
+                      </div>
+                    ))}
+                </>
+              )}
+            </>
           )}
         </div>
       )}
@@ -18229,108 +18426,218 @@ function GimProgresoView({ userId }: { userId: string }) {
       {/* ── Tab PROGRESIÓN ── */}
       {tab === "progresion" && (
         <div className="space-y-4">
-          {/* Selector */}
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Selecciona un ejercicio</p>
-            <button
-              onClick={() => setMostrarPickerProg(true)}
-              className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:border-kb-gain/40 hover:bg-kb-gain/5 transition-all"
-            >
-              <span className={`text-sm ${ejercicioSel ? "text-white font-medium" : "text-gray-500"}`}>
-                {ejercicioSel || "Elegir del catálogo..."}
-              </span>
-              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
-            </button>
-            {/* O buscar en lista */}
-            {nombresEjercicios.length > 0 && (
-              <div className="mt-2">
-                <p className="text-xs text-gray-600 mb-1.5">O elige del historial:</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {nombresEjercicios.slice(0, 10).map(n => (
-                    <button key={n} onClick={() => handleSelEjercicio(n)}
-                      className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${ejercicioSel === n ? "border-kb-gain/60 bg-kb-gain/15 text-kb-gain" : "border-white/10 bg-white/5 text-gray-400 hover:border-white/20"}`}>
-                      {n}
-                    </button>
-                  ))}
-                  {nombresEjercicios.length > 10 && (
-                    <span className="text-xs text-gray-600 self-center">+{nombresEjercicios.length - 10} más</span>
-                  )}
-                </div>
-              </div>
-            )}
+          {/* Toggle Fuerza / Cardio */}
+          <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
+            {(["fuerza", "cardio"] as const).map(modo => (
+              <button key={modo} onClick={() => setModoProgresion(modo)}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${modoProgresion === modo ? "bg-white/10 text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                {modo === "fuerza" ? "💪 Fuerza" : "🏃 Cardio"}
+              </button>
+            ))}
           </div>
 
-          {/* Gráfica */}
-          {ejercicioSel && (
-            <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
-              <div className="p-3 border-b border-white/5">
-                <p className="text-sm font-semibold text-white">{ejercicioSel}</p>
-                {puntosProg.length > 0 && (() => {
-                  const cat = GYM_CATALOGO.find(e => e.nombre === ejercicioSel);
-                  const col = cat ? (GYM_GRUPO_COLORES[cat.grupo] ?? GYM_GRUPO_COLORES["Otro"]) : GYM_GRUPO_COLORES["Otro"];
-                  return <span className={`text-xs ${col.text}`}>{col.emoji} {cat?.grupo ?? ""}</span>;
-                })()}
+          {modoProgresion === "fuerza" ? (
+            <>
+              {/* Selector fuerza */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Selecciona un ejercicio</p>
+                <button
+                  onClick={() => setMostrarPickerProg(true)}
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:border-kb-gain/40 hover:bg-kb-gain/5 transition-all"
+                >
+                  <span className={`text-sm ${ejercicioSel ? "text-white font-medium" : "text-gray-500"}`}>
+                    {ejercicioSel || "Elegir del catálogo..."}
+                  </span>
+                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+                </button>
+                {nombresEjercicios.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-xs text-gray-600 mb-1.5">O elige del historial:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {nombresEjercicios.slice(0, 10).map(n => (
+                        <button key={n} onClick={() => handleSelEjercicio(n)}
+                          className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${ejercicioSel === n ? "border-kb-gain/60 bg-kb-gain/15 text-kb-gain" : "border-white/10 bg-white/5 text-gray-400 hover:border-white/20"}`}>
+                          {n}
+                        </button>
+                      ))}
+                      {nombresEjercicios.length > 10 && (
+                        <span className="text-xs text-gray-600 self-center">+{nombresEjercicios.length - 10} más</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-              {cargandoProg ? (
-                <div className="flex justify-center h-40 items-center"><div className="w-6 h-6 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" /></div>
-              ) : (
-                <div className="p-3">
-                  <ChartProgresion puntos={puntosProg} />
-                  {puntosProg.length >= 2 && (
-                    <div className="mt-3 grid grid-cols-3 gap-2 pt-3 border-t border-white/5">
-                      <div className="text-center">
-                        <p className="text-xs text-gray-500">Inicio</p>
-                        <p className="text-sm font-bold text-white">{puntosProg[0].pesoMax}kg</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-gray-500">Máximo</p>
-                        <p className="text-sm font-bold text-kb-gain">{Math.max(...puntosProg.map(p => p.pesoMax))}kg</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-gray-500">Progreso</p>
-                        {(() => {
-                          const diff = puntosProg[puntosProg.length-1].pesoMax - puntosProg[0].pesoMax;
-                          return (
-                            <p className={`text-sm font-bold ${diff > 0 ? "text-green-400" : diff < 0 ? "text-red-400" : "text-gray-400"}`}>
-                              {diff > 0 ? "+" : ""}{diff}kg
-                            </p>
-                          );
-                        })()}
-                      </div>
+
+              {/* Gráfica fuerza */}
+              {ejercicioSel && (
+                <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+                  <div className="p-3 border-b border-white/5">
+                    <p className="text-sm font-semibold text-white">{ejercicioSel}</p>
+                    {puntosProg.length > 0 && (() => {
+                      const cat = GYM_CATALOGO.find(e => e.nombre === ejercicioSel);
+                      const col = cat ? (GYM_GRUPO_COLORES[cat.grupo] ?? GYM_GRUPO_COLORES["Otro"]) : GYM_GRUPO_COLORES["Otro"];
+                      return <span className={`text-xs ${col.text}`}>{col.emoji} {cat?.grupo ?? ""}</span>;
+                    })()}
+                  </div>
+                  {cargandoProg ? (
+                    <div className="flex justify-center h-40 items-center"><div className="w-6 h-6 rounded-full border-2 border-kb-gain border-t-transparent animate-spin" /></div>
+                  ) : (
+                    <div className="p-3">
+                      <ChartProgresion puntos={puntosProg} />
+                      {puntosProg.length >= 2 && (
+                        <div className="mt-3 grid grid-cols-3 gap-2 pt-3 border-t border-white/5">
+                          <div className="text-center">
+                            <p className="text-xs text-gray-500">Inicio</p>
+                            <p className="text-sm font-bold text-white">{puntosProg[0].pesoMax}kg</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-gray-500">Máximo</p>
+                            <p className="text-sm font-bold text-kb-gain">{Math.max(...puntosProg.map(p => p.pesoMax))}kg</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-gray-500">Progreso</p>
+                            {(() => {
+                              const diff = puntosProg[puntosProg.length-1].pesoMax - puntosProg[0].pesoMax;
+                              return (
+                                <p className={`text-sm font-bold ${diff > 0 ? "text-green-400" : diff < 0 ? "text-red-400" : "text-gray-400"}`}>
+                                  {diff > 0 ? "+" : ""}{diff}kg
+                                </p>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Lista histórica por sesión */}
-          {ejercicioSel && puntosProg.length > 0 && !cargandoProg && (
-            <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/5 overflow-hidden">
-              <div className="px-3 py-2.5">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Historial de pesos</p>
-              </div>
-              {[...puntosProg].reverse().map((p, i) => {
-                const prevPeso = i < puntosProg.length - 1 ? [...puntosProg].reverse()[i+1]?.pesoMax : null;
-                const mejoro = prevPeso !== null && p.pesoMax > prevPeso;
-                return (
-                  <div key={p.fecha} className="flex items-center justify-between px-3 py-2.5">
-                    <span className="text-sm text-gray-300">{new Date(p.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "short", day: "numeric", month: "short" })}</span>
-                    <div className="flex items-center gap-2">
-                      {mejoro && <span className="text-xs text-green-400">↑</span>}
-                      <span className={`text-sm font-bold ${mejoro ? "text-green-400" : "text-white"}`}>{p.pesoMax} kg</span>
+              {/* Historial de pesos */}
+              {ejercicioSel && puntosProg.length > 0 && !cargandoProg && (
+                <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/5 overflow-hidden">
+                  <div className="px-3 py-2.5">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Historial de pesos</p>
+                  </div>
+                  {[...puntosProg].reverse().map((p, i) => {
+                    const prevPeso = i < puntosProg.length - 1 ? [...puntosProg].reverse()[i+1]?.pesoMax : null;
+                    const mejoro = prevPeso !== null && p.pesoMax > prevPeso;
+                    return (
+                      <div key={p.fecha} className="flex items-center justify-between px-3 py-2.5">
+                        <span className="text-sm text-gray-300">{new Date(p.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "short", day: "numeric", month: "short" })}</span>
+                        <div className="flex items-center gap-2">
+                          {mejoro && <span className="text-xs text-green-400">↑</span>}
+                          <span className={`text-sm font-bold ${mejoro ? "text-green-400" : "text-white"}`}>{p.pesoMax} kg</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {!ejercicioSel && (
+                <div className="rounded-xl bg-white/5 border border-white/10 p-8 text-center">
+                  <p className="text-3xl mb-2">📈</p>
+                  <p className="text-sm text-gray-400">Selecciona un ejercicio para ver cómo has progresado</p>
+                </div>
+              )}
+            </>
+          ) : (
+            /* ── Modo Cardio ── */
+            <>
+              {nombresCardioHist.length === 0 ? (
+                <div className="rounded-xl bg-white/5 border border-white/10 p-8 text-center">
+                  <p className="text-3xl mb-2">🏃</p>
+                  <p className="text-sm text-gray-400">Sin historial de cardio todavía</p>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Selecciona una máquina</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {nombresCardioHist.map(n => (
+                        <button key={n} onClick={() => { setCardioSel(n); cargarProgresionCardio(n); }}
+                          className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${cardioSel === n ? "border-blue-500/60 bg-blue-500/15 text-blue-400" : "border-white/10 bg-white/5 text-gray-400 hover:border-white/20"}`}>
+                          {n}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
 
-          {!ejercicioSel && (
-            <div className="rounded-xl bg-white/5 border border-white/10 p-8 text-center">
-              <p className="text-3xl mb-2">📈</p>
-              <p className="text-sm text-gray-400">Selecciona un ejercicio para ver cómo has progresado</p>
-            </div>
+                  {cardioSel && (
+                    <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+                      <div className="p-3 border-b border-white/5">
+                        <p className="text-sm font-semibold text-white">{cardioSel}</p>
+                        <p className="text-xs text-blue-400">🏃 Cardio — duración en minutos</p>
+                      </div>
+                      {cargandoCardio ? (
+                        <div className="flex justify-center h-40 items-center"><div className="w-6 h-6 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" /></div>
+                      ) : (
+                        <div className="p-3">
+                          <ChartCardioProgresion puntos={puntosCardio} />
+                          {puntosCardio.length >= 2 && (
+                            <div className="mt-3 grid grid-cols-3 gap-2 pt-3 border-t border-white/5">
+                              <div className="text-center">
+                                <p className="text-xs text-gray-500">Mejor tiempo</p>
+                                <p className="text-sm font-bold text-blue-400">{Math.max(...puntosCardio.map(p => p.durMax))}<span className="text-[10px] text-gray-400 ml-0.5">min</span></p>
+                              </div>
+                              <div className="text-center">
+                                <p className="text-xs text-gray-500">Mejor distancia</p>
+                                {Math.max(...puntosCardio.map(p => p.distMax)) > 0
+                                  ? <p className="text-sm font-bold text-blue-400">{Math.max(...puntosCardio.map(p => p.distMax))}<span className="text-[10px] text-gray-400 ml-0.5">km</span></p>
+                                  : <p className="text-sm text-gray-600">—</p>}
+                              </div>
+                              <div className="text-center">
+                                <p className="text-xs text-gray-500">Tendencia</p>
+                                {(() => {
+                                  const diff = puntosCardio[puntosCardio.length-1].durMax - puntosCardio[0].durMax;
+                                  return (
+                                    <p className={`text-sm font-bold ${diff > 0 ? "text-green-400" : diff < 0 ? "text-red-400" : "text-gray-400"}`}>
+                                      {diff > 0 ? "+" : ""}{diff}min
+                                    </p>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Historial sesiones cardio */}
+                  {cardioSel && puntosCardio.length > 0 && !cargandoCardio && (
+                    <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/5 overflow-hidden">
+                      <div className="px-3 py-2.5">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Historial de sesiones</p>
+                      </div>
+                      {[...puntosCardio].reverse().map((p, i) => {
+                        const prevDur = i < puntosCardio.length - 1 ? [...puntosCardio].reverse()[i+1]?.durMax : null;
+                        const mejoro = prevDur !== null && p.durMax > prevDur;
+                        return (
+                          <div key={p.fecha} className="flex items-center justify-between px-3 py-2.5">
+                            <span className="text-sm text-gray-300">{new Date(p.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "short", day: "numeric", month: "short" })}</span>
+                            <div className="flex items-center gap-3">
+                              {p.distMax > 0 && <span className="text-xs text-gray-500">{p.distMax}km</span>}
+                              <div className="flex items-center gap-1">
+                                {mejoro && <span className="text-xs text-green-400">↑</span>}
+                                <span className={`text-sm font-bold ${mejoro ? "text-green-400" : "text-white"}`}>{p.durMax} min</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {!cardioSel && (
+                    <div className="rounded-xl bg-white/5 border border-white/10 p-8 text-center">
+                      <p className="text-3xl mb-2">📈</p>
+                      <p className="text-sm text-gray-400">Selecciona una máquina para ver tu progresión</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
           )}
         </div>
       )}
