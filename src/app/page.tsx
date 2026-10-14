@@ -1350,18 +1350,25 @@ function Dashboard({
   // en vez de siempre derivarlo del email.
   const [nombrePerfil, setNombrePerfil] = useState<string | null>(null);
   const [modulos, setModulos] = useState<{trading: boolean; gym: boolean}>({ trading: true, gym: true });
+  // true = usuario nuevo que nunca eligió módulos → mostrar pantalla de bienvenida
+  const [primerUso, setPrimerUso] = useState(false);
 
   useEffect(() => {
     async function cargarNombrePerfil() {
       const { data } = await supabase.from("profiles").select("display_name, modulos").eq("id", session.user.id).maybeSingle();
       const row = data as { display_name: string | null; modulos: {trading: boolean; gym: boolean} | null } | null;
       const nombreGuardado = row?.display_name;
-      const modulosGuardados = row?.modulos ?? { trading: true, gym: true };
 
-      // Aplicar módulos
-      setModulos(modulosGuardados);
-      if (!modulosGuardados.trading && modulosGuardados.gym) {
-        setVista("gym");
+      // Si nunca eligió módulos → onboarding
+      if (row?.modulos == null) {
+        setPrimerUso(true);
+        // No aplicamos módulos todavía — el usuario los elige en el onboarding
+      } else {
+        const modulosGuardados = row.modulos;
+        setModulos(modulosGuardados);
+        if (!modulosGuardados.trading && modulosGuardados.gym) {
+          setVista("gym");
+        }
       }
 
       if (nombreGuardado && nombreGuardado.trim() !== "") {
@@ -1777,6 +1784,87 @@ function Dashboard({
     // sidebar no te sacaba de ahí. Ahora, cualquier clic en el menú
     // también cierra esa vista y te lleva a la sección elegida.
     setVistaDia(null);
+  }
+
+  // ── Pantalla de onboarding: elegir módulos al primer login ─────────────────
+  async function elegirModulosOnboarding(opcion: "trading" | "gym" | "ambos") {
+    const nuevos = {
+      trading: opcion === "trading" || opcion === "ambos",
+      gym:     opcion === "gym"     || opcion === "ambos",
+    };
+    setModulos(nuevos);
+    await supabase.from("profiles").upsert({ id: session.user.id, modulos: nuevos });
+    if (!nuevos.trading) setVista("gym");
+    setPrimerUso(false);
+  }
+
+  if (primerUso) {
+    return (
+      <div className="min-h-screen bg-kb-bg text-kb-text flex items-center justify-center p-5" suppressHydrationWarning>
+        <div className="w-full max-w-sm space-y-6">
+          {/* Logo */}
+          <div className="text-center space-y-2">
+            <div className="flex items-center justify-center gap-2 mb-1">
+              <LogoKTrader size={32} />
+              <span className="font-display text-xl font-bold tracking-tight">
+                Kebo<span className="text-kb-gain">Trader</span>
+              </span>
+            </div>
+            <p className="text-lg font-bold text-white">¡Bienvenido!</p>
+            <p className="text-sm text-gray-400 leading-relaxed">
+              ¿Qué módulos querés activar en tu cuenta?<br/>
+              <span className="text-gray-600 text-xs">Podés cambiarlo cuando quieras desde el perfil.</span>
+            </p>
+          </div>
+
+          {/* Opciones */}
+          <div className="space-y-3">
+            <button
+              onClick={() => elegirModulosOnboarding("ambos")}
+              className="w-full flex items-center gap-4 rounded-2xl border border-kb-gain/30 bg-kb-gain/10 p-4 text-left hover:bg-kb-gain/15 transition-all group">
+              <div className="w-11 h-11 rounded-xl bg-kb-gain/20 flex items-center justify-center flex-shrink-0 text-2xl group-hover:scale-105 transition-transform">
+                🚀
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-white">Trading + Gimnasio</p>
+                <p className="text-xs text-gray-400 mt-0.5">Diario de trading y plan de entrenamiento</p>
+              </div>
+              <div className="w-5 h-5 rounded-full border-2 border-kb-gain/40 flex-shrink-0" />
+            </button>
+
+            <button
+              onClick={() => elegirModulosOnboarding("trading")}
+              className="w-full flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-left hover:bg-white/8 hover:border-white/20 transition-all group">
+              <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 text-2xl group-hover:scale-105 transition-transform">
+                📈
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-white">Solo Trading</p>
+                <p className="text-xs text-gray-400 mt-0.5">Registra trades, cuentas y resultados</p>
+              </div>
+              <div className="w-5 h-5 rounded-full border-2 border-white/20 flex-shrink-0" />
+            </button>
+
+            <button
+              onClick={() => elegirModulosOnboarding("gym")}
+              className="w-full flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-left hover:bg-white/8 hover:border-white/20 transition-all group">
+              <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 text-2xl group-hover:scale-105 transition-transform">
+                💪
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-white">Solo Gimnasio</p>
+                <p className="text-xs text-gray-400 mt-0.5">Plan de entrenamiento, nutrición y perfil físico</p>
+              </div>
+              <div className="w-5 h-5 rounded-full border-2 border-white/20 flex-shrink-0" />
+            </button>
+          </div>
+
+          <p className="text-center text-[10px] text-gray-700">
+            Podés activar o desactivar módulos en cualquier momento desde tu perfil.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
