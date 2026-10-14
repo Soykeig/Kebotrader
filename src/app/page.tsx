@@ -18434,6 +18434,7 @@ function GimPerfilView({ userId, modulos, onModulosChange }: { userId: string; m
       dias_entreno: dias,
       genero: genero || null,
       altura_cm: alturaStr ? parseFloat(alturaStr) : null,
+      peso_inicial: pesoActual ? parseFloat(pesoActual) : null,
       toma_creatina: tomaCreatina,
       toma_proteina: tomaProteina,
       condiciones_salud: condicionesSalud,
