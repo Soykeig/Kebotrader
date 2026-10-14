@@ -17144,33 +17144,44 @@ function GimPlanView({ userId }: { userId: string }) {
             <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Ejercicios</label>
             <button
               onClick={() => { setMostrarCatalogo(true); setInsertandoEnIdx(null); setModalAbierto(false); }}
-              className="text-xs text-kb-gain font-semibold flex items-center gap-1 hover:opacity-80">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
-              Del catálogo
+              className="text-xs text-gray-500 font-medium flex items-center gap-1 hover:text-gray-300 transition-colors">
+              📖 Ver catálogo
             </button>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {ejerciciosPlan.map((ej, i) => {
               const col = GYM_GRUPO_COLORES[ej.grupo_muscular] ?? GYM_GRUPO_COLORES["Otro"];
               return (
-                <div key={ej.id} className={`rounded-xl border p-3 bg-white/3 border-l-4 ${col.border}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <button
-                      onClick={() => { setInsertandoEnIdx(i); setMostrarCatalogo(true); setModalAbierto(false); }}
-                      className={`flex-1 text-left text-sm font-medium ${ej.nombre ? "text-white" : "text-gray-500"}`}>
-                      {ej.nombre || "Seleccionar ejercicio..."}
-                    </button>
+                <div key={ej.id} className={`rounded-xl border p-3 space-y-2.5 bg-white/3 border-l-4 ${col.border}`}>
+                  {/* Nombre */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={ej.nombre}
+                      onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, nombre: e.target.value} : x))}
+                      placeholder="Nombre del ejercicio..."
+                      className="flex-1 bg-transparent text-sm font-medium text-white placeholder-gray-600 focus:outline-none border-b border-white/10 focus:border-kb-gain/40 py-0.5 transition-colors"
+                    />
                     <button onClick={() => setEjerciciosPlan(prev => prev.filter((_,j) => j !== i))}
-                      className="text-red-400/70 hover:text-red-400 p-1 transition-colors">
+                      className="text-red-400/60 hover:text-red-400 p-1 transition-colors flex-shrink-0">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
                     </button>
                   </div>
-                  {ej.nombre && (
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`text-xs ${col.text}`}>{col.emoji} {ej.grupo_muscular}</span>
-                      <span className="text-xs text-gray-600">· {ej.equipo}</span>
-                    </div>
-                  )}
+                  {/* Grupo + Equipo */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={ej.grupo_muscular}
+                      onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, grupo_muscular: e.target.value} : x))}
+                      className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-kb-gain/50 appearance-none">
+                      {GYM_GRUPOS.map(g => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                    <select
+                      value={ej.equipo}
+                      onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, equipo: e.target.value} : x))}
+                      className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-kb-gain/50 appearance-none">
+                      {GYM_EQUIPOS.map(eq => <option key={eq} value={eq}>{eq}</option>)}
+                    </select>
+                  </div>
+                  {/* Series + Reps */}
                   <div className="flex gap-2">
                     <div className="flex-1">
                       <input type="number" value={ej.series}
@@ -17192,7 +17203,7 @@ function GimPlanView({ userId }: { userId: string }) {
             <button onClick={agregarEjercicioPlan}
               className="w-full py-2.5 rounded-xl border border-dashed border-white/20 text-gray-500 text-xs font-medium flex items-center justify-center gap-1.5 hover:border-white/30 hover:text-gray-400 transition-all">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
-              Agregar manualmente
+              Agregar ejercicio
             </button>
           </div>
         </div>
