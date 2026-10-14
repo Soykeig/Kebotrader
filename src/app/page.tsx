@@ -16395,6 +16395,28 @@ function GimHoyView({ userId }: { userId: string }) {
     if (nueva) {
       setSesion(nueva as GymSesion);
       setHoraInicio(hora);
+      // Pre-cargar ejercicios de la rutina seleccionada
+      if (rutinaId) {
+        const rutinaSeleccionada = rutinas.find(r => r.id === rutinaId);
+        if (rutinaSeleccionada && rutinaSeleccionada.ejercicios.length > 0) {
+          const payload = rutinaSeleccionada.ejercicios.map((ej, i) => ({
+            sesion_id: nueva.id,
+            nombre: ej.nombre,
+            equipo: ej.equipo,
+            grupo_muscular: ej.grupo_muscular,
+            series: Array.from({ length: Math.max(ej.series, 1) }, () => ({
+              reps: parseInt(ej.reps_objetivo) || 10,
+              peso_kg: null,
+            })),
+            orden: ej.orden ?? i,
+          }));
+          const { data: cargados } = await supabase
+            .from("gym_session_exercises")
+            .insert(payload)
+            .select();
+          if (cargados) setEjercicios(cargados as GymSesionEjercicio[]);
+        }
+      }
     }
     setGuardando(false);
   }
@@ -16698,40 +16720,84 @@ function GimHoyView({ userId }: { userId: string }) {
     </div>
   );
 
-  if (!sesion) return (
-    <div className="p-4 space-y-4">
-      {/* Estado sin sesión */}
-      <div className="rounded-2xl bg-gradient-to-br from-kb-gain/15 to-kb-gain/5 border border-kb-gain/30 p-6 text-center">
-        <p className="text-5xl mb-4">⚡</p>
-        <h2 className="text-xl font-bold text-white mb-1">¿Listo para entrenar?</h2>
-        <p className="text-sm text-gray-400 mb-5">{new Date().toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" })}</p>
-        {rutinas.length > 0 && (
-          <div className="mb-4 text-left">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Cargar rutina del día</p>
-            <div className="grid gap-2">
-              {rutinas.map(r => (
-                <button
-                  key={r.id}
-                  onClick={() => setRutinaId(r.id)}
-                  className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all ${rutinaId === r.id ? "border-kb-gain/60 bg-kb-gain/10" : "border-white/10 bg-white/5 hover:border-white/20"}`}
-                >
-                  <span className="text-lg">📋</span>
-                  <div>
-                    <p className="text-sm font-medium text-white">{r.nombre}</p>
-                    <p className="text-xs text-gray-500">{["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][r.dia_semana]}</p>
-                  </div>
-                </button>
-              ))}
+  if (!sesion) {
+    const diaSemanaHoy = new Date().getDay(); // 0=Dom…6=Sáb
+    const DIAS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+    // Mostrar rutinas del día actual primero, luego el resto
+    const rutinasOrdenadas = [...rutinas].sort((a, b) => {
+      const aHoy = a.dia_semana === diaSemanaHoy ? 0 : 1;
+      const bHoy = b.dia_semana === diaSemanaHoy ? 0 : 1;
+      return aHoy - bHoy || a.dia_semana - b.dia_semana;
+    });
+    const rutinaElegida = rutinas.find(r => r.id === rutinaId);
+    return (
+      <div className="p-4 space-y-4">
+        <div className="rounded-2xl bg-gradient-to-br from-kb-gain/15 to-kb-gain/5 border border-kb-gain/30 p-6 text-center">
+          <p className="text-5xl mb-4">⚡</p>
+          <h2 className="text-xl font-bold text-white mb-1">¿Listo para entrenar?</h2>
+          <p className="text-sm text-gray-400 mb-5">{new Date().toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" })}</p>
+
+          {rutinas.length > 0 && (
+            <div className="mb-4 text-left">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                {rutinaElegida ? "Rutina seleccionada" : "Seleccionar rutina"}
+              </p>
+              <div className="grid gap-2">
+                {rutinasOrdenadas.map(r => {
+                  const esHoy = r.dia_semana === diaSemanaHoy;
+                  const seleccionada = rutinaId === r.id;
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => setRutinaId(seleccionada ? null : r.id)}
+                      className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all ${
+                        seleccionada
+                          ? "border-kb-gain/60 bg-kb-gain/10"
+                          : esHoy
+                          ? "border-kb-gain/30 bg-kb-gain/5 hover:border-kb-gain/50"
+                          : "border-white/10 bg-white/5 hover:border-white/20"
+                      }`}
+                    >
+                      {seleccionada ? (
+                        <span className="text-lg text-kb-gain">✓</span>
+                      ) : (
+                        <span className="text-lg">📋</span>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-white truncate">{r.nombre}</p>
+                          {esHoy && (
+                            <span className="text-xs font-bold text-kb-gain bg-kb-gain/15 px-1.5 py-0.5 rounded-md flex-shrink-0">HOY</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {DIAS[r.dia_semana]} · {r.ejercicios.length} ejercicios
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {rutinaElegida && (
+                <p className="text-xs text-kb-gain/70 text-center mt-2">
+                  Los ejercicios se cargarán automáticamente al iniciar
+                </p>
+              )}
             </div>
-          </div>
-        )}
-        <button onClick={iniciarSesion} disabled={guardando}
-          className="w-full py-3.5 rounded-xl font-bold text-sm bg-kb-gain text-kb-bg hover:bg-kb-gain/90 disabled:opacity-50 active:scale-95 transition-all">
-          {guardando ? "Iniciando..." : "Iniciar sesión de hoy 🚀"}
-        </button>
+          )}
+
+          <button onClick={iniciarSesion} disabled={guardando}
+            className="w-full py-3.5 rounded-xl font-bold text-sm bg-kb-gain text-kb-bg hover:bg-kb-gain/90 disabled:opacity-50 active:scale-95 transition-all">
+            {guardando
+              ? "Iniciando..."
+              : rutinaElegida
+              ? `Iniciar con "${rutinaElegida.nombre}" 🚀`
+              : "Iniciar sesión libre 🚀"}
+          </button>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
   return (
     <div className="p-4 space-y-4 pb-8">
@@ -16753,6 +16819,17 @@ function GimHoyView({ userId }: { userId: string }) {
           <span className="text-xs text-gray-400">{ejercicios.length} ejercicios</span>
         </div>
       </div>
+
+      {/* Hint: rutina cargada — registrar pesos */}
+      {sesion.rutina_id && ejercicios.some(e => e.series.some(s => s.peso_kg === null)) && (
+        <div className="rounded-xl border border-kb-gain/25 bg-kb-gain/8 px-4 py-3 flex items-start gap-3">
+          <span className="text-xl flex-shrink-0">📋</span>
+          <div>
+            <p className="text-sm font-semibold text-white">Rutina cargada</p>
+            <p className="text-xs text-gray-400 mt-0.5">Toca ✏️ en cada ejercicio para registrar cuánto levantaste</p>
+          </div>
+        </div>
+      )}
 
       {/* Ejercicios de la sesión */}
       {ejercicios.length > 0 && (
@@ -17171,13 +17248,15 @@ function GimPlanView({ userId }: { userId: string }) {
                     <select
                       value={ej.grupo_muscular}
                       onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, grupo_muscular: e.target.value} : x))}
-                      className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-kb-gain/50 appearance-none">
+                      style={{ backgroundColor: "#1a1a2e", colorScheme: "dark" }}
+                      className="border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-kb-gain/50">
                       {GYM_GRUPOS.map(g => <option key={g} value={g}>{g}</option>)}
                     </select>
                     <select
                       value={ej.equipo}
                       onChange={e => setEjerciciosPlan(prev => prev.map((x,j) => j===i ? {...x, equipo: e.target.value} : x))}
-                      className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-kb-gain/50 appearance-none">
+                      style={{ backgroundColor: "#1a1a2e", colorScheme: "dark" }}
+                      className="border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-kb-gain/50">
                       {GYM_EQUIPOS.map(eq => <option key={eq} value={eq}>{eq}</option>)}
                     </select>
                   </div>
