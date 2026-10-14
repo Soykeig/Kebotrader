@@ -1786,23 +1786,78 @@ function Dashboard({
     setVistaDia(null);
   }
 
-  // ── Pantalla de onboarding: elegir módulos al primer login ─────────────────
+  // ── Onboarding multi-paso ────────────────────────────────────────────────────
+  // pasoOnboarding: 1 = elegir módulos, 2 = perfil gym (si gym incluido)
+  const [pasoOnboarding, setPasoOnboarding] = useState(1);
+  const [modulosElegidos, setModulosElegidos] = useState<{trading:boolean;gym:boolean}>({trading:true,gym:true});
+  // Campos perfil gym para paso 2
+  const [obGenero, setObGenero] = useState<"masculino"|"femenino"|"">("");
+  const [obAltura, setObAltura] = useState("");
+  const [obPeso, setObPeso] = useState("");
+  const [obCreatina, setObCreatina] = useState(false);
+  const [obProteina, setObProteina] = useState(false);
+  const [obConds, setObConds] = useState<string[]>([]);
+  const [guardandoOb, setGuardandoOb] = useState(false);
+
+  function toggleObCond(id: string) {
+    if (id === "ninguna") { setObConds(["ninguna"]); return; }
+    setObConds(prev => {
+      const sinNinguna = prev.filter(x => x !== "ninguna");
+      return sinNinguna.includes(id) ? sinNinguna.filter(x => x !== id) : [...sinNinguna, id];
+    });
+  }
+
   async function elegirModulosOnboarding(opcion: "trading" | "gym" | "ambos") {
     const nuevos = {
       trading: opcion === "trading" || opcion === "ambos",
       gym:     opcion === "gym"     || opcion === "ambos",
     };
-    setModulos(nuevos);
-    await supabase.from("profiles").upsert({ id: session.user.id, modulos: nuevos });
-    if (!nuevos.trading) setVista("gym");
+    setModulosElegidos(nuevos);
+    if (nuevos.gym) {
+      // Paso 2: perfil gym
+      setPasoOnboarding(2);
+    } else {
+      // Solo trading → terminar directo
+      setModulos(nuevos);
+      await supabase.from("profiles").upsert({ id: session.user.id, modulos: nuevos });
+      setPrimerUso(false);
+    }
+  }
+
+  async function finalizarOnboardingGym() {
+    setGuardandoOb(true);
+    const hoy = new Date().toISOString().split("T")[0];
+    // Guardar módulos
+    setModulos(modulosElegidos);
+    await supabase.from("profiles").upsert({ id: session.user.id, modulos: modulosElegidos });
+    // Guardar perfil gym
+    await supabase.from("gym_perfil").upsert({
+      user_id: session.user.id,
+      genero: obGenero || null,
+      altura_cm: obAltura ? parseFloat(obAltura) : null,
+      toma_creatina: obCreatina,
+      toma_proteina: obProteina,
+      condiciones_salud: obConds.length > 0 ? obConds : ["ninguna"],
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "user_id" });
+    // Guardar peso si lo ingresó
+    if (obPeso) {
+      await supabase.from("body_measurements").insert({
+        user_id: session.user.id,
+        fecha: hoy,
+        peso_kg: parseFloat(obPeso),
+      });
+    }
+    if (!modulosElegidos.trading) setVista("gym");
+    setGuardandoOb(false);
     setPrimerUso(false);
   }
 
   if (primerUso) {
-    return (
+    // ── Paso 1: elegir módulos ────────────────────────────────────────────────
+    if (pasoOnboarding === 1) return (
       <div className="min-h-screen bg-kb-bg text-kb-text flex items-center justify-center p-5" suppressHydrationWarning>
         <div className="w-full max-w-sm space-y-6">
-          {/* Logo */}
           <div className="text-center space-y-2">
             <div className="flex items-center justify-center gap-2 mb-1">
               <LogoKTrader size={32} />
@@ -1812,56 +1867,127 @@ function Dashboard({
             </div>
             <p className="text-lg font-bold text-white">¡Bienvenido!</p>
             <p className="text-sm text-gray-400 leading-relaxed">
-              ¿Qué módulos querés activar en tu cuenta?<br/>
-              <span className="text-gray-600 text-xs">Podés cambiarlo cuando quieras desde el perfil.</span>
+              ¿Qué módulos querés usar?
             </p>
           </div>
-
-          {/* Opciones */}
           <div className="space-y-3">
-            <button
-              onClick={() => elegirModulosOnboarding("ambos")}
+            <button onClick={() => elegirModulosOnboarding("ambos")}
               className="w-full flex items-center gap-4 rounded-2xl border border-kb-gain/30 bg-kb-gain/10 p-4 text-left hover:bg-kb-gain/15 transition-all group">
-              <div className="w-11 h-11 rounded-xl bg-kb-gain/20 flex items-center justify-center flex-shrink-0 text-2xl group-hover:scale-105 transition-transform">
-                🚀
-              </div>
+              <div className="w-11 h-11 rounded-xl bg-kb-gain/20 flex items-center justify-center flex-shrink-0 text-2xl group-hover:scale-105 transition-transform">🚀</div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-white">Trading + Gimnasio</p>
                 <p className="text-xs text-gray-400 mt-0.5">Diario de trading y plan de entrenamiento</p>
               </div>
-              <div className="w-5 h-5 rounded-full border-2 border-kb-gain/40 flex-shrink-0" />
             </button>
-
-            <button
-              onClick={() => elegirModulosOnboarding("trading")}
+            <button onClick={() => elegirModulosOnboarding("trading")}
               className="w-full flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-left hover:bg-white/8 hover:border-white/20 transition-all group">
-              <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 text-2xl group-hover:scale-105 transition-transform">
-                📈
-              </div>
+              <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 text-2xl group-hover:scale-105 transition-transform">📈</div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-white">Solo Trading</p>
                 <p className="text-xs text-gray-400 mt-0.5">Registra trades, cuentas y resultados</p>
               </div>
-              <div className="w-5 h-5 rounded-full border-2 border-white/20 flex-shrink-0" />
             </button>
-
-            <button
-              onClick={() => elegirModulosOnboarding("gym")}
+            <button onClick={() => elegirModulosOnboarding("gym")}
               className="w-full flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-left hover:bg-white/8 hover:border-white/20 transition-all group">
-              <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 text-2xl group-hover:scale-105 transition-transform">
-                💪
-              </div>
+              <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 text-2xl group-hover:scale-105 transition-transform">💪</div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-white">Solo Gimnasio</p>
                 <p className="text-xs text-gray-400 mt-0.5">Plan de entrenamiento, nutrición y perfil físico</p>
               </div>
-              <div className="w-5 h-5 rounded-full border-2 border-white/20 flex-shrink-0" />
             </button>
           </div>
+          <p className="text-center text-[10px] text-gray-700">Podés cambiar los módulos cuando quieras desde tu perfil.</p>
+        </div>
+      </div>
+    );
 
-          <p className="text-center text-[10px] text-gray-700">
-            Podés activar o desactivar módulos en cualquier momento desde tu perfil.
-          </p>
+    // ── Paso 2: perfil gym ────────────────────────────────────────────────────
+    return (
+      <div className="min-h-screen bg-kb-bg text-kb-text flex items-start justify-center p-5 pt-8" suppressHydrationWarning>
+        <div className="w-full max-w-sm space-y-5">
+          {/* Header */}
+          <div className="text-center">
+            <p className="text-3xl mb-2">💪</p>
+            <p className="text-lg font-bold text-white">Tu perfil físico</p>
+            <p className="text-sm text-gray-400 mt-1">Estos datos personalizan tu plan de entrenamiento.<br/><span className="text-gray-600 text-xs">Podés editarlos en cualquier momento.</span></p>
+          </div>
+
+          {/* Género */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Género</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(["masculino","femenino"] as const).map(g => (
+                <button key={g} onClick={() => setObGenero(g === obGenero ? "" : g)}
+                  className={`rounded-xl p-3 border text-center transition-all ${obGenero === g ? "border-kb-gain/60 bg-kb-gain/10" : "border-white/10 bg-white/5 hover:border-white/20"}`}>
+                  <span className="text-xl">{g === "masculino" ? "👨" : "👩"}</span>
+                  <p className="text-xs font-medium text-white mt-1 capitalize">{g}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Altura y Peso */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Altura (cm)</label>
+              <input type="number" inputMode="decimal" placeholder="175"
+                value={obAltura} onChange={e => setObAltura(e.target.value)}
+                className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-kb-gain/50" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Peso (kg)</label>
+              <input type="number" inputMode="decimal" placeholder="75"
+                value={obPeso} onChange={e => setObPeso(e.target.value)}
+                className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-kb-gain/50" />
+            </div>
+          </div>
+
+          {/* Suplementos */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Suplementos</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => setObCreatina(p => !p)}
+                className={`flex items-center gap-2.5 rounded-xl p-3 border transition-all ${obCreatina ? "border-kb-gain/60 bg-kb-gain/10" : "border-white/10 bg-white/5 hover:border-white/20"}`}>
+                <span className="text-lg">💊</span>
+                <div className="text-left">
+                  <p className="text-xs font-semibold text-white">Creatina</p>
+                  <p className="text-[10px] text-gray-500">{obCreatina ? "Sí" : "No"}</p>
+                </div>
+              </button>
+              <button onClick={() => setObProteina(p => !p)}
+                className={`flex items-center gap-2.5 rounded-xl p-3 border transition-all ${obProteina ? "border-kb-gain/60 bg-kb-gain/10" : "border-white/10 bg-white/5 hover:border-white/20"}`}>
+                <span className="text-lg">🥤</span>
+                <div className="text-left">
+                  <p className="text-xs font-semibold text-white">Proteína</p>
+                  <p className="text-[10px] text-gray-500">{obProteina ? "Sí" : "No"}</p>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Condiciones de salud */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Condiciones de salud</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {GYM_CONDICIONES_SALUD.map(c => {
+                const sel = obConds.includes(c.id);
+                return (
+                  <button key={c.id} onClick={() => toggleObCond(c.id)}
+                    className={`flex items-center gap-2 rounded-xl px-2.5 py-2 border text-left transition-all ${sel ? "border-kb-gain/50 bg-kb-gain/8" : "border-white/10 bg-white/5 hover:border-white/20"}`}>
+                    <span className="text-base flex-shrink-0">{c.emoji}</span>
+                    <p className="text-xs text-white leading-tight">{c.label}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Botón finalizar */}
+          <button onClick={finalizarOnboardingGym} disabled={guardandoOb}
+            className="w-full py-3 rounded-2xl text-sm font-bold bg-kb-gain text-kb-bg hover:opacity-90 transition-opacity disabled:opacity-60">
+            {guardandoOb ? "Guardando..." : "Entrar a la app →"}
+          </button>
+          <p className="text-center text-[10px] text-gray-700">Podés completar estos datos más tarde desde Perfil.</p>
         </div>
       </div>
     );
@@ -16004,7 +16130,7 @@ function GimOnboarding({ userId, onDone }: { userId: string; onDone: () => void 
       dias_entreno: dias,
       fecha_inicio: hoy,
       updated_at: new Date().toISOString(),
-    });
+    }, { onConflict: "user_id" });
     setGuardando(false);
     if (!error) onDone(); // BUG 8 fix: only proceed if upsert succeeded
   }
@@ -18312,8 +18438,10 @@ function GimPerfilView({ userId, modulos, onModulosChange }: { userId: string; m
       toma_proteina: tomaProteina,
       condiciones_salud: condicionesSalud,
       updated_at: new Date().toISOString(),
-    });
-    // BUG 9 fix: only show success and save weight if upsert succeeded
+    }, { onConflict: "user_id" });
+    if (error) {
+      console.error("[gym_perfil] upsert error:", error.message);
+    }
     if (!error) {
       if (pesoActual) {
         await supabase.from("body_measurements").insert({
@@ -18627,7 +18755,7 @@ function GimEntrenadorView({ userId }: { userId: string }) {
       toma_proteina: prot,
       condiciones_salud: conds,
       updated_at: new Date().toISOString(),
-    });
+    }, { onConflict: "user_id" });
     setGuardadoPrefs(true);
     setTimeout(() => setGuardadoPrefs(false), 2000);
     setGuardandoPrefs(false);
