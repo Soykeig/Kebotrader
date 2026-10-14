@@ -16977,7 +16977,7 @@ interface DiaPlanSugerido {
   ejercicios: { nombre: string; series: number; reps: string; nota?: string; adaptado: boolean }[];
 }
 function generarPlanSugerido(perfil: GymPerfil): DiaPlanSugerido[] {
-  const dias = perfil.dias_entreno ?? [];
+  const dias = [...(perfil.dias_entreno ?? [])].sort((a, b) => a - b);
   const conds = perfil.condiciones_salud ?? [];
   const { series, reps, descanso } = gimPlanSetsReps(perfil.objetivo ?? "", perfil.experiencia ?? "");
   return dias.map((dia, idx) => {
