@@ -16499,11 +16499,13 @@ function GimHoyView({ userId }: { userId: string }) {
       if (error) { setExError("No se pudo actualizar. Intenta de nuevo."); setGuardando(false); return; }
       setEjercicios(prev => prev.map((e, i) => i === editandoIdx ? { ...e, ...payload } : e));
     } else {
-      const { data: nuevo, error } = await supabase.from("gym_session_exercises").insert({
+      const { error: errIns } = await supabase.from("gym_session_exercises").insert({
         sesion_id: sesion.id, ...payload, orden: ejercicios.length,
-      }).select().single();
-      if (error || !nuevo) { setExError("No se pudo guardar. Intenta de nuevo."); setGuardando(false); return; }
-      setEjercicios(prev => [...prev, nuevo as GymSesionEjercicio]);
+      });
+      if (errIns) { setExError("No se pudo guardar. Intenta de nuevo."); setGuardando(false); return; }
+      const { data: lista } = await supabase.from("gym_session_exercises")
+        .select().eq("sesion_id", sesion.id).order("orden");
+      if (lista) setEjercicios(lista as GymSesionEjercicio[]);
       if (exTipo === "fuerza") await buscarHistorial(exNombre.trim());
     }
     setMostrarFormEx(false);
