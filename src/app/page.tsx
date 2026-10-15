@@ -16502,7 +16502,7 @@ function GimHoyView({ userId }: { userId: string }) {
       const { error: errIns } = await supabase.from("gym_session_exercises").insert({
         sesion_id: sesion.id, ...payload, orden: ejercicios.length,
       });
-      if (errIns) { setExError("No se pudo guardar. Intenta de nuevo."); setGuardando(false); return; }
+      if (errIns) { setExError(`[${errIns.code}] ${errIns.message?.slice(0,120)}`); setGuardando(false); return; }
       const { data: lista } = await supabase.from("gym_session_exercises")
         .select().eq("sesion_id", sesion.id).order("orden");
       if (lista) setEjercicios(lista as GymSesionEjercicio[]);
