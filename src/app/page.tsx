@@ -15771,7 +15771,7 @@ function GimEjercicioPicker({
   if (detalle) {
     const col = GYM_GRUPO_COLORES[detalle.grupo] ?? GYM_GRUPO_COLORES["Otro"];
     return (
-      <div className="fixed inset-0 z-50 bg-kb-bg flex justify-center">
+      <div className="fixed inset-0 z-50 flex justify-center" style={{background:'var(--kb-bg,#080e1a)'}}>
         <div className="w-full max-w-lg flex flex-col">
         {/* Header detalle */}
         <div className="flex items-center gap-3 p-4 border-b border-white/10">
@@ -15821,7 +15821,7 @@ function GimEjercicioPicker({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-kb-bg flex justify-center">
+    <div className="fixed inset-0 z-50 flex justify-center" style={{background:'var(--kb-bg,#080e1a)'}}>
       <div className="w-full max-w-lg flex flex-col">
       {/* Header */}
       <div className="flex items-center gap-3 p-4 border-b border-white/10">
@@ -16551,7 +16551,7 @@ function GimHoyView({ userId }: { userId: string }) {
   // Modal form ejercicio
   if (mostrarFormEx) {
     return (
-      <div className="fixed inset-0 z-50 bg-kb-bg flex justify-center">
+      <div className="fixed inset-0 z-50 flex justify-center" style={{background:'var(--kb-bg,#080e1a)'}}>
         <div className="w-full max-w-lg flex flex-col">
         <div className="flex items-center gap-3 p-4 border-b border-white/10">
           <button onClick={() => setMostrarFormEx(false)} className="text-gray-400 hover:text-white p-1">
@@ -17334,7 +17334,7 @@ function GimPlanView({ userId }: { userId: string }) {
 
   // Modal crear/editar rutina
   if (modalAbierto) return (
-    <div className="fixed inset-0 z-50 bg-kb-bg flex justify-center">
+    <div className="fixed inset-0 z-50 flex justify-center" style={{background:'var(--kb-bg,#080e1a)'}}>
       <div className="w-full max-w-lg flex flex-col h-full">
       <div className="flex items-center gap-3 p-4 border-b border-white/10">
         <button onClick={() => setModalAbierto(false)} className="text-gray-400 hover:text-white p-1">
