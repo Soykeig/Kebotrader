@@ -16422,7 +16422,6 @@ function GimHoyView({ userId }: { userId: string }) {
         if (rutinaSeleccionada && rutinaSeleccionada.ejercicios.length > 0) {
           const payload = rutinaSeleccionada.ejercicios.map((ej, i) => ({
             sesion_id: nueva.id,
-            user_id: userId,
             nombre: ej.nombre,
             equipo: ej.equipo,
             grupo_muscular: ej.tipo === "cardio" ? "Cardio" : ej.grupo_muscular,
@@ -16501,7 +16500,7 @@ function GimHoyView({ userId }: { userId: string }) {
       setEjercicios(prev => prev.map((e, i) => i === editandoIdx ? { ...e, ...payload } : e));
     } else {
       const { data: nuevo, error } = await supabase.from("gym_session_exercises").insert({
-        sesion_id: sesion.id, user_id: userId, ...payload, orden: ejercicios.length,
+        sesion_id: sesion.id, ...payload, orden: ejercicios.length,
       }).select().single();
       if (error || !nuevo) { setExError("No se pudo guardar. Intenta de nuevo."); setGuardando(false); return; }
       setEjercicios(prev => [...prev, nuevo as GymSesionEjercicio]);
