@@ -16299,6 +16299,7 @@ function GimHoyView({ userId }: { userId: string }) {
   const [exDuracion, setExDuracion] = useState("30");
   const [exDistancia, setExDistancia] = useState("");
   const [exCalorias, setExCalorias] = useState("");
+  const [exError, setExError] = useState<string | null>(null);
 
   // Historial / comparativa
   const [historial, setHistorial] = useState<Record<string, { fecha: string; pesoMax: number; series: { reps: number; peso_kg: number | null }[] }[]>>({});
@@ -16454,6 +16455,7 @@ function GimHoyView({ userId }: { userId: string }) {
     setExDuracion("30");
     setExDistancia("");
     setExCalorias("");
+    setExError(null);
     setMostrarFormEx(true);
   }
 
@@ -16475,12 +16477,14 @@ function GimHoyView({ userId }: { userId: string }) {
       setExSeries(ex.series.map(s => ({ reps: String(s.reps ?? 10), peso_kg: s.peso_kg != null ? String(s.peso_kg) : "" })));
       setExDuracion("30"); setExDistancia(""); setExCalorias("");
     }
+    setExError(null);
     setMostrarFormEx(true);
   }
 
   async function guardarEjercicio() {
     if (!sesion || !exNombre.trim() || guardando) return;
     setGuardando(true);
+    setExError(null);
 
     const seriesData = exTipo === "cardio"
       ? [{ duracion_min: parseInt(exDuracion) || 30, distancia_km: exDistancia ? parseFloat(exDistancia) : null, calorias: exCalorias ? parseInt(exCalorias) : null }]
@@ -16491,16 +16495,16 @@ function GimHoyView({ userId }: { userId: string }) {
 
     if (editandoIdx !== null) {
       const ex = ejercicios[editandoIdx];
-      await supabase.from("gym_session_exercises").update(payload).eq("id", ex.id);
+      const { error } = await supabase.from("gym_session_exercises").update(payload).eq("id", ex.id);
+      if (error) { setExError("No se pudo actualizar. Intenta de nuevo."); setGuardando(false); return; }
       setEjercicios(prev => prev.map((e, i) => i === editandoIdx ? { ...e, ...payload } : e));
     } else {
-      const { data: nuevo } = await supabase.from("gym_session_exercises").insert({
+      const { data: nuevo, error } = await supabase.from("gym_session_exercises").insert({
         sesion_id: sesion.id, ...payload, orden: ejercicios.length,
       }).select().single();
-      if (nuevo) {
-        setEjercicios(prev => [...prev, nuevo as GymSesionEjercicio]);
-        if (exTipo === "fuerza") await buscarHistorial(exNombre.trim());
-      }
+      if (error || !nuevo) { setExError("No se pudo guardar. Intenta de nuevo."); setGuardando(false); return; }
+      setEjercicios(prev => [...prev, nuevo as GymSesionEjercicio]);
+      if (exTipo === "fuerza") await buscarHistorial(exNombre.trim());
     }
     setMostrarFormEx(false);
     setGuardando(false);
@@ -16805,6 +16809,9 @@ function GimHoyView({ userId }: { userId: string }) {
           </>)}
         </div>
         <div className="p-4 border-t border-white/10">
+          {exError && (
+            <p className="text-xs text-red-400 text-center mb-3">{exError}</p>
+          )}
           <button
             onClick={guardarEjercicio}
             disabled={guardando || !exNombre.trim()}
